@@ -43,12 +43,15 @@ body {
 @media print {
   @page {
     size: A4 portrait;
-    margin: 8mm 10mm;
+    margin: 8mm 8mm;
   }
-  body {
+  html, body {
     background: #ffffff !important;
     background-image: none !important;
     color: #000000 !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
   }
   header, nav, footer, .no-print {
     display: none !important;
@@ -58,6 +61,24 @@ body {
     margin: 0 !important;
     max-width: 100% !important;
     width: 100% !important;
+  }
+  #printable-quote {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+  table {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+  tr, td, th {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
   }
   * {
     -webkit-print-color-adjust: exact !important;

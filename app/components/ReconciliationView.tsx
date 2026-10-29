@@ -1080,15 +1080,15 @@ export default function ReconciliationView({
               </div>
 
               {/* Balances Comparison Pillar */}
-              <div className="flex flex-wrap items-center gap-3 border-t lg:border-t-0 pt-3 lg:pt-0">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3 w-full lg:w-auto border-t lg:border-t-0 pt-3 lg:pt-0">
                 <div className="px-3.5 py-2.5 rounded-2xl bg-white border border-slate-200 shadow-2xs">
-                  <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                  <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider truncate">
                     Firma Ekstre Sonu Bakiyesi
                   </div>
-                  <div className="text-base sm:text-lg font-bold text-slate-900 tabular-nums">
+                  <div className="text-base sm:text-lg font-bold text-slate-900 tabular-nums truncate">
                     {formatCurrency(Math.abs(summary.externalBalance))}
                   </div>
-                  <span className="text-[10px] font-medium text-slate-500">
+                  <span className="text-[10px] font-medium text-slate-500 block truncate">
                     {summary.externalBalance > 0
                       ? "Borç Bakiyesi (B)"
                       : summary.externalBalance < 0
@@ -1098,13 +1098,13 @@ export default function ReconciliationView({
                 </div>
 
                 <div className="px-3.5 py-2.5 rounded-2xl bg-white border border-slate-200 shadow-2xs">
-                  <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                  <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider truncate">
                     Bizim Luca Bakiyemiz
                   </div>
-                  <div className="text-base sm:text-lg font-bold text-slate-900 tabular-nums">
+                  <div className="text-base sm:text-lg font-bold text-slate-900 tabular-nums truncate">
                     {formatCurrency(Math.abs(summary.internalBalance))}
                   </div>
-                  <span className="text-[10px] font-medium text-slate-500">
+                  <span className="text-[10px] font-medium text-slate-500 block truncate">
                     {summary.internalBalance < 0
                       ? "Alacak Bakiyesi (A)"
                       : summary.internalBalance > 0
@@ -1120,11 +1120,11 @@ export default function ReconciliationView({
                       : "bg-rose-50 border-rose-300"
                   }`}
                 >
-                  <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500 truncate">
                     Net Mutabakat Farkı
                   </div>
                   <div
-                    className={`text-lg sm:text-xl font-extrabold tabular-nums ${
+                    className={`text-lg sm:text-xl font-extrabold tabular-nums truncate ${
                       Math.abs(summary.netDiscrepancy) <= 0.05
                         ? "text-emerald-700"
                         : "text-rose-700"
@@ -1133,7 +1133,7 @@ export default function ReconciliationView({
                     {formatCurrency(Math.abs(summary.netDiscrepancy))}
                   </div>
                   <span
-                    className={`text-[10px] font-bold ${
+                    className={`text-[10px] font-bold block truncate ${
                       Math.abs(summary.netDiscrepancy) <= 0.05
                         ? "text-emerald-700"
                         : "text-rose-700"
@@ -1142,8 +1142,8 @@ export default function ReconciliationView({
                     {Math.abs(summary.netDiscrepancy) <= 0.05
                       ? "✓ Tam Mutabık (Fark Yok)"
                       : summary.netDiscrepancy > 0
-                      ? "Firma Ekstresinde Fazla / Bizde Eksik"
-                      : "Bizim Luca'da Fazla / Firmada Eksik"}
+                      ? "Firma Ekstresinde Fazla"
+                      : "Bizim Luca'da Fazla"}
                   </span>
                 </div>
               </div>
@@ -1271,10 +1271,10 @@ export default function ReconciliationView({
               </div>
 
               {/* Status Filter Chips */}
-              <div className="flex items-center gap-1.5 overflow-x-auto text-xs">
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar scroll-smooth text-xs pb-1 lg:pb-0 flex-nowrap">
                 <button
                   onClick={() => setStatusFilter("all")}
-                  className={`px-3 py-1.5 rounded-xl font-semibold transition-all whitespace-nowrap ${
+                  className={`px-3 py-1.5 rounded-xl font-semibold transition-all whitespace-nowrap shrink-0 ${
                     statusFilter === "all"
                       ? "bg-slate-900 text-white shadow-2xs"
                       : "bg-slate-100 text-slate-600 hover:bg-slate-200"
@@ -1284,7 +1284,7 @@ export default function ReconciliationView({
                 </button>
                 <button
                   onClick={() => setStatusFilter("missing_in_luca")}
-                  className={`px-3 py-1.5 rounded-xl font-semibold transition-all whitespace-nowrap ${
+                  className={`px-3 py-1.5 rounded-xl font-semibold transition-all whitespace-nowrap shrink-0 ${
                     statusFilter === "missing_in_luca"
                       ? "bg-rose-600 text-white shadow-2xs"
                       : "bg-rose-50 text-rose-700 hover:bg-rose-100"
@@ -1294,7 +1294,7 @@ export default function ReconciliationView({
                 </button>
                 <button
                   onClick={() => setStatusFilter("missing_in_external")}
-                  className={`px-3 py-1.5 rounded-xl font-semibold transition-all whitespace-nowrap ${
+                  className={`px-3 py-1.5 rounded-xl font-semibold transition-all whitespace-nowrap shrink-0 ${
                     statusFilter === "missing_in_external"
                       ? "bg-amber-600 text-white shadow-2xs"
                       : "bg-amber-50 text-amber-700 hover:bg-amber-100"
@@ -1304,7 +1304,7 @@ export default function ReconciliationView({
                 </button>
                 <button
                   onClick={() => setStatusFilter("amount_mismatch")}
-                  className={`px-3 py-1.5 rounded-xl font-semibold transition-all whitespace-nowrap ${
+                  className={`px-3 py-1.5 rounded-xl font-semibold transition-all whitespace-nowrap shrink-0 ${
                     statusFilter === "amount_mismatch"
                       ? "bg-orange-600 text-white shadow-2xs"
                       : "bg-orange-50 text-orange-700 hover:bg-orange-100"
@@ -1314,7 +1314,7 @@ export default function ReconciliationView({
                 </button>
                 <button
                   onClick={() => setStatusFilter("matched")}
-                  className={`px-3 py-1.5 rounded-xl font-semibold transition-all whitespace-nowrap ${
+                  className={`px-3 py-1.5 rounded-xl font-semibold transition-all whitespace-nowrap shrink-0 ${
                     statusFilter === "matched"
                       ? "bg-emerald-600 text-white shadow-2xs"
                       : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
@@ -1324,49 +1324,50 @@ export default function ReconciliationView({
                 </button>
               </div>
 
-              {/* Year Filter */}
-              {availableYears.length > 1 && (
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <span className="text-xs text-slate-500 font-medium">Yıl:</span>
-                  <select
-                    value={yearFilter}
-                    onChange={(e) => setYearFilter(e.target.value)}
-                    className="text-xs font-semibold text-slate-800 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none"
-                  >
-                    <option value="all">Tüm Yıllar</option>
-                    {availableYears.map((yr) => (
-                      <option key={yr} value={yr}>
-                        {yr} Yılı
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
+              {/* Year Filter & Actions */}
+              <div className="flex flex-wrap items-center justify-between sm:justify-end gap-2 shrink-0">
+                {availableYears.length > 1 && (
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="text-xs text-slate-500 font-medium">Yıl:</span>
+                    <select
+                      value={yearFilter}
+                      onChange={(e) => setYearFilter(e.target.value)}
+                      className="text-xs font-semibold text-slate-800 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none"
+                    >
+                      <option value="all">Tüm Yıllar</option>
+                      {availableYears.map((yr) => (
+                        <option key={yr} value={yr}>
+                          {yr} Yılı
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
 
-              {/* Action Buttons */}
-              <div className="flex items-center gap-2 shrink-0">
-                <button
-                  onClick={() =>
-                    exportReconciliationToExcel(
-                      filteredPairs,
-                      summary,
-                      selectedInternalCompanyName || "Firma"
-                    )
-                  }
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors border border-emerald-200"
-                  title="Fark ve eşleşme listesini Excel raporu olarak indir"
-                >
-                  <Download className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>Rapor İndir (Excel)</span>
-                </button>
-                <button
-                  onClick={() => window.print()}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors border border-slate-200"
-                  title="Mutabakat tablosunu yazdır"
-                >
-                  <Printer className="w-3.5 h-3.5 text-slate-600" />
-                  <span className="hidden sm:inline">Yazdır</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() =>
+                      exportReconciliationToExcel(
+                        filteredPairs,
+                        summary,
+                        selectedInternalCompanyName || "Firma"
+                      )
+                    }
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors border border-emerald-200"
+                    title="Fark ve eşleşme listesini Excel raporu olarak indir"
+                  >
+                    <Download className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Rapor İndir (Excel)</span>
+                  </button>
+                  <button
+                    onClick={() => window.print()}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors border border-slate-200"
+                    title="Mutabakat tablosunu yazdır"
+                  >
+                    <Printer className="w-3.5 h-3.5 text-slate-600" />
+                    <span className="hidden sm:inline">Yazdır</span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -1386,8 +1387,12 @@ export default function ReconciliationView({
           {/* 4. UNIFIED COMPARISON & DISCREPANCY TABLE                                */}
           {/* ========================================================================= */}
           <div className="bg-white border border-slate-200/80 rounded-2xl shadow-xs overflow-hidden flex flex-col">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
+            {/* Mobile swipe hint banner */}
+            <div className="sm:hidden flex items-center justify-center gap-1.5 py-1.5 px-3 bg-slate-50 border-b border-slate-200 text-[11px] text-slate-500 italic">
+              <span>⟵ Karşılaştırma tablosunu sağa/sola kaydırabilirsiniz ⟶</span>
+            </div>
+            <div className="overflow-x-auto no-scrollbar">
+              <table className="w-full text-left border-collapse text-xs min-w-[860px]">
                 <thead>
                   <tr className="bg-slate-100/80 border-b border-slate-200 text-slate-700 font-bold uppercase tracking-wider select-none text-[11px]">
                     <th className="py-3 px-3 text-center w-10 text-slate-400">#</th>

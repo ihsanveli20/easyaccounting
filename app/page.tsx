@@ -494,41 +494,47 @@ export default function Home() {
     <div className="min-h-screen flex flex-col font-sans">
       {/* Top Navigation Bar */}
       <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/95 backdrop-blur-md shadow-xs">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 min-h-14 py-2 sm:h-16 sm:py-0 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
             <div
-              className={`w-10 h-10 rounded-xl flex items-center justify-center text-white shadow-md transition-all ${
+              className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center text-white shadow-md transition-all shrink-0 ${
                 activeTab === "summary"
                   ? "bg-gradient-to-tr from-emerald-600 to-teal-500 shadow-emerald-500/20"
                   : activeTab === "details"
                   ? "bg-gradient-to-tr from-indigo-600 to-sky-500 shadow-indigo-500/20"
                   : activeTab === "calculator"
                   ? "bg-gradient-to-tr from-slate-900 to-slate-700 shadow-slate-900/20"
-                  : "bg-gradient-to-tr from-rose-600 to-amber-500 shadow-rose-500/20"
+                  : activeTab === "reconciliation"
+                  ? "bg-gradient-to-tr from-rose-600 to-amber-500 shadow-rose-500/20"
+                  : "bg-gradient-to-tr from-blue-600 to-cyan-500 shadow-blue-500/20"
               }`}
             >
               {activeTab === "summary" ? (
-                <FileSpreadsheet className="w-5 h-5" />
+                <FileSpreadsheet className="w-4 h-4 sm:w-5 sm:h-5" />
               ) : activeTab === "details" ? (
-                <Layers className="w-5 h-5" />
+                <Layers className="w-4 h-4 sm:w-5 sm:h-5" />
               ) : activeTab === "calculator" ? (
-                <Calculator className="w-5 h-5 text-emerald-400" />
+                <Calculator className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-400" />
+              ) : activeTab === "reconciliation" ? (
+                <Scale className="w-4 h-4 sm:w-5 sm:h-5" />
               ) : (
-                <Scale className="w-5 h-5" />
+                <FileText className="w-4 h-4 sm:w-5 sm:h-5" />
               )}
             </div>
-            <div>
-              <h1 className="text-lg font-bold text-slate-900 tracking-tight flex items-center gap-2">
-                Hesap Planı & Cari Yönetim
+            <div className="min-w-0">
+              <h1 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight flex items-center gap-2 truncate">
+                <span>Hesap Planı & Cari Yönetim</span>
                 <span
-                  className={`hidden sm:inline-block text-xs font-semibold px-2 py-0.5 rounded-full border ${
+                  className={`hidden lg:inline-block text-xs font-semibold px-2 py-0.5 rounded-full border ${
                     activeTab === "summary"
                       ? "bg-emerald-50 text-emerald-700 border-emerald-200/60"
                       : activeTab === "details"
                       ? "bg-indigo-50 text-indigo-700 border-indigo-200/60"
                       : activeTab === "calculator"
                       ? "bg-slate-900 text-emerald-400 border-slate-700"
-                      : "bg-rose-50 text-rose-700 border-rose-200"
+                      : activeTab === "reconciliation"
+                      ? "bg-rose-50 text-rose-700 border-rose-200"
+                      : "bg-blue-50 text-blue-700 border-blue-200"
                   }`}
                 >
                   {activeTab === "summary"
@@ -537,22 +543,26 @@ export default function Home() {
                     ? "Firma Detay Ekstresi"
                     : activeTab === "calculator"
                     ? "Ayrıntılı Hesap Makinesi"
-                    : "Ekstre & Luca Karşılaştırma"}
+                    : activeTab === "reconciliation"
+                    ? "Ekstre & Luca Karşılaştırma"
+                    : "Fiyat Teklifi"}
                 </span>
               </h1>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-slate-500 hidden md:block">
                 {activeTab === "summary"
                   ? "Excel mizanını yükleyin, isim veya hesap adına göre anında arayın"
                   : activeTab === "details"
                   ? "Firmalara ait fiş, fatura ve detaylı hareketleri görüntüleyin"
                   : activeTab === "calculator"
                   ? "Fişli muhasebe hesap makinesi, KDV & tevkifat, vade farkı ve stopaj araçları"
-                  : "Firma PDF ekstreleri ile Luca mizanını karşılaştırın, eksik ve uyuşmayanları bulun"}
+                  : activeTab === "reconciliation"
+                  ? "Firma PDF ekstreleri ile Luca mizanını karşılaştırın, eksik ve uyuşmayanları bulun"
+                  : "Fiyat teklifi oluşturun, otomatik KDV ve toplamlar hesaplayıp yazdırın"}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {activeTab === "summary" ? (
               <>
                 <button
@@ -561,22 +571,23 @@ export default function Home() {
                   title="Örnek sütun formatına sahip boş şablon indir"
                 >
                   <Download className="w-3.5 h-3.5 text-slate-500" />
-                  Örnek Şablon
+                  <span>Şablon</span>
                 </button>
 
                 {records.length === 0 ? (
                   <button
                     onClick={loadSampleData}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100/80 rounded-lg transition-colors border border-emerald-200 shadow-2xs"
+                    className="inline-flex items-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100/80 rounded-lg transition-colors border border-emerald-200 shadow-2xs"
                   >
                     <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
-                    Örnek Veri ile Dene
+                    <span className="hidden sm:inline">Örnek Veri ile Dene</span>
+                    <span className="sm:hidden">Örnek Veri</span>
                   </button>
                 ) : (
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1 sm:gap-2">
                     <button
                       onClick={() => setShowMappingModal(true)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200/80 rounded-lg transition-colors border border-slate-200"
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200/80 rounded-lg transition-colors border border-slate-200"
                       title="Sütun eşleştirmesini değiştir"
                     >
                       <Settings2 className="w-3.5 h-3.5 text-slate-500" />
@@ -589,14 +600,15 @@ export default function Home() {
                           `Filtrelenmis_${fileName || "Hesap_Listesi"}`
                         )
                       }
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-800 bg-emerald-100/80 hover:bg-emerald-200/80 rounded-lg transition-colors border border-emerald-300"
+                      className="inline-flex items-center gap-1 px-2.5 sm:px-3 py-1.5 text-xs font-semibold text-emerald-800 bg-emerald-100/80 hover:bg-emerald-200/80 rounded-lg transition-colors border border-emerald-300"
                     >
                       <Download className="w-3.5 h-3.5 text-emerald-700" />
-                      <span>Dışa Aktar ({filteredAndSortedRecords.length})</span>
+                      <span className="hidden sm:inline">Dışa Aktar</span>
+                      <span>({filteredAndSortedRecords.length})</span>
                     </button>
                     <button
                       onClick={resetAll}
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors border border-transparent hover:border-rose-200"
+                      className="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors border border-transparent hover:border-rose-200"
                       title="Listeyi temizle"
                     >
                       <RotateCcw className="w-3.5 h-3.5" />
@@ -610,10 +622,11 @@ export default function Home() {
                 {companies.length === 0 && (
                   <button
                     onClick={() => setCompanies(SAMPLE_COMPANY_DETAILS)}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors border border-indigo-200 shadow-2xs"
+                    className="inline-flex items-center gap-1 px-2.5 sm:px-3.5 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors border border-indigo-200 shadow-2xs"
                   >
                     <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
-                    Örnek Detay Yükle
+                    <span className="hidden sm:inline">Örnek Detay Yükle</span>
+                    <span className="sm:hidden">Örnek</span>
                   </button>
                 )}
               </div>
@@ -622,24 +635,25 @@ export default function Home() {
         </div>
       </header>
 
-      {/* Main Navigation Sub-Bar (Two Distinct Menus) */}
-      <div className="bg-white/80 border-b border-slate-200/80 backdrop-blur-md sticky top-16 z-20 shadow-2xs">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between">
-          <nav className="flex space-x-2 sm:space-x-3 py-2.5">
+      {/* Main Navigation Sub-Bar (Swipeable on Mobile) */}
+      <div className="bg-white/90 border-b border-slate-200/80 backdrop-blur-md sticky top-14 sm:top-16 z-20 shadow-2xs">
+        <div className="max-w-7xl mx-auto px-2 sm:px-6 lg:px-8 flex items-center justify-between">
+          <nav className="flex items-center space-x-1 sm:space-x-2 py-2 overflow-x-auto no-scrollbar scroll-smooth flex-nowrap w-full">
             {/* Menu 1 Tab: Hesap Planı & Bakiyeler */}
             <button
               onClick={() => setActiveTab("summary")}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all ${
+              className={`shrink-0 flex items-center gap-1.5 px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all whitespace-nowrap ${
                 activeTab === "summary"
                   ? "bg-emerald-600 text-white shadow-sm shadow-emerald-600/25"
                   : "text-slate-600 hover:text-slate-900 hover:bg-slate-100/80"
               }`}
             >
-              <FileSpreadsheet className="w-4 h-4" />
-              <span>Hesap Planı & Bakiyeler</span>
+              <FileSpreadsheet className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <span className="hidden sm:inline">Hesap Planı & Bakiyeler</span>
+              <span className="sm:hidden">Hesap Planı</span>
               {records.length > 0 && (
                 <span
-                  className={`text-[11px] px-2 py-0.5 rounded-full font-bold ${
+                  className={`text-[10px] sm:text-[11px] px-1.5 sm:px-2 py-0.5 rounded-full font-bold ${
                     activeTab === "summary"
                       ? "bg-white/20 text-white"
                       : "bg-slate-200 text-slate-700"
@@ -653,17 +667,18 @@ export default function Home() {
             {/* Menu 2 Tab: Firma Detay Hareketleri */}
             <button
               onClick={() => setActiveTab("details")}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all ${
+              className={`shrink-0 flex items-center gap-1.5 px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all whitespace-nowrap ${
                 activeTab === "details"
                   ? "bg-indigo-600 text-white shadow-sm shadow-indigo-600/25"
                   : "text-slate-600 hover:text-slate-900 hover:bg-slate-100/80"
               }`}
             >
-              <Layers className="w-4 h-4" />
-              <span>Firma Detay Hareketleri (Muavin & Ekstre)</span>
+              <Layers className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <span className="hidden md:inline">Firma Detay Hareketleri (Muavin & Ekstre)</span>
+              <span className="md:hidden">Firma Detay</span>
               {companies.length > 0 ? (
                 <span
-                  className={`text-[11px] px-2 py-0.5 rounded-full font-bold ${
+                  className={`text-[10px] sm:text-[11px] px-1.5 sm:px-2 py-0.5 rounded-full font-bold ${
                     activeTab === "details"
                       ? "bg-white/20 text-white"
                       : "bg-indigo-100 text-indigo-700"
@@ -672,7 +687,7 @@ export default function Home() {
                   {companies.length}
                 </span>
               ) : (
-                <span className="text-[10px] px-1.5 py-0.5 rounded-md font-bold uppercase tracking-wider bg-indigo-50 text-indigo-600 border border-indigo-200">
+                <span className="hidden sm:inline-block text-[10px] px-1.5 py-0.5 rounded-md font-bold uppercase tracking-wider bg-indigo-50 text-indigo-600 border border-indigo-200">
                   YENİ
                 </span>
               )}
@@ -681,16 +696,17 @@ export default function Home() {
             {/* Menu 3 Tab: Ayrıntılı Hesap Makinesi */}
             <button
               onClick={() => setActiveTab("calculator")}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all ${
+              className={`shrink-0 flex items-center gap-1.5 px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all whitespace-nowrap ${
                 activeTab === "calculator"
                   ? "bg-slate-900 text-white shadow-sm shadow-slate-900/25"
                   : "text-slate-600 hover:text-slate-900 hover:bg-slate-100/80"
               }`}
             >
-              <Calculator className="w-4 h-4 text-emerald-400" />
-              <span>Ayrıntılı Hesap Makinesi</span>
+              <Calculator className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-400" />
+              <span className="hidden sm:inline">Ayrıntılı Hesap Makinesi</span>
+              <span className="sm:hidden">Hesap Makinesi</span>
               <span
-                className={`text-[10px] px-1.5 py-0.5 rounded-md font-bold uppercase tracking-wider ${
+                className={`hidden sm:inline-block text-[10px] px-1.5 py-0.5 rounded-md font-bold uppercase tracking-wider ${
                   activeTab === "calculator"
                     ? "bg-emerald-500/25 text-emerald-300 border border-emerald-400/40"
                     : "bg-emerald-50 text-emerald-700 border border-emerald-200"
@@ -703,16 +719,17 @@ export default function Home() {
             {/* Menu 4 Tab: Ekstre Karşılaştırma & Mutabakat */}
             <button
               onClick={() => setActiveTab("reconciliation")}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all ${
+              className={`shrink-0 flex items-center gap-1.5 px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all whitespace-nowrap ${
                 activeTab === "reconciliation"
                   ? "bg-rose-600 text-white shadow-sm shadow-rose-600/25"
                   : "text-slate-600 hover:text-slate-900 hover:bg-slate-100/80"
               }`}
             >
-              <Scale className="w-4 h-4" />
-              <span>Ekstre Karşılaştırma & Mutabakat</span>
+              <Scale className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <span className="hidden md:inline">Ekstre Karşılaştırma & Mutabakat</span>
+              <span className="md:hidden">Mutabakat</span>
               <span
-                className={`text-[10px] px-1.5 py-0.5 rounded-md font-bold uppercase tracking-wider ${
+                className={`hidden sm:inline-block text-[10px] px-1.5 py-0.5 rounded-md font-bold uppercase tracking-wider ${
                   activeTab === "reconciliation"
                     ? "bg-white/20 text-white"
                     : "bg-rose-50 text-rose-700 border border-rose-200"
@@ -725,44 +742,30 @@ export default function Home() {
             {/* Menu 5 Tab: Fiyat Teklifi */}
             <button
               onClick={() => setActiveTab("quote")}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all ${
+              className={`shrink-0 flex items-center gap-1.5 px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all whitespace-nowrap ${
                 activeTab === "quote"
                   ? "bg-blue-600 text-white shadow-sm shadow-blue-600/25"
                   : "text-slate-600 hover:text-slate-900 hover:bg-slate-100/80"
               }`}
             >
-              <FileText className="w-4 h-4" />
+              <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               <span>Fiyat Teklifi</span>
               <span
-                className={`text-[10px] px-1.5 py-0.5 rounded-md font-bold uppercase tracking-wider ${
+                className={`hidden sm:inline-block text-[10px] px-1.5 py-0.5 rounded-md font-bold uppercase tracking-wider ${
                   activeTab === "quote"
                     ? "bg-white/20 text-white"
                     : "bg-blue-50 text-blue-700 border border-blue-200"
                 }`}
               >
-                YAZDIR & İNDİR
+                YAZDIR
               </span>
             </button>
           </nav>
-
-          <div className="hidden lg:flex items-center gap-2 text-xs text-slate-500">
-            {activeTab === "summary" ? (
-              <span>Genel bakiye mizanı üzerinden arama ve listeleme</span>
-            ) : activeTab === "details" ? (
-              <span>Her firmanın tarih bazlı fatura, havale ve muavin hareketleri</span>
-            ) : activeTab === "calculator" ? (
-              <span>Fişli hesap makinesi, KDV & tevkifat, vade farkı ve stopaj araçları</span>
-            ) : activeTab === "reconciliation" ? (
-              <span>Firma PDF ekstreleri ile Luca mizanı arasındaki eksik ve uyuşmayanları tespit edin</span>
-            ) : (
-              <span>Malzeme fiyat teklifi oluşturun, otomatik KDV ve toplamlar hesaplayıp yazdırın</span>
-            )}
-          </div>
         </div>
       </div>
 
       {/* Main Content Area */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex-1 w-full flex flex-col gap-6">
+      <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 flex-1 w-full flex flex-col gap-4 sm:gap-6">
         {/* ========================================================================= */}
         {/* TAB 1: SUMMARY ACCOUNT LIST (HESAP PLANI & BAKİYELER)                      */}
         {/* ========================================================================= */}
@@ -935,106 +938,107 @@ export default function Home() {
                 </div>
 
                 {/* Metric KPI Cards */}
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
                   {/* Card 1: Kayıt Sayısı */}
-                  <div className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-2xs flex flex-col justify-between">
-                    <div className="flex items-center justify-between text-slate-500 mb-2">
-                      <span className="text-xs font-medium uppercase tracking-wider">
+                  <div className="p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-white border border-slate-200/80 shadow-2xs flex flex-col justify-between">
+                    <div className="flex items-center justify-between text-slate-500 mb-1.5 sm:mb-2">
+                      <span className="text-[11px] sm:text-xs font-medium uppercase tracking-wider">
                         Kayıt Sayısı
                       </span>
-                      <div className="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center text-slate-600">
-                        <Users className="w-4 h-4" />
+                      <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-lg bg-slate-100 flex items-center justify-center text-slate-600">
+                        <Users className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                       </div>
                     </div>
                     <div>
-                      <div className="text-2xl font-bold text-slate-900 tracking-tight">
+                      <div className="text-lg sm:text-2xl font-bold text-slate-900 tracking-tight truncate">
                         {totalStats.filteredCount}
                         {totalStats.filteredCount !== totalStats.totalCount && (
-                          <span className="text-xs font-normal text-slate-400 ml-1.5">
+                          <span className="text-[11px] sm:text-xs font-normal text-slate-400 ml-1 sm:ml-1.5">
                             / {totalStats.totalCount}
                           </span>
                         )}
                       </div>
-                      <div className="text-xs text-slate-500 mt-1">
-                        {searchQuery ? "Arama kriterine uygun" : "Toplam liste kaydı"}
+                      <div className="text-[11px] sm:text-xs text-slate-500 mt-0.5 sm:mt-1 truncate">
+                        {searchQuery ? "Kriterlere uygun" : "Toplam kayıt"}
                       </div>
                     </div>
                   </div>
 
                   {/* Card 2: Toplam Borç */}
-                  <div className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-2xs flex flex-col justify-between">
-                    <div className="flex items-center justify-between text-slate-500 mb-2">
-                      <span className="text-xs font-medium uppercase tracking-wider">
+                  <div className="p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-white border border-slate-200/80 shadow-2xs flex flex-col justify-between">
+                    <div className="flex items-center justify-between text-slate-500 mb-1.5 sm:mb-2">
+                      <span className="text-[11px] sm:text-xs font-medium uppercase tracking-wider">
                         Toplam Borç
                       </span>
-                      <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600">
-                        <TrendingUp className="w-4 h-4" />
+                      <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600">
+                        <TrendingUp className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                       </div>
                     </div>
                     <div>
-                      <div className="text-xl sm:text-2xl font-bold text-blue-700 tracking-tight tabular-nums">
+                      <div className="text-sm sm:text-2xl font-bold text-blue-700 tracking-tight tabular-nums truncate" title={formatCurrency(filteredStats.debitSum)}>
                         {formatCurrency(filteredStats.debitSum)}
                       </div>
-                      <div className="text-xs text-slate-500 mt-1">
-                        Listelenen borç toplamı
+                      <div className="text-[11px] sm:text-xs text-slate-500 mt-0.5 sm:mt-1 truncate">
+                        Listelenen borç
                       </div>
                     </div>
                   </div>
 
                   {/* Card 3: Toplam Alacak */}
-                  <div className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-2xs flex flex-col justify-between">
-                    <div className="flex items-center justify-between text-slate-500 mb-2">
-                      <span className="text-xs font-medium uppercase tracking-wider">
+                  <div className="p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-white border border-slate-200/80 shadow-2xs flex flex-col justify-between">
+                    <div className="flex items-center justify-between text-slate-500 mb-1.5 sm:mb-2">
+                      <span className="text-[11px] sm:text-xs font-medium uppercase tracking-wider">
                         Toplam Alacak
                       </span>
-                      <div className="w-7 h-7 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600">
-                        <TrendingDown className="w-4 h-4" />
+                      <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600">
+                        <TrendingDown className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                       </div>
                     </div>
                     <div>
-                      <div className="text-xl sm:text-2xl font-bold text-emerald-700 tracking-tight tabular-nums">
+                      <div className="text-sm sm:text-2xl font-bold text-emerald-700 tracking-tight tabular-nums truncate" title={formatCurrency(filteredStats.creditSum)}>
                         {formatCurrency(filteredStats.creditSum)}
                       </div>
-                      <div className="text-xs text-slate-500 mt-1">
-                        Listelenen alacak toplamı
+                      <div className="text-[11px] sm:text-xs text-slate-500 mt-0.5 sm:mt-1 truncate">
+                        Listelenen alacak
                       </div>
                     </div>
                   </div>
 
                   {/* Card 4: Net Bakiye */}
-                  <div className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-2xs flex flex-col justify-between">
-                    <div className="flex items-center justify-between text-slate-500 mb-2">
-                      <span className="text-xs font-medium uppercase tracking-wider">
+                  <div className="p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-white border border-slate-200/80 shadow-2xs flex flex-col justify-between">
+                    <div className="flex items-center justify-between text-slate-500 mb-1.5 sm:mb-2">
+                      <span className="text-[11px] sm:text-xs font-medium uppercase tracking-wider">
                         Net Bakiye
                       </span>
-                      <div className="w-7 h-7 rounded-lg bg-purple-50 flex items-center justify-center text-purple-600">
-                        <Scale className="w-4 h-4" />
+                      <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-lg bg-purple-50 flex items-center justify-center text-purple-600">
+                        <Scale className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                       </div>
                     </div>
                     <div>
                       <div
-                        className={`text-xl sm:text-2xl font-bold tracking-tight tabular-nums ${
+                        className={`text-sm sm:text-2xl font-bold tracking-tight tabular-nums truncate ${
                           filteredStats.balanceSum > 0.001
                             ? "text-blue-700"
                             : filteredStats.balanceSum < -0.001
                             ? "text-emerald-700"
                             : "text-slate-700"
                         }`}
+                        title={formatCurrency(Math.abs(filteredStats.balanceSum))}
                       >
                         {formatCurrency(Math.abs(filteredStats.balanceSum))}
                       </div>
-                      <div className="text-xs font-medium mt-1">
+                      <div className="text-[10px] sm:text-xs font-medium mt-0.5 sm:mt-1 truncate">
                         {filteredStats.balanceSum > 0.001 ? (
-                          <span className="text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">
-                            Borç Bakiyesi (Net)
+                          <span className="text-blue-600 bg-blue-50 px-1 py-0.5 rounded">
+                            Borç Bakiyesi
                           </span>
                         ) : filteredStats.balanceSum < -0.001 ? (
-                          <span className="text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">
-                            Alacak Bakiyesi (Net)
+                          <span className="text-emerald-600 bg-emerald-50 px-1 py-0.5 rounded">
+                            Alacak Bakiyesi
                           </span>
                         ) : (
-                          <span className="text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
-                            Dengede (0,00 ₺)
+                          <span className="text-slate-500 bg-slate-100 px-1 py-0.5 rounded">
+                            Dengede (0 ₺)
                           </span>
                         )}
                       </div>
@@ -1067,10 +1071,10 @@ export default function Home() {
                     </div>
 
                     {/* Filter Chips */}
-                    <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 text-xs">
+                    <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar scroll-smooth pb-1 sm:pb-0 text-xs flex-nowrap">
                       <button
                         onClick={() => setBalanceFilter("all")}
-                        className={`px-3 py-2 rounded-xl font-medium transition-all whitespace-nowrap ${
+                        className={`px-3 py-2 rounded-xl font-medium transition-all whitespace-nowrap shrink-0 ${
                           balanceFilter === "all"
                             ? "bg-slate-900 text-white shadow-xs"
                             : "bg-slate-100 hover:bg-slate-200/80 text-slate-600"
@@ -1080,7 +1084,7 @@ export default function Home() {
                       </button>
                       <button
                         onClick={() => setBalanceFilter("debit")}
-                        className={`px-3 py-2 rounded-xl font-medium transition-all whitespace-nowrap ${
+                        className={`px-3 py-2 rounded-xl font-medium transition-all whitespace-nowrap shrink-0 ${
                           balanceFilter === "debit"
                             ? "bg-blue-600 text-white shadow-xs"
                             : "bg-blue-50 hover:bg-blue-100/80 text-blue-700"
@@ -1090,7 +1094,7 @@ export default function Home() {
                       </button>
                       <button
                         onClick={() => setBalanceFilter("credit")}
-                        className={`px-3 py-2 rounded-xl font-medium transition-all whitespace-nowrap ${
+                        className={`px-3 py-2 rounded-xl font-medium transition-all whitespace-nowrap shrink-0 ${
                           balanceFilter === "credit"
                             ? "bg-emerald-600 text-white shadow-xs"
                             : "bg-emerald-50 hover:bg-emerald-100/80 text-emerald-700"
@@ -1100,7 +1104,7 @@ export default function Home() {
                       </button>
                       <button
                         onClick={() => setBalanceFilter("zero")}
-                        className={`px-3 py-2 rounded-xl font-medium transition-all whitespace-nowrap ${
+                        className={`px-3 py-2 rounded-xl font-medium transition-all whitespace-nowrap shrink-0 ${
                           balanceFilter === "zero"
                             ? "bg-slate-700 text-white shadow-xs"
                             : "bg-slate-100 hover:bg-slate-200/80 text-slate-600"
@@ -1133,8 +1137,12 @@ export default function Home() {
 
                 {/* Table Container */}
                 <div className="bg-white border border-slate-200/80 rounded-2xl shadow-xs overflow-hidden flex flex-col">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse text-sm">
+                  <div className="sm:hidden px-3.5 py-1.5 bg-slate-50 border-b border-slate-100 text-[11px] text-slate-500 italic flex items-center justify-between">
+                    <span>⟵ Sağa kaydırabilirsiniz ⟶</span>
+                    <span className="font-semibold">{filteredAndSortedRecords.length} Kayıt</span>
+                  </div>
+                  <div className="overflow-x-auto no-scrollbar sm:overflow-x-auto">
+                    <table className="w-full text-left border-collapse text-xs sm:text-sm min-w-[660px]">
                       <thead>
                         <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-600 text-xs font-semibold uppercase tracking-wider select-none">
                           <th className="py-3.5 px-4 w-12 text-center text-slate-400">#</th>

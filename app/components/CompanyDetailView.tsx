@@ -896,10 +896,10 @@ export default function CompanyDetailView({
                   </div>
 
                   {/* Filter Pills */}
-                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 text-xs">
+                  <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar scroll-smooth pb-1 sm:pb-0 text-xs flex-nowrap">
                     <button
                       onClick={() => setBalanceFilter("all")}
-                      className={`px-3 py-2 rounded-xl font-medium transition-all whitespace-nowrap ${
+                      className={`px-3 py-2 rounded-xl font-medium transition-all whitespace-nowrap shrink-0 ${
                         balanceFilter === "all"
                           ? "bg-slate-900 text-white shadow-xs"
                           : "bg-slate-100 hover:bg-slate-200/80 text-slate-600"
@@ -909,7 +909,7 @@ export default function CompanyDetailView({
                     </button>
                     <button
                       onClick={() => setBalanceFilter("debit")}
-                      className={`px-3 py-2 rounded-xl font-medium transition-all whitespace-nowrap ${
+                      className={`px-3 py-2 rounded-xl font-medium transition-all whitespace-nowrap shrink-0 ${
                         balanceFilter === "debit"
                           ? "bg-blue-600 text-white shadow-xs"
                           : "bg-blue-50 hover:bg-blue-100/80 text-blue-700"
@@ -919,7 +919,7 @@ export default function CompanyDetailView({
                     </button>
                     <button
                       onClick={() => setBalanceFilter("credit")}
-                      className={`px-3 py-2 rounded-xl font-medium transition-all whitespace-nowrap ${
+                      className={`px-3 py-2 rounded-xl font-medium transition-all whitespace-nowrap shrink-0 ${
                         balanceFilter === "credit"
                           ? "bg-emerald-600 text-white shadow-xs"
                           : "bg-emerald-50 hover:bg-emerald-100/80 text-emerald-700"
@@ -929,7 +929,7 @@ export default function CompanyDetailView({
                     </button>
                     <button
                       onClick={() => setBalanceFilter("zero")}
-                      className={`px-3 py-2 rounded-xl font-medium transition-all whitespace-nowrap ${
+                      className={`px-3 py-2 rounded-xl font-medium transition-all whitespace-nowrap shrink-0 ${
                         balanceFilter === "zero"
                           ? "bg-slate-700 text-white shadow-xs"
                           : "bg-slate-100 hover:bg-slate-200/80 text-slate-600"
@@ -962,8 +962,12 @@ export default function CompanyDetailView({
 
               {/* Companies Table / Grid */}
               <div className="bg-white border border-slate-200/80 rounded-2xl shadow-xs overflow-hidden flex flex-col">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse text-sm">
+                <div className="sm:hidden px-3.5 py-1.5 bg-slate-50 border-b border-slate-100 text-[11px] text-slate-500 italic flex items-center justify-between">
+                  <span>⟵ Sağa kaydırabilirsiniz ⟶</span>
+                  <span className="font-semibold">{filteredAndSortedCompanies.length} Firma</span>
+                </div>
+                <div className="overflow-x-auto no-scrollbar sm:overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs sm:text-sm min-w-[680px]">
                     <thead>
                       <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-600 text-xs font-semibold uppercase tracking-wider select-none">
                         <th className="py-3.5 px-4 w-12 text-center text-slate-400">#</th>
@@ -1201,27 +1205,28 @@ export default function CompanyDetailView({
         /* ========================================================================= */
         <>
           {/* Top Return & Switcher Navigation */}
-          <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 bg-white/90 border border-slate-200/80 rounded-2xl shadow-2xs">
-            <div className="flex items-center gap-3">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-3 sm:p-3.5 bg-white/90 border border-slate-200/80 rounded-2xl shadow-2xs">
+            <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
               <button
                 onClick={() => setSelectedCompanyId(null)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-all shadow-2xs"
+                className="shrink-0 inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-all shadow-2xs"
               >
                 <ArrowLeft className="w-3.5 h-3.5" />
-                <span>‹ Tüm Firmalara Dön</span>
+                <span className="hidden sm:inline">‹ Tüm Firmalara Dön</span>
+                <span className="sm:hidden">‹ Firmalar</span>
               </button>
 
-              <div className="h-5 w-px bg-slate-200"></div>
+              <div className="h-5 w-px bg-slate-200 shrink-0"></div>
 
               {/* Company Switcher dropdown */}
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-medium text-slate-500 hidden sm:inline">
-                  Firma Değiştir:
+              <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                <span className="text-xs font-medium text-slate-500 hidden md:inline shrink-0">
+                  Firma:
                 </span>
                 <select
                   value={activeCompany.id}
                   onChange={(e) => setSelectedCompanyId(e.target.value)}
-                  className="text-xs font-semibold text-slate-800 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 max-w-xs truncate"
+                  className="text-xs font-semibold text-slate-800 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 w-full sm:max-w-xs truncate"
                 >
                   {companies.map((c) => (
                     <option key={c.id} value={c.id}>
@@ -1232,33 +1237,34 @@ export default function CompanyDetailView({
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center flex-wrap gap-1.5 sm:gap-2 shrink-0">
               <button
                 onClick={handleSplitCompositeDescriptions}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors border border-indigo-200 shadow-2xs"
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors border border-indigo-200 shadow-2xs"
                 title="Açıklama sütunundaki '11/01/2024-YLD...-Firma' formatını Tarih, Fatura No ve Açıklama olarak ayrı sütunlara böl"
               >
                 <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
-                <span>Açıklamayı Sütunlara Böl</span>
+                <span className="hidden sm:inline">Açıklamayı Sütunlara Böl</span>
+                <span className="sm:hidden">Sütunlara Böl</span>
               </button>
               <button
                 onClick={() => setShowAddTxModal(true)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors shadow-2xs"
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors shadow-2xs"
               >
                 <Plus className="w-3.5 h-3.5" />
-                <span>Yeni Hareket Ekle</span>
+                <span>Ekle</span>
               </button>
               <button
                 onClick={() => exportCompanyStatementToExcel(activeCompany)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors border border-emerald-200"
-                title="Ekstreyi Tarih, Fatura No ve Açıklama ayrı sütunlar halinde Excel olarak indir"
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors border border-emerald-200"
+                title="Ekstreyi Excel olarak indir"
               >
                 <Download className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Ekstre Excel İndir</span>
+                <span>Excel</span>
               </button>
               <button
                 onClick={() => window.print()}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors border border-slate-200"
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors border border-slate-200"
                 title="Ekstreyi yazdır veya PDF olarak kaydet"
               >
                 <Printer className="w-3.5 h-3.5 text-slate-600" />
@@ -1401,10 +1407,10 @@ export default function CompanyDetailView({
               </div>
 
               {/* Transaction Type Filter */}
-              <div className="flex items-center gap-1.5 overflow-x-auto text-xs">
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar scroll-smooth text-xs pb-1 sm:pb-0 flex-nowrap">
                 <button
                   onClick={() => setTxTypeFilter("all")}
-                  className={`px-3 py-1.5 rounded-lg font-medium transition-all ${
+                  className={`px-3 py-1.5 rounded-lg font-medium transition-all whitespace-nowrap shrink-0 ${
                     txTypeFilter === "all"
                       ? "bg-slate-900 text-white"
                       : "bg-slate-100 text-slate-600 hover:bg-slate-200"
@@ -1414,7 +1420,7 @@ export default function CompanyDetailView({
                 </button>
                 <button
                   onClick={() => setTxTypeFilter("invoice")}
-                  className={`px-3 py-1.5 rounded-lg font-medium transition-all ${
+                  className={`px-3 py-1.5 rounded-lg font-medium transition-all whitespace-nowrap shrink-0 ${
                     txTypeFilter === "invoice"
                       ? "bg-indigo-600 text-white"
                       : "bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
@@ -1424,7 +1430,7 @@ export default function CompanyDetailView({
                 </button>
                 <button
                   onClick={() => setTxTypeFilter("payment")}
-                  className={`px-3 py-1.5 rounded-lg font-medium transition-all ${
+                  className={`px-3 py-1.5 rounded-lg font-medium transition-all whitespace-nowrap shrink-0 ${
                     txTypeFilter === "payment"
                       ? "bg-emerald-600 text-white"
                       : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
@@ -1434,7 +1440,7 @@ export default function CompanyDetailView({
                 </button>
                 <button
                   onClick={() => setTxTypeFilter("cash")}
-                  className={`px-3 py-1.5 rounded-lg font-medium transition-all ${
+                  className={`px-3 py-1.5 rounded-lg font-medium transition-all whitespace-nowrap shrink-0 ${
                     txTypeFilter === "cash"
                       ? "bg-amber-600 text-white"
                       : "bg-amber-50 text-amber-700 hover:bg-amber-100"
@@ -1442,10 +1448,10 @@ export default function CompanyDetailView({
                 >
                   Kasa İşlemleri
                 </button>
-                <div className="h-4 w-px bg-slate-200 mx-1"></div>
+                <div className="h-4 w-px bg-slate-200 mx-1 shrink-0"></div>
                 <button
                   onClick={handleSplitCompositeDescriptions}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold text-xs text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 transition-all shadow-2xs whitespace-nowrap"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold text-xs text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 transition-all shadow-2xs whitespace-nowrap shrink-0"
                   title="Açıklama sütunundaki '11/01/2024-YLD2024...-Firma' formatını Tarih, Fatura No ve Açıklama olarak ayrı sütunlara böl"
                 >
                   <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
@@ -1476,8 +1482,12 @@ export default function CompanyDetailView({
 
           {/* Detailed Statement Table (Cari Ekstre / Muavin Çizelgesi) */}
           <div className="bg-white border border-slate-200/80 rounded-2xl shadow-xs overflow-hidden flex flex-col">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-sm">
+            <div className="sm:hidden px-3.5 py-1.5 bg-slate-50 border-b border-slate-100 text-[11px] text-slate-500 italic flex items-center justify-between">
+              <span>⟵ Sağa kaydırarak ekstre detayını inceleyin ⟶</span>
+              <span className="font-semibold">{filteredTransactions.length} İşlem</span>
+            </div>
+            <div className="overflow-x-auto no-scrollbar sm:overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs sm:text-sm min-w-[780px]">
                 <thead>
                   <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-600 text-xs font-semibold uppercase tracking-wider select-none">
                     <th className="py-3.5 px-4 w-12 text-center text-slate-400">#</th>

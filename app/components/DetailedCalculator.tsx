@@ -520,71 +520,71 @@ export default function DetailedCalculator() {
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Top Calculator Mode Selection Bar */}
+      {/* Top Calculator Mode Selection Bar (Swipeable on Mobile) */}
       <div className="bg-white border border-slate-200/80 rounded-2xl p-2 sm:p-2.5 shadow-2xs">
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-1.5 sm:gap-2">
+        <div className="flex sm:grid sm:grid-cols-3 lg:grid-cols-5 overflow-x-auto no-scrollbar scroll-smooth gap-1.5 sm:gap-2 flex-nowrap sm:flex-wrap">
           {/* Mode 1: Desk Calculator */}
           <button
             onClick={() => setActiveMode("standard")}
-            className={`flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all ${
+            className={`shrink-0 flex items-center justify-center gap-1.5 sm:gap-2 px-3 py-2 sm:py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all whitespace-nowrap ${
               activeMode === "standard"
                 ? "bg-slate-900 text-white shadow-sm"
                 : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
             }`}
           >
-            <Calculator className="w-4 h-4 text-emerald-400" />
+            <Calculator className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-400" />
             <span>Masaüstü Fişli Hesap</span>
           </button>
 
           {/* Mode 2: VAT & Withholding */}
           <button
             onClick={() => setActiveMode("vat")}
-            className={`flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all ${
+            className={`shrink-0 flex items-center justify-center gap-1.5 sm:gap-2 px-3 py-2 sm:py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all whitespace-nowrap ${
               activeMode === "vat"
                 ? "bg-emerald-600 text-white shadow-sm"
                 : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
             }`}
           >
-            <Percent className="w-4 h-4 text-amber-300" />
+            <Percent className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-300" />
             <span>KDV & Tevkifat</span>
           </button>
 
           {/* Mode 3: Due Date & Interest */}
           <button
             onClick={() => setActiveMode("interest")}
-            className={`flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all ${
+            className={`shrink-0 flex items-center justify-center gap-1.5 sm:gap-2 px-3 py-2 sm:py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all whitespace-nowrap ${
               activeMode === "interest"
                 ? "bg-indigo-600 text-white shadow-sm"
                 : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
             }`}
           >
-            <Calendar className="w-4 h-4 text-sky-300" />
+            <Calendar className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-sky-300" />
             <span>Vade Farkı & Faiz</span>
           </button>
 
           {/* Mode 4: SMM & Withholding */}
           <button
             onClick={() => setActiveMode("withholding")}
-            className={`flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all ${
+            className={`shrink-0 flex items-center justify-center gap-1.5 sm:gap-2 px-3 py-2 sm:py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all whitespace-nowrap ${
               activeMode === "withholding"
                 ? "bg-purple-600 text-white shadow-sm"
                 : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
             }`}
           >
-            <Receipt className="w-4 h-4 text-pink-300" />
+            <Receipt className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-pink-300" />
             <span>Stopaj & SMM</span>
           </button>
 
           {/* Mode 5: Profit Margin & Discount */}
           <button
             onClick={() => setActiveMode("margin")}
-            className={`flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all col-span-2 sm:col-span-1 ${
+            className={`shrink-0 flex items-center justify-center gap-1.5 sm:gap-2 px-3 py-2 sm:py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all whitespace-nowrap ${
               activeMode === "margin"
                 ? "bg-amber-600 text-white shadow-sm"
                 : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
             }`}
           >
-            <TrendingUp className="w-4 h-4 text-emerald-300" />
+            <TrendingUp className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-300" />
             <span>Kar Marjı & İskonto</span>
           </button>
         </div>
@@ -649,38 +649,38 @@ export default function DetailedCalculator() {
             </div>
 
             {/* Quick Tax Shortcuts Bar */}
-            <div className="grid grid-cols-5 gap-1.5 sm:gap-2">
+            <div className="grid grid-cols-5 gap-1 sm:gap-2">
               <button
                 onClick={() => handleVatShortcut(20, true)}
-                className="py-1.5 px-2 rounded-xl text-xs font-bold bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 transition-colors shadow-2xs"
+                className="py-1.5 px-0.5 sm:px-2 rounded-lg sm:rounded-xl text-[10px] sm:text-xs font-bold bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 transition-colors shadow-2xs truncate text-center touch-manipulation active:scale-95"
                 title="Tutara %20 KDV ekler"
               >
                 +%20 KDV
               </button>
               <button
                 onClick={() => handleVatShortcut(20, false)}
-                className="py-1.5 px-2 rounded-xl text-xs font-bold bg-blue-50/60 hover:bg-blue-100 text-blue-700 border border-blue-200 transition-colors shadow-2xs"
+                className="py-1.5 px-0.5 sm:px-2 rounded-lg sm:rounded-xl text-[10px] sm:text-xs font-bold bg-blue-50/60 hover:bg-blue-100 text-blue-700 border border-blue-200 transition-colors shadow-2xs truncate text-center touch-manipulation active:scale-95"
                 title="KDV dahil tutardan KDV'yi çıkarır (KDV Hariç)"
               >
                 -%20 KDV
               </button>
               <button
                 onClick={() => handleVatShortcut(10, true)}
-                className="py-1.5 px-2 rounded-xl text-xs font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition-colors shadow-2xs"
+                className="py-1.5 px-0.5 sm:px-2 rounded-lg sm:rounded-xl text-[10px] sm:text-xs font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition-colors shadow-2xs truncate text-center touch-manipulation active:scale-95"
                 title="Tutara %10 KDV ekler"
               >
                 +%10 KDV
               </button>
               <button
                 onClick={() => handleVatShortcut(10, false)}
-                className="py-1.5 px-2 rounded-xl text-xs font-bold bg-indigo-50/60 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition-colors shadow-2xs"
+                className="py-1.5 px-0.5 sm:px-2 rounded-lg sm:rounded-xl text-[10px] sm:text-xs font-bold bg-indigo-50/60 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition-colors shadow-2xs truncate text-center touch-manipulation active:scale-95"
                 title="KDV dahil tutardan %10 KDV çıkarır"
               >
                 -%10 KDV
               </button>
               <button
                 onClick={() => handleVatShortcut(1, true)}
-                className="py-1.5 px-2 rounded-xl text-xs font-bold bg-teal-50 hover:bg-teal-100 text-teal-700 border border-teal-200 transition-colors shadow-2xs"
+                className="py-1.5 px-0.5 sm:px-2 rounded-lg sm:rounded-xl text-[10px] sm:text-xs font-bold bg-teal-50 hover:bg-teal-100 text-teal-700 border border-teal-200 transition-colors shadow-2xs truncate text-center touch-manipulation active:scale-95"
                 title="Tutara %1 KDV ekler"
               >
                 +%1 KDV
@@ -688,29 +688,29 @@ export default function DetailedCalculator() {
             </div>
 
             {/* Main Keypad Grid */}
-            <div className="grid grid-cols-4 gap-2 sm:gap-2.5">
+            <div className="grid grid-cols-4 gap-1.5 sm:gap-2.5">
               {/* Row 1: Memory Controls */}
               <button
                 onClick={handleMemoryClear}
-                className="py-2.5 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors border border-slate-200"
+                className="h-10 sm:h-11 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors border border-slate-200 touch-manipulation select-none active:scale-95 flex items-center justify-center"
               >
                 MC
               </button>
               <button
                 onClick={handleMemoryRecall}
-                className="py-2.5 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors border border-slate-200"
+                className="h-10 sm:h-11 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors border border-slate-200 touch-manipulation select-none active:scale-95 flex items-center justify-center"
               >
                 MR
               </button>
               <button
                 onClick={handleMemorySubtract}
-                className="py-2.5 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors border border-slate-200"
+                className="h-10 sm:h-11 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors border border-slate-200 touch-manipulation select-none active:scale-95 flex items-center justify-center"
               >
                 M-
               </button>
               <button
                 onClick={handleMemoryAdd}
-                className="py-2.5 rounded-xl text-xs font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 transition-colors"
+                className="h-10 sm:h-11 rounded-xl text-xs font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 transition-colors touch-manipulation select-none active:scale-95 flex items-center justify-center"
               >
                 M+
               </button>
@@ -718,26 +718,26 @@ export default function DetailedCalculator() {
               {/* Row 2: Clear, Backspace, %, Division */}
               <button
                 onClick={handleClear}
-                className="py-3 rounded-xl text-sm font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition-colors"
+                className="h-11 sm:h-12 rounded-xl text-xs sm:text-sm font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition-colors touch-manipulation select-none active:scale-95 flex items-center justify-center"
               >
                 C / AC
               </button>
               <button
                 onClick={handleBackspace}
-                className="py-3 rounded-xl text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-colors flex items-center justify-center"
+                className="h-11 sm:h-12 rounded-xl text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-colors flex items-center justify-center touch-manipulation select-none active:scale-95"
                 title="Son basamağı sil"
               >
                 <Delete className="w-4 h-4" />
               </button>
               <button
                 onClick={handlePercent}
-                className="py-3 rounded-xl text-sm font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-colors"
+                className="h-11 sm:h-12 rounded-xl text-sm font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-colors touch-manipulation select-none active:scale-95 flex items-center justify-center"
               >
                 %
               </button>
               <button
                 onClick={() => handleOperator("÷")}
-                className={`py-3 rounded-xl text-base font-bold transition-colors ${
+                className={`h-11 sm:h-12 rounded-xl text-base font-bold transition-colors touch-manipulation select-none active:scale-95 flex items-center justify-center ${
                   operation === "÷"
                     ? "bg-emerald-600 text-white"
                     : "text-slate-800 bg-slate-200/80 hover:bg-slate-300"
@@ -749,25 +749,25 @@ export default function DetailedCalculator() {
               {/* Row 3: 7, 8, 9, Multiply */}
               <button
                 onClick={() => handleInputDigit("7")}
-                className="py-3 rounded-xl text-base font-semibold text-slate-800 bg-white hover:bg-slate-50 border border-slate-200 shadow-2xs transition-colors"
+                className="h-11 sm:h-12 rounded-xl text-base font-semibold text-slate-800 bg-white hover:bg-slate-50 border border-slate-200 shadow-2xs transition-colors touch-manipulation select-none active:scale-95 flex items-center justify-center"
               >
                 7
               </button>
               <button
                 onClick={() => handleInputDigit("8")}
-                className="py-3 rounded-xl text-base font-semibold text-slate-800 bg-white hover:bg-slate-50 border border-slate-200 shadow-2xs transition-colors"
+                className="h-11 sm:h-12 rounded-xl text-base font-semibold text-slate-800 bg-white hover:bg-slate-50 border border-slate-200 shadow-2xs transition-colors touch-manipulation select-none active:scale-95 flex items-center justify-center"
               >
                 8
               </button>
               <button
                 onClick={() => handleInputDigit("9")}
-                className="py-3 rounded-xl text-base font-semibold text-slate-800 bg-white hover:bg-slate-50 border border-slate-200 shadow-2xs transition-colors"
+                className="h-11 sm:h-12 rounded-xl text-base font-semibold text-slate-800 bg-white hover:bg-slate-50 border border-slate-200 shadow-2xs transition-colors touch-manipulation select-none active:scale-95 flex items-center justify-center"
               >
                 9
               </button>
               <button
                 onClick={() => handleOperator("×")}
-                className={`py-3 rounded-xl text-base font-bold transition-colors ${
+                className={`h-11 sm:h-12 rounded-xl text-base font-bold transition-colors touch-manipulation select-none active:scale-95 flex items-center justify-center ${
                   operation === "×"
                     ? "bg-emerald-600 text-white"
                     : "text-slate-800 bg-slate-200/80 hover:bg-slate-300"
@@ -779,25 +779,25 @@ export default function DetailedCalculator() {
               {/* Row 4: 4, 5, 6, Subtract */}
               <button
                 onClick={() => handleInputDigit("4")}
-                className="py-3 rounded-xl text-base font-semibold text-slate-800 bg-white hover:bg-slate-50 border border-slate-200 shadow-2xs transition-colors"
+                className="h-11 sm:h-12 rounded-xl text-base font-semibold text-slate-800 bg-white hover:bg-slate-50 border border-slate-200 shadow-2xs transition-colors touch-manipulation select-none active:scale-95 flex items-center justify-center"
               >
                 4
               </button>
               <button
                 onClick={() => handleInputDigit("5")}
-                className="py-3 rounded-xl text-base font-semibold text-slate-800 bg-white hover:bg-slate-50 border border-slate-200 shadow-2xs transition-colors"
+                className="h-11 sm:h-12 rounded-xl text-base font-semibold text-slate-800 bg-white hover:bg-slate-50 border border-slate-200 shadow-2xs transition-colors touch-manipulation select-none active:scale-95 flex items-center justify-center"
               >
                 5
               </button>
               <button
                 onClick={() => handleInputDigit("6")}
-                className="py-3 rounded-xl text-base font-semibold text-slate-800 bg-white hover:bg-slate-50 border border-slate-200 shadow-2xs transition-colors"
+                className="h-11 sm:h-12 rounded-xl text-base font-semibold text-slate-800 bg-white hover:bg-slate-50 border border-slate-200 shadow-2xs transition-colors touch-manipulation select-none active:scale-95 flex items-center justify-center"
               >
                 6
               </button>
               <button
                 onClick={() => handleOperator("-")}
-                className={`py-3 rounded-xl text-base font-bold transition-colors ${
+                className={`h-11 sm:h-12 rounded-xl text-base font-bold transition-colors touch-manipulation select-none active:scale-95 flex items-center justify-center ${
                   operation === "-"
                     ? "bg-emerald-600 text-white"
                     : "text-slate-800 bg-slate-200/80 hover:bg-slate-300"
@@ -809,25 +809,25 @@ export default function DetailedCalculator() {
               {/* Row 5: 1, 2, 3, Add */}
               <button
                 onClick={() => handleInputDigit("1")}
-                className="py-3 rounded-xl text-base font-semibold text-slate-800 bg-white hover:bg-slate-50 border border-slate-200 shadow-2xs transition-colors"
+                className="h-11 sm:h-12 rounded-xl text-base font-semibold text-slate-800 bg-white hover:bg-slate-50 border border-slate-200 shadow-2xs transition-colors touch-manipulation select-none active:scale-95 flex items-center justify-center"
               >
                 1
               </button>
               <button
                 onClick={() => handleInputDigit("2")}
-                className="py-3 rounded-xl text-base font-semibold text-slate-800 bg-white hover:bg-slate-50 border border-slate-200 shadow-2xs transition-colors"
+                className="h-11 sm:h-12 rounded-xl text-base font-semibold text-slate-800 bg-white hover:bg-slate-50 border border-slate-200 shadow-2xs transition-colors touch-manipulation select-none active:scale-95 flex items-center justify-center"
               >
                 2
               </button>
               <button
                 onClick={() => handleInputDigit("3")}
-                className="py-3 rounded-xl text-base font-semibold text-slate-800 bg-white hover:bg-slate-50 border border-slate-200 shadow-2xs transition-colors"
+                className="h-11 sm:h-12 rounded-xl text-base font-semibold text-slate-800 bg-white hover:bg-slate-50 border border-slate-200 shadow-2xs transition-colors touch-manipulation select-none active:scale-95 flex items-center justify-center"
               >
                 3
               </button>
               <button
                 onClick={() => handleOperator("+")}
-                className={`py-3 rounded-xl text-base font-bold transition-colors ${
+                className={`h-11 sm:h-12 rounded-xl text-base font-bold transition-colors touch-manipulation select-none active:scale-95 flex items-center justify-center ${
                   operation === "+"
                     ? "bg-emerald-600 text-white"
                     : "text-slate-800 bg-slate-200/80 hover:bg-slate-300"
@@ -839,26 +839,26 @@ export default function DetailedCalculator() {
               {/* Row 6: 0, 00, Decimal, Equals */}
               <button
                 onClick={() => handleInputDigit("0")}
-                className="py-3 rounded-xl text-base font-semibold text-slate-800 bg-white hover:bg-slate-50 border border-slate-200 shadow-2xs transition-colors"
+                className="h-11 sm:h-12 rounded-xl text-base font-semibold text-slate-800 bg-white hover:bg-slate-50 border border-slate-200 shadow-2xs transition-colors touch-manipulation select-none active:scale-95 flex items-center justify-center"
               >
                 0
               </button>
               <button
                 onClick={() => handleInputDigit("00")}
-                className="py-3 rounded-xl text-base font-semibold text-slate-800 bg-white hover:bg-slate-50 border border-slate-200 shadow-2xs transition-colors"
+                className="h-11 sm:h-12 rounded-xl text-base font-semibold text-slate-800 bg-white hover:bg-slate-50 border border-slate-200 shadow-2xs transition-colors touch-manipulation select-none active:scale-95 flex items-center justify-center"
                 title="Çift sıfır"
               >
                 00
               </button>
               <button
                 onClick={handleInputDecimal}
-                className="py-3 rounded-xl text-base font-bold text-slate-800 bg-white hover:bg-slate-50 border border-slate-200 shadow-2xs transition-colors"
+                className="h-11 sm:h-12 rounded-xl text-base font-bold text-slate-800 bg-white hover:bg-slate-50 border border-slate-200 shadow-2xs transition-colors touch-manipulation select-none active:scale-95 flex items-center justify-center"
               >
                 ,
               </button>
               <button
                 onClick={handleEquals}
-                className="py-3 rounded-xl text-lg font-bold text-white bg-emerald-600 hover:bg-emerald-700 shadow-md shadow-emerald-600/30 transition-all active:scale-[0.98]"
+                className="h-11 sm:h-12 rounded-xl text-lg font-bold text-white bg-emerald-600 hover:bg-emerald-700 shadow-md shadow-emerald-600/30 transition-all touch-manipulation select-none active:scale-95 flex items-center justify-center"
               >
                 =
               </button>

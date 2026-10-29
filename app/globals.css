@@ -39,6 +39,16 @@ body {
   background: #94a3b8;
 }
 
+/* Hide scrollbar utility for mobile swipable rows */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
 /* Print optimizations */
 @media print {
   @page {

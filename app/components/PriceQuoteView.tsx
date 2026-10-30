@@ -218,14 +218,14 @@ export default function PriceQuoteView() {
             // Ensure newly configured company name and address are preserved over old demo cache
             name:
               parsed.companyInfo.name &&
-              !parsed.companyInfo.name.includes("Adaş") &&
-              !parsed.companyInfo.name.includes("Anadolu Yapı & Teknoloji San")
+                !parsed.companyInfo.name.includes("Adaş") &&
+                !parsed.companyInfo.name.includes("Anadolu Yapı & Teknoloji San")
                 ? parsed.companyInfo.name.toLocaleUpperCase("tr-TR")
                 : "İSTANBUL ANADOLU GIDA YAPI TEKNOLOJİ SANAYİ VE TİCARET ANONİM ŞİRKETİ",
             address:
               parsed.companyInfo.address &&
-              !parsed.companyInfo.address.includes("Havsa") &&
-              !parsed.companyInfo.address.includes("Edirne")
+                !parsed.companyInfo.address.includes("Havsa") &&
+                !parsed.companyInfo.address.includes("Edirne")
                 ? parsed.companyInfo.address
                 : "Esenevler Mah.Talatpaşa Cad. İkiz Sokak No:2A Dükkan 1 Akyıldız İş Merkezi Ümraniye İstanbul Türkiye",
             phone:
@@ -544,12 +544,10 @@ export default function PriceQuoteView() {
           <div>
             <h2 className="text-sm sm:text-base font-bold text-slate-900 flex items-center gap-1.5 sm:gap-2">
               <span>{formTitle}</span>
-              <span className="text-[10px] sm:text-[11px] font-semibold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">
-                Logolu Form
-              </span>
+
             </h2>
             <p className="text-[11px] sm:text-xs text-slate-500 hidden sm:block">
-              Firma logonuzla kurumsal teklif formu oluşturun, müşteri ve tarih alanını doldurup yazdırın.
+              Teklif formu oluşturun, müşteri ve tarih alanını doldurup yazdırın.
             </p>
           </div>
         </div>
@@ -597,11 +595,10 @@ export default function PriceQuoteView() {
           {/* Company Settings Toggle */}
           <button
             onClick={() => setShowCompanySettings((prev) => !prev)}
-            className={`flex items-center gap-1 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl text-xs font-semibold border transition-colors ${
-              showCompanySettings
+            className={`flex items-center gap-1 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl text-xs font-semibold border transition-colors ${showCompanySettings
                 ? "bg-slate-800 text-white border-slate-800"
                 : "bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200"
-            }`}
+              }`}
             title="Firma unvanı, adres ve iletişim bilgilerini düzenle"
           >
             <Settings className="w-3.5 h-3.5" />
@@ -731,9 +728,8 @@ export default function PriceQuoteView() {
       {/* ========================================================================= */}
       <div
         id="printable-quote"
-        className={`bg-white rounded-2xl shadow-sm border border-slate-300 p-4 sm:p-8 w-full print:p-0 print:border-none print:shadow-none print:rounded-none ${
-          isGeneratingPdf ? "pdf-export-mode" : ""
-        }`}
+        className={`bg-white rounded-2xl shadow-sm border border-slate-300 p-4 sm:p-8 w-full print:p-0 print:border-none print:shadow-none print:rounded-none ${isGeneratingPdf ? "pdf-export-mode" : ""
+          }`}
       >
         {/* 1. TOP HEADER: LOGO ON LEFT (app/logo.jpg) & CONTACT INFO ON RIGHT (EXACT MATCH, NEVER WRAPS VERTICALLY IN PRINT) */}
         <div className="w-full flex flex-col sm:flex-row print:flex-row justify-between items-start gap-4 pb-3 border-b-2 border-black print:pb-2">
@@ -1022,9 +1018,9 @@ export default function PriceQuoteView() {
                     <div className="hidden print:block font-mono font-medium text-slate-950 text-xs text-right">
                       {typeof row.unitPrice === "number" && row.unitPrice > 0
                         ? new Intl.NumberFormat("tr-TR", {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2,
-                          }).format(row.unitPrice)
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        }).format(row.unitPrice)
                         : "\u00A0"}
                     </div>
                   </td>
@@ -1033,9 +1029,9 @@ export default function PriceQuoteView() {
                   <td className="border border-black py-1 px-2.5 text-right font-mono font-bold text-slate-900 bg-slate-50/30 print:bg-transparent">
                     {row.total > 0
                       ? new Intl.NumberFormat("tr-TR", {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        }).format(row.total) + " ₺"
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      }).format(row.total) + " ₺"
                       : "-"}
                   </td>
 

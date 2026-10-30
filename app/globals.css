@@ -96,3 +96,26 @@ body {
   }
 }
 
+/* PDF Generation Mode (Native HTML-to-Image without lab() color issues) */
+.pdf-export-mode .no-print,
+.pdf-export-mode .print\:hidden {
+  display: none !important;
+}
+.pdf-export-mode .print\:block {
+  display: block !important;
+}
+.pdf-export-mode th.print\:block,
+.pdf-export-mode td.print\:block {
+  display: table-cell !important;
+}
+.pdf-export-mode {
+  width: 820px !important;
+  max-width: 820px !important;
+  min-width: 820px !important;
+  box-shadow: none !important;
+  border: none !important;
+  border-radius: 0 !important;
+  padding: 24px 32px !important;
+  background-color: #ffffff !important;
+}
+

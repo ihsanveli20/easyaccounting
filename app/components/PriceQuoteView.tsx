@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import * as XLSX from "xlsx";
+import jsPDF from "jspdf";
+import * as htmlToImage from "html-to-image";
 import {
   Printer,
   Plus,
@@ -19,6 +21,8 @@ import {
   MapPin,
   Phone,
   Upload,
+  FileDown,
+  Loader2,
 } from "lucide-react";
 
 export interface QuoteItem {
@@ -178,6 +182,7 @@ export default function PriceQuoteView() {
   });
 
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState<boolean>(false);
 
   // Load saved quote and company info from localStorage
   useEffect(() => {
@@ -200,7 +205,8 @@ export default function PriceQuoteView() {
         }
         if (parsed.quoteDate) setQuoteDate(parsed.quoteDate);
         if (parsed.vatNote !== undefined) setVatNote(parsed.vatNote);
-        if (parsed.customerName !== undefined) setCustomerName(parsed.customerName);
+        if (parsed.customerName !== undefined)
+          setCustomerName(parsed.customerName.toLocaleUpperCase("tr-TR"));
         if (parsed.formTitle) setFormTitle(parsed.formTitle);
         if (parsed.notes) setNotes(parsed.notes);
         if (parsed.preparedBy) setPreparedBy(parsed.preparedBy);
@@ -214,7 +220,7 @@ export default function PriceQuoteView() {
               parsed.companyInfo.name &&
               !parsed.companyInfo.name.includes("Adaş") &&
               !parsed.companyInfo.name.includes("Anadolu Yapı & Teknoloji San")
-                ? parsed.companyInfo.name
+                ? parsed.companyInfo.name.toLocaleUpperCase("tr-TR")
                 : "İSTANBUL ANADOLU GIDA YAPI TEKNOLOJİ SANAYİ VE TİCARET ANONİM ŞİRKETİ",
             address:
               parsed.companyInfo.address &&
@@ -368,6 +374,85 @@ export default function PriceQuoteView() {
   // Print
   const handlePrint = () => {
     window.print();
+  };
+
+  // Direct PDF Download (High-resolution native print replica without lab() color parsing issues)
+  const handleDownloadPdf = async () => {
+    const quoteElement = document.getElementById("printable-quote");
+    if (!quoteElement) {
+      alert("Teklif formu bulunamadı.");
+      return;
+    }
+
+    try {
+      setIsGeneratingPdf(true);
+
+      // Give React one tick to apply .pdf-export-mode (hiding inputs, showing print-only blocks)
+      await new Promise((resolve) => setTimeout(resolve, 150));
+
+      // Native browser rasterizer - 100% compatible with Tailwind v4, lab(), oklab(), and custom fonts
+      const dataUrl = await htmlToImage.toPng(quoteElement, {
+        pixelRatio: 2,
+        backgroundColor: "#ffffff",
+        cacheBust: false,
+      });
+
+      // Load image to determine exact dimensions
+      const img = new Image();
+      img.src = dataUrl;
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error("PDF görseli oluşturulamadı"));
+      });
+
+      const pdf = new jsPDF({
+        orientation: "portrait",
+        unit: "mm",
+        format: "a4",
+      });
+
+      const pdfWidth = 210;
+      const pdfHeight = 297;
+      const imgWidth = pdfWidth;
+      const imgHeight = (img.height * imgWidth) / img.width;
+
+      if (imgHeight <= pdfHeight) {
+        pdf.addImage(dataUrl, "PNG", 0, 0, imgWidth, imgHeight);
+      } else if (imgHeight <= pdfHeight * 1.25) {
+        // Fits nicely on 1 single page with slight scale
+        const scaleFactor = pdfHeight / imgHeight;
+        const scaledWidth = imgWidth * scaleFactor;
+        const xOffset = (pdfWidth - scaledWidth) / 2;
+        pdf.addImage(dataUrl, "PNG", xOffset, 0, scaledWidth, pdfHeight);
+      } else {
+        // Multi-page document
+        let heightLeft = imgHeight;
+        let position = 0;
+        pdf.addImage(dataUrl, "PNG", 0, position, imgWidth, imgHeight);
+        heightLeft -= pdfHeight;
+
+        while (heightLeft > 0) {
+          position = heightLeft - imgHeight;
+          pdf.addPage();
+          pdf.addImage(dataUrl, "PNG", 0, position, imgWidth, imgHeight);
+          heightLeft -= pdfHeight;
+        }
+      }
+
+      const safeCustomer = (customerName.trim() || "Musteri_Teklif")
+        .replace(/[^a-zA-Z0-9_\u00C0-\u017F-]/g, "_")
+        .substring(0, 35);
+      const safeDate = quoteDate.replace(/\./g, "-");
+      pdf.save(`Teklif_${safeCustomer}_${safeDate}.pdf`);
+
+      showToast("PDF teklif formu başarıyla indirildi.");
+    } catch (err: unknown) {
+      console.error("PDF generation error:", err);
+      const msg = err instanceof Error ? err.message : "Bilinmeyen hata";
+      alert("PDF oluşturulurken bir hata meydana geldi: " + msg);
+    } finally {
+      setIsGeneratingPdf(false);
+    }
   };
 
   // Export to Excel matching the exact format
@@ -543,14 +628,29 @@ export default function PriceQuoteView() {
             <span>Excel</span>
           </button>
 
-          {/* Print / PDF Button */}
+          {/* Download PDF Button */}
+          <button
+            onClick={handleDownloadPdf}
+            disabled={isGeneratingPdf}
+            className="flex items-center gap-1.5 px-3 sm:px-4 py-1.5 sm:py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-600/20 transition-all disabled:opacity-75 disabled:cursor-wait"
+            title="Teklifi PDF olarak indir (.pdf)"
+          >
+            {isGeneratingPdf ? (
+              <Loader2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-spin text-white" />
+            ) : (
+              <FileDown className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
+            )}
+            <span>{isGeneratingPdf ? "PDF İndiriliyor..." : "PDF İndir"}</span>
+          </button>
+
+          {/* Print Button */}
           <button
             onClick={handlePrint}
             className="flex items-center gap-1.5 px-3 sm:px-4 py-1.5 sm:py-2 bg-slate-900 hover:bg-black text-white rounded-xl text-xs font-bold shadow-md shadow-slate-900/20 transition-all"
-            title="Teklifi A4 formatında yazdır veya PDF olarak kaydet"
+            title="Teklifi A4 formatında yazdır veya tarayıcıdan kaydet"
           >
             <Printer className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-400" />
-            <span>Yazdır / PDF</span>
+            <span>Yazdır</span>
           </button>
         </div>
       </div>
@@ -574,8 +674,13 @@ export default function PriceQuoteView() {
               <textarea
                 rows={2}
                 value={companyInfo.name}
-                onChange={(e) => setCompanyInfo({ ...companyInfo, name: e.target.value })}
-                className="w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none overflow-hidden text-xs leading-snug"
+                onChange={(e) =>
+                  setCompanyInfo({
+                    ...companyInfo,
+                    name: e.target.value.toLocaleUpperCase("tr-TR"),
+                  })
+                }
+                className="w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none overflow-hidden text-xs leading-snug uppercase"
               />
             </div>
             <div>
@@ -626,7 +731,9 @@ export default function PriceQuoteView() {
       {/* ========================================================================= */}
       <div
         id="printable-quote"
-        className="bg-white rounded-2xl shadow-sm border border-slate-300 p-4 sm:p-8 w-full print:p-0 print:border-none print:shadow-none print:rounded-none"
+        className={`bg-white rounded-2xl shadow-sm border border-slate-300 p-4 sm:p-8 w-full print:p-0 print:border-none print:shadow-none print:rounded-none ${
+          isGeneratingPdf ? "pdf-export-mode" : ""
+        }`}
       >
         {/* 1. TOP HEADER: LOGO ON LEFT (app/logo.jpg) & CONTACT INFO ON RIGHT (EXACT MATCH, NEVER WRAPS VERTICALLY IN PRINT) */}
         <div className="w-full flex flex-col sm:flex-row print:flex-row justify-between items-start gap-4 pb-3 border-b-2 border-black print:pb-2">
@@ -646,11 +753,16 @@ export default function PriceQuoteView() {
               <textarea
                 rows={2}
                 value={companyInfo.name}
-                onChange={(e) => setCompanyInfo({ ...companyInfo, name: e.target.value })}
-                className="w-full bg-transparent border-none focus:outline-none font-bold text-slate-900 resize-none overflow-hidden leading-tight text-xs print:hidden"
-                placeholder="Firma Ticari Unvanı"
+                onChange={(e) =>
+                  setCompanyInfo({
+                    ...companyInfo,
+                    name: e.target.value.toLocaleUpperCase("tr-TR"),
+                  })
+                }
+                className="w-full bg-transparent border-none focus:outline-none font-bold text-slate-900 resize-none overflow-hidden leading-tight text-xs print:hidden uppercase"
+                placeholder="FİRMA TİCARİ UNVANI"
               />
-              <div className="hidden print:block font-bold text-slate-900 text-xs leading-tight">
+              <div className="hidden print:block font-bold text-slate-900 text-xs leading-tight uppercase">
                 {companyInfo.name}
               </div>
             </div>
@@ -735,11 +847,13 @@ export default function PriceQuoteView() {
                   <textarea
                     rows={1}
                     value={customerName}
-                    onChange={(e) => setCustomerName(e.target.value)}
-                    placeholder="Müşteri firma adını giriniz (Örn: ABC İnşaat San. ve Tic. A.Ş.)..."
-                    className="w-full bg-transparent border-none focus:outline-none font-bold text-slate-900 placeholder:font-normal placeholder:text-slate-300 resize-none overflow-hidden leading-snug print:hidden"
+                    onChange={(e) =>
+                      setCustomerName(e.target.value.toLocaleUpperCase("tr-TR"))
+                    }
+                    placeholder="MÜŞTERİ FİRMA ADINI GİRİNİZ (ÖRN: ABC İNŞAAT SAN. VE TİC. A.Ş.)..."
+                    className="w-full bg-transparent border-none focus:outline-none font-bold text-slate-900 placeholder:font-normal placeholder:text-slate-300 resize-none overflow-hidden leading-snug print:hidden uppercase"
                   />
-                  <div className="hidden print:block font-bold text-slate-950 text-xs leading-snug">
+                  <div className="hidden print:block font-bold text-slate-950 text-xs leading-snug uppercase">
                     {customerName || "-"}
                   </div>
                 </td>

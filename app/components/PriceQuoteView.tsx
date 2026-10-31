@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import * as htmlToImage from "html-to-image";
@@ -23,7 +23,16 @@ import {
   Upload,
   FileDown,
   Loader2,
+  Package,
+  Search,
+  Check,
+  Tag,
+  X,
+  Filter,
 } from "lucide-react";
+import { ProductItem } from "../types/accounting";
+import { normalizeForSearch } from "../utils/excel";
+import { DEFAULT_SAMPLE_PRODUCTS } from "./ProductManagementView";
 
 export interface QuoteItem {
   id: string;
@@ -139,7 +148,17 @@ const SAMPLE_ITEMS: QuoteItem[] = [
   { id: "5", materialName: "Kaba Sıva Kumu", quantity: 18, unit: "Ton", unitPrice: 480, total: 8640 },
 ];
 
-export default function PriceQuoteView() {
+interface PriceQuoteViewProps {
+  products?: ProductItem[];
+  onGoToProducts?: () => void;
+  productSource?: "supabase" | "local" | "syncing";
+}
+
+export default function PriceQuoteView({
+  products: initialProducts,
+  onGoToProducts,
+  productSource = "local",
+}: PriceQuoteViewProps = {}) {
   // Today formatted as DD.MM.YYYY
   const getTodayStr = () => {
     const today = new Date();
@@ -183,6 +202,78 @@ export default function PriceQuoteView() {
 
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState<boolean>(false);
+
+  // Products Catalog Integration (from props or localStorage)
+  const [catalogProducts, setCatalogProducts] = useState<ProductItem[]>(() => {
+    if (initialProducts && initialProducts.length > 0) return initialProducts;
+    try {
+      const saved = localStorage.getItem("easy_accounting_products_catalog_v1");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return DEFAULT_SAMPLE_PRODUCTS;
+  });
+
+  useEffect(() => {
+    if (initialProducts && initialProducts.length > 0) {
+      setCatalogProducts(initialProducts);
+    }
+  }, [initialProducts]);
+
+  // Autocomplete & Catalog Modal State
+  const [activeAutocompleteRow, setActiveAutocompleteRow] = useState<number | null>(null);
+  const [catalogPickerOpen, setCatalogPickerOpen] = useState<boolean>(false);
+  const [catalogSearch, setCatalogSearch] = useState<string>("");
+  const [selectedCatalogCategory, setSelectedCatalogCategory] = useState<string>("all");
+  const [selectedCatalogIds, setSelectedCatalogIds] = useState<string[]>([]);
+
+  // Autocomplete matching products for current active row
+  const currentQuery =
+    activeAutocompleteRow !== null && rows[activeAutocompleteRow]
+      ? rows[activeAutocompleteRow].materialName
+      : "";
+
+  const matchingProducts = useMemo(() => {
+    if (activeAutocompleteRow === null) return [];
+    const q = normalizeForSearch(currentQuery);
+    if (!q) {
+      return catalogProducts.slice(0, 8);
+    }
+    return catalogProducts
+      .filter((p) => {
+        const nameMatch = normalizeForSearch(p.name).includes(q);
+        const codeMatch = p.code ? normalizeForSearch(p.code).includes(q) : false;
+        const catMatch = p.category ? normalizeForSearch(p.category).includes(q) : false;
+        return nameMatch || codeMatch || catMatch;
+      })
+      .slice(0, 10);
+  }, [catalogProducts, activeAutocompleteRow, currentQuery]);
+
+  // Categories for Catalog Modal
+  const catalogCategories = useMemo(() => {
+    const set = new Set<string>();
+    catalogProducts.forEach((p) => {
+      if (p.category && p.category.trim()) set.add(p.category.trim());
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "tr"));
+  }, [catalogProducts]);
+
+  // Filtered Products in Catalog Modal
+  const filteredCatalogList = useMemo(() => {
+    const q = normalizeForSearch(catalogSearch);
+    return catalogProducts.filter((p) => {
+      if (selectedCatalogCategory !== "all" && p.category !== selectedCatalogCategory) {
+        return false;
+      }
+      if (!q) return true;
+      const nameMatch = normalizeForSearch(p.name).includes(q);
+      const codeMatch = p.code ? normalizeForSearch(p.code).includes(q) : false;
+      const catMatch = p.category ? normalizeForSearch(p.category).includes(q) : false;
+      return nameMatch || codeMatch || catMatch;
+    });
+  }, [catalogProducts, catalogSearch, selectedCatalogCategory]);
 
   // Load saved quote and company info from localStorage
   useEffect(() => {
@@ -332,6 +423,68 @@ export default function PriceQuoteView() {
       setRows(filled);
     }
     showToast("Boş satırlar temizlendi.");
+  };
+
+  // Select single product from autocomplete or catalog
+  const handleSelectProduct = (index: number, product: ProductItem) => {
+    setRows((prev) => {
+      const updated = [...prev];
+      const row = { ...updated[index] };
+      row.materialName = product.name;
+      row.unit = product.unit || "Adet";
+      row.unitPrice = product.unitPrice;
+      const qty = typeof row.quantity === "number" ? row.quantity : parseFloat(String(row.quantity)) || 0;
+      row.total = Math.round(qty * product.unitPrice * 100) / 100;
+      updated[index] = row;
+      return updated;
+    });
+    setActiveAutocompleteRow(null);
+    showToast(`"${product.name}" teklife aktarıldı (${formatCurrency(product.unitPrice)})`);
+  };
+
+  // Add multiple products from catalog modal
+  const handleAddProductsFromModal = (items: ProductItem[]) => {
+    if (items.length === 0) return;
+
+    setRows((prev) => {
+      const updated = [...prev];
+      // Find empty rows (materialName is empty, quantity is empty/0)
+      const emptyRowIndices: number[] = [];
+      updated.forEach((r, i) => {
+        if (r.materialName.trim() === "" && (r.quantity === "" || r.quantity === 0)) {
+          emptyRowIndices.push(i);
+        }
+      });
+
+      items.forEach((item) => {
+        if (emptyRowIndices.length > 0) {
+          const targetIdx = emptyRowIndices.shift()!;
+          updated[targetIdx] = {
+            ...updated[targetIdx],
+            materialName: item.name,
+            unit: item.unit || "Adet",
+            unitPrice: item.unitPrice,
+            total: 0,
+          };
+        } else {
+          // Append new row
+          updated.push({
+            id: Math.random().toString(36).substring(2, 9),
+            materialName: item.name,
+            quantity: "",
+            unit: item.unit || "Adet",
+            unitPrice: item.unitPrice,
+            total: 0,
+          });
+        }
+      });
+
+      return updated;
+    });
+
+    setCatalogPickerOpen(false);
+    setSelectedCatalogIds([]);
+    showToast(`${items.length} ürün teklife eklendi.`);
   };
 
   // Reset all
@@ -579,6 +732,26 @@ export default function PriceQuoteView() {
             title="Doldurulmamış boş satırları kaldır"
           >
             Boşları Temizle
+          </button>
+
+          {/* Catalog Multi-Select Picker */}
+          <button
+            onClick={() => setCatalogPickerOpen(true)}
+            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-semibold transition-colors shadow-2xs"
+            title="Kayıtlı ürün kataloğundan ürün seçip teklife aktar"
+          >
+            <Package className="w-3.5 h-3.5 text-indigo-600" />
+            <span>Katalogdan Ekle</span>
+            {catalogProducts.length > 0 && (
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-indigo-200/80 text-indigo-800 font-bold">
+                {catalogProducts.length}
+              </span>
+            )}
+            {productSource === "supabase" && (
+              <span className="hidden sm:inline text-[9px] font-bold px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 border border-emerald-300">
+                Supabase
+              </span>
+            )}
           </button>
 
           {/* Sample Data */}
@@ -944,17 +1117,95 @@ export default function PriceQuoteView() {
                   </td>
 
                   {/* MALZEME CİNSİ */}
-                  <td className="border border-black py-1 px-2.5">
-                    <input
-                      type="text"
-                      value={row.materialName}
-                      onChange={(e) => handleUpdateRow(idx, "materialName", e.target.value)}
-                      placeholder={idx === 0 ? "Malzeme / Hizmet açıklamasını girin..." : ""}
-                      className="w-full bg-transparent border-none focus:outline-none focus:bg-blue-50/50 rounded px-1 py-0.5 font-medium text-slate-900 placeholder:text-slate-300 print:hidden text-xs"
-                    />
+                  <td className="border border-black py-1 px-2 relative">
+                    <div className="relative flex items-center">
+                      <input
+                        type="text"
+                        value={row.materialName}
+                        onChange={(e) => {
+                          handleUpdateRow(idx, "materialName", e.target.value);
+                          setActiveAutocompleteRow(idx);
+                        }}
+                        onFocus={() => setActiveAutocompleteRow(idx)}
+                        onBlur={() => setTimeout(() => setActiveAutocompleteRow(null), 250)}
+                        placeholder={idx === 0 ? "Malzeme adını yazın (Katalogdan otomatik tamamlanır)..." : ""}
+                        className="w-full bg-transparent border-none focus:outline-none focus:bg-blue-50/50 rounded px-1 py-0.5 font-medium text-slate-900 placeholder:text-slate-300 print:hidden text-xs pr-5"
+                      />
+                      {catalogProducts.length > 0 && (
+                        <button
+                          type="button"
+                          tabIndex={-1}
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            setActiveAutocompleteRow(activeAutocompleteRow === idx ? null : idx);
+                          }}
+                          title="Ürün kataloğundan seç"
+                          className="no-print absolute right-0.5 text-slate-300 hover:text-blue-600 p-0.5 rounded transition-colors"
+                        >
+                          <Package className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                     <div className="hidden print:block font-medium text-slate-950 text-xs truncate">
                       {row.materialName || "\u00A0"}
                     </div>
+
+                    {/* Autocomplete Dropdown */}
+                    {activeAutocompleteRow === idx && (
+                      <div className="no-print absolute left-0 top-full mt-1 w-80 sm:w-96 bg-white border border-slate-200 rounded-xl shadow-2xl z-50 p-1.5 text-xs text-left max-h-60 overflow-y-auto animate-in fade-in slide-in-from-top-1">
+                        <div className="px-2 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between border-b border-slate-100 mb-1">
+                          <span>Kayıtlı Ürünler ({matchingProducts.length})</span>
+                          <span className="text-blue-600 font-medium lowercase">Tıkla ve doldur</span>
+                        </div>
+                        {matchingProducts.length === 0 ? (
+                          <div className="py-3 px-2 text-center text-slate-400 text-xs">
+                            <p>Eşleşen ürün bulunamadı.</p>
+                            {onGoToProducts && (
+                              <button
+                                type="button"
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  onGoToProducts();
+                                }}
+                                className="mt-1 text-[11px] text-blue-600 hover:underline font-semibold"
+                              >
+                                Ürün Yönetimine Git →
+                              </button>
+                            )}
+                          </div>
+                        ) : (
+                          matchingProducts.map((p) => (
+                            <button
+                              key={p.id}
+                              type="button"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                handleSelectProduct(idx, p);
+                              }}
+                              className="w-full px-2.5 py-1.5 rounded-lg text-left hover:bg-blue-50/90 flex items-center justify-between gap-2 transition-colors group cursor-pointer"
+                            >
+                              <div className="min-w-0">
+                                <div className="font-semibold text-slate-900 group-hover:text-blue-700 truncate">
+                                  {p.name}
+                                </div>
+                                <div className="text-[10px] text-slate-500 flex items-center gap-1.5">
+                                  {p.code && (
+                                    <span className="font-mono bg-slate-100 px-1 rounded text-slate-700">
+                                      {p.code}
+                                    </span>
+                                  )}
+                                  {p.category && <span>{p.category}</span>}
+                                  <span className="font-medium text-blue-600">• {p.unit}</span>
+                                </div>
+                              </div>
+                              <div className="shrink-0 text-right font-mono font-bold text-slate-900 group-hover:text-blue-700">
+                                {formatCurrency(p.unitPrice)}
+                              </div>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
                   </td>
 
                   {/* MİKTAR */}
@@ -1179,6 +1430,176 @@ export default function PriceQuoteView() {
           </div>
         </div>
       </div>
+
+      {/* Catalog Multi-Select Modal */}
+      {catalogPickerOpen && (
+        <div className="no-print fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl max-w-2xl w-full p-5 sm:p-6 shadow-2xl border border-slate-200 max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <Package className="w-5 h-5 text-indigo-600" />
+                <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+                  <span>Katalogdan Teklife Ürün Seç ({catalogProducts.length} Ürün)</span>
+                  {productSource === "supabase" ? (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      🟢 Supabase Bulut
+                    </span>
+                  ) : (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-slate-100 text-slate-600 border border-slate-200">
+                      📦 Yerel / İçe Aktarılan
+                    </span>
+                  )}
+                </h3>
+              </div>
+              <button
+                onClick={() => {
+                  setCatalogPickerOpen(false);
+                  setSelectedCatalogIds([]);
+                }}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-md"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Search & Category Filter */}
+            <div className="my-3 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={catalogSearch}
+                  onChange={(e) => setCatalogSearch(e.target.value)}
+                  placeholder="Ürün adı, kod veya kategori ile ara..."
+                  className="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-800"
+                />
+              </div>
+
+              {catalogCategories.length > 0 && (
+                <div className="flex items-center gap-1">
+                  <select
+                    value={selectedCatalogCategory}
+                    onChange={(e) => setSelectedCatalogCategory(e.target.value)}
+                    className="text-xs bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 font-medium text-slate-700 focus:outline-none"
+                  >
+                    <option value="all">Tüm Kategoriler ({catalogProducts.length})</option>
+                    {catalogCategories.map((c) => (
+                      <option key={c} value={c}>
+                        {c} ({catalogProducts.filter((p) => p.category === c).length})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {onGoToProducts && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCatalogPickerOpen(false);
+                    onGoToProducts();
+                  }}
+                  className="text-xs text-blue-600 hover:text-blue-800 font-semibold px-2 py-1.5 shrink-0"
+                >
+                  Ürün Yönetimi →
+                </button>
+              )}
+            </div>
+
+            {/* Product List with checkboxes */}
+            <div className="overflow-y-auto max-h-80 border border-slate-200 rounded-xl divide-y divide-slate-100">
+              {filteredCatalogList.length === 0 ? (
+                <div className="p-8 text-center text-slate-400 text-xs">
+                  <Package className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                  <p className="font-semibold text-slate-600">Aradığınız ürün bulunamadı</p>
+                  <p className="text-[11px] mt-0.5">Ürün kataloğunuz boşsa Excel ile ürün ekleyin.</p>
+                </div>
+              ) : (
+                filteredCatalogList.map((p) => {
+                  const isSelected = selectedCatalogIds.includes(p.id);
+                  return (
+                    <div
+                      key={p.id}
+                      onClick={() => {
+                        setSelectedCatalogIds((prev) =>
+                          isSelected ? prev.filter((id) => id !== p.id) : [...prev, p.id]
+                        );
+                      }}
+                      className={`p-2.5 sm:p-3 flex items-center justify-between gap-3 cursor-pointer transition-colors ${
+                        isSelected ? "bg-indigo-50/70" : "hover:bg-slate-50"
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div
+                          className={`w-4 h-4 rounded border flex items-center justify-center transition-colors shrink-0 ${
+                            isSelected
+                              ? "bg-indigo-600 border-indigo-600 text-white"
+                              : "border-slate-300 bg-white"
+                          }`}
+                        >
+                          {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="font-semibold text-slate-900 text-xs truncate">
+                            {p.name}
+                          </div>
+                          <div className="text-[10px] text-slate-500 flex items-center gap-2">
+                            {p.code && (
+                              <span className="font-mono bg-slate-100 px-1 rounded text-slate-700">
+                                {p.code}
+                              </span>
+                            )}
+                            {p.category && <span>{p.category}</span>}
+                            <span>Birim: {p.unit}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <span className="font-mono font-bold text-xs text-slate-900 block">
+                          {formatCurrency(p.unitPrice)}
+                        </span>
+                        <span className="text-[10px] text-slate-500">/{p.unit}</span>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-between gap-3 pt-3 border-t border-slate-100 mt-3">
+              <span className="text-xs text-slate-500">
+                {selectedCatalogIds.length} ürün seçildi
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCatalogPickerOpen(false);
+                    setSelectedCatalogIds([]);
+                  }}
+                  className="px-3.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 rounded-xl"
+                >
+                  Vazgeç
+                </button>
+                <button
+                  type="button"
+                  disabled={selectedCatalogIds.length === 0}
+                  onClick={() => {
+                    const selectedItems = catalogProducts.filter((p) =>
+                      selectedCatalogIds.includes(p.id)
+                    );
+                    handleAddProductsFromModal(selectedItems);
+                  }}
+                  className="px-4 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:hover:bg-indigo-600 rounded-xl shadow-xs transition-colors"
+                >
+                  Teklife Ekle ({selectedCatalogIds.length})
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

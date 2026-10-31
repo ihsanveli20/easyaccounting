@@ -5,6 +5,7 @@ import {
   TransactionItem,
   CompanyDetail,
   DetailColumnMapping,
+  ProductItem,
 } from "../types/accounting";
 
 export type {
@@ -13,6 +14,7 @@ export type {
   TransactionItem,
   CompanyDetail,
   DetailColumnMapping,
+  ProductItem,
 };
 
 // Convert various number strings (Turkish "1.250,50", "1500,00 TL", "(500,00)") to numeric float

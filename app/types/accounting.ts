@@ -53,3 +53,15 @@ export interface DetailColumnMapping {
   balanceCol: string; // Bakiye sütunu ("__auto__" destekli)
   autoSplitDescription?: boolean; // Açıklamadaki Tarih-FaturaNo-Açıklama formatını otomatik böl
 }
+
+export interface ProductItem {
+  id: string;
+  code?: string; // Ürün Kodu / Stok Kodu (örn: URN-001)
+  name: string; // Ürün / Malzeme Cinsi
+  unit: string; // Birim (Adet, Ton, Kg, m², vb.)
+  unitPrice: number; // Birim Fiyatı (₺)
+  category?: string; // Kategori
+  stockQuantity?: number; // Stok Miktarı
+  updatedAt?: string; // Son Güncellenme Tarihi
+}
+

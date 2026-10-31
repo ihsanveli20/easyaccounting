@@ -35,6 +35,7 @@ import {
   AccountRecord,
   ColumnMapping,
   CompanyDetail,
+  ProductItem,
 } from "./types/accounting";
 import {
   SAMPLE_DATA,
@@ -50,6 +51,7 @@ import CompanyDetailView from "./components/CompanyDetailView";
 import DetailedCalculator from "./components/DetailedCalculator";
 import ReconciliationView from "./components/ReconciliationView";
 import PriceQuoteView from "./components/PriceQuoteView";
+import ProductManagementView, { DEFAULT_SAMPLE_PRODUCTS } from "./components/ProductManagementView";
 
 export default function Home() {
   // Navigation Tab: "summary" = Hesap Planı / Bakiye Listesi, "details" = Firma Detay Hareketleri, "calculator" = Ayrıntılı Hesap Makinesi, "reconciliation" = Ekstre & Luca Mutabakat, "quote" = Fiyat Teklifi, "stock-tracking" = Ürün Stok Takibi
@@ -92,6 +94,51 @@ export default function Home() {
   const [companies, setCompanies] = useState<CompanyDetail[]>([]);
   const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(null);
 
+  // Products Catalog State (Ürün & Malzeme Kataloğu)
+  const [products, setProducts] = useState<ProductItem[]>([]);
+  const [productSource, setProductSource] = useState<"supabase" | "local" | "syncing">("syncing");
+
+  // Function to load products with Supabase priority
+  const loadProductsWithPriority = async () => {
+    setProductSource("syncing");
+    try {
+      const res = await fetch("/api/products");
+      if (res.ok) {
+        const data = await res.json();
+        // Priority rule: If Supabase table has data, use it as primary catalog!
+        if (data.success && Array.isArray(data.products) && data.products.length > 0) {
+          setProducts(data.products);
+          setProductSource("supabase");
+          try {
+            localStorage.setItem(
+              "easy_accounting_products_catalog_v1",
+              JSON.stringify(data.products)
+            );
+          } catch {}
+          return;
+        }
+      }
+    } catch (err) {
+      console.warn("Supabase products fetch failed:", err);
+    }
+
+    // Fallback: If Supabase table has 0 rows or is unreachable, use locally imported / saved products
+    try {
+      const savedProducts = localStorage.getItem("easy_accounting_products_catalog_v1");
+      if (savedProducts) {
+        const parsed = JSON.parse(savedProducts);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setProducts(parsed);
+          setProductSource("local");
+          return;
+        }
+      }
+    } catch {}
+
+    setProducts(DEFAULT_SAMPLE_PRODUCTS);
+    setProductSource("local");
+  };
+
   // Restore saved sessions if available (client-side only)
   useEffect(() => {
     try {
@@ -110,9 +157,24 @@ export default function Home() {
           setCompanies(parsed);
         }
       }
+      // Initial fast local load
+      const savedProducts = localStorage.getItem("easy_accounting_products_catalog_v1");
+      if (savedProducts) {
+        const parsed = JSON.parse(savedProducts);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setProducts(parsed);
+        } else {
+          setProducts(DEFAULT_SAMPLE_PRODUCTS);
+        }
+      } else {
+        setProducts(DEFAULT_SAMPLE_PRODUCTS);
+      }
     } catch {
-      // Storage quota or parsing ignore
+      setProducts(DEFAULT_SAMPLE_PRODUCTS);
     }
+
+    // Immediately fetch from Supabase to prioritize cloud data if table has rows
+    loadProductsWithPriority();
   }, []);
 
   // Save changes to localStorage
@@ -136,6 +198,16 @@ export default function Home() {
       // Ignore storage errors
     }
   }, [companies]);
+
+  useEffect(() => {
+    try {
+      if (products.length > 0) {
+        localStorage.setItem("easy_accounting_products_catalog_v1", JSON.stringify(products));
+      }
+    } catch {
+      // Ignore storage errors
+    }
+  }, [products]);
 
   // Jump from a summary row straight to company detail
   const handleGoToCompanyDetail = (companyName: string, companyCode?: string) => {
@@ -558,14 +630,14 @@ export default function Home() {
     },
     {
       id: "stock-tracking" as const,
-      name: "Ürün Stok Takibi",
-      shortName: "Ürün Stok Takibi",
-      description: "Stok Kontrolü & Yönetimi",
+      name: "Ürün & Stok Yönetimi",
+      shortName: "Ürün Yönetimi",
+      description: "Excel İçe Aktar & Katalog",
       icon: Package,
       activeBg: "bg-blue-600 text-white shadow-md shadow-blue-600/25",
-      badge: null,
-      badgeStyle: "",
-      tag: "ÇOK YAKINDA",
+      badge: products.length > 0 ? products.length : null,
+      badgeStyle: "bg-white/20 text-white",
+      tag: "YENİ",
     },
   ];
 
@@ -969,7 +1041,7 @@ export default function Home() {
                             ? "bg-rose-50 text-rose-700 border-rose-200"
                             : activeTab === "quote"
                               ? "bg-blue-50 text-blue-700 border-blue-200"
-                              : "bg-amber-50 text-amber-700 border-amber-200"
+                              : "bg-blue-50 text-blue-700 border-blue-200"
                       }`}
                   >
                     {activeTab === "summary"
@@ -982,7 +1054,7 @@ export default function Home() {
                             ? "Mutabakat"
                             : activeTab === "quote"
                               ? "Teklif & Yazdır"
-                              : "Çok Yakında"}
+                              : "Ürün Kataloğu"}
                   </span>
                 </h1>
                 <p className="text-xs text-slate-500 hidden md:block truncate">
@@ -996,7 +1068,7 @@ export default function Home() {
                           ? "Firma PDF ekstreleri ile Luca mizanını karşılaştırın, eksik ve uyuşmayanları bulun"
                           : activeTab === "quote"
                             ? "Fiyat teklifi oluşturun, otomatik KDV ve toplamlar hesaplayıp yazdırın"
-                            : "Stok giriş-çıkışları, depo mevcudu ve kritik stok seviyelerini takip edin"}
+                            : "Excel ile ürün listenizi içe aktarın, kaydedin ve teklif hazırlarken anında çekin"}
                 </p>
               </div>
             </div>
@@ -1719,26 +1791,25 @@ export default function Home() {
           {/* ========================================================================= */}
           {/* TAB 5: PRICE QUOTATION SHEET (FİYAT TEKLİFİ)                               */}
           {/* ========================================================================= */}
-          {activeTab === "quote" && <PriceQuoteView />}
+          {activeTab === "quote" && (
+            <PriceQuoteView
+              products={products}
+              productSource={productSource}
+              onGoToProducts={() => setActiveTab("stock-tracking")}
+            />
+          )}
 
           {/* ========================================================================= */}
-          {/* TAB 6: STOCK TRACKING (ÜRÜN STOK TAKİBİ - ÇOK YAKINDA)                    */}
+          {/* TAB 6: PRODUCT & STOCK MANAGEMENT (ÜRÜN & STOK YÖNETİMİ)                   */}
           {/* ========================================================================= */}
           {activeTab === "stock-tracking" && (
-            <div className="bg-white rounded-2xl border border-slate-200 p-8 sm:p-12 text-center flex flex-col items-center justify-center gap-4 max-w-xl mx-auto shadow-xs my-8">
-              <div className="w-16 h-16 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center shadow-inner">
-                <Package className="w-8 h-8" />
-              </div>
-              <div>
-                <h3 className="text-lg font-bold text-slate-900 mb-1">Ürün Stok Takibi Modülü</h3>
-                <p className="text-xs text-slate-500 leading-relaxed">
-                  Stok giriş-çıkışları, depo mevcudu, kritik stok uyarıları ve ürün maliyet takibi özellikleri çok yakında burada kullanıma açılacaktır.
-                </p>
-              </div>
-              <span className="text-[11px] font-bold px-3 py-1 rounded-full bg-amber-100 text-amber-800">
-                Geliştirme Aşamasında
-              </span>
-            </div>
+            <ProductManagementView
+              products={products}
+              setProducts={setProducts}
+              productSource={productSource}
+              onRefreshFromSupabase={loadProductsWithPriority}
+              onGoToQuote={() => setActiveTab("quote")}
+            />
           )}
         </main>
 

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useRef, ChangeEvent } from "react";
+import React, { useState, useEffect, useMemo, useRef, ChangeEvent } from "react";
 import * as XLSX from "xlsx";
 import {
   Package,
@@ -67,7 +67,7 @@ interface ProductManagementViewProps {
   setProducts: React.Dispatch<React.SetStateAction<ProductItem[]>>;
   onGoToQuote?: () => void;
   productSource?: "supabase" | "local" | "syncing";
-  onRefreshFromSupabase?: () => Promise<void>;
+  onRefreshFromSupabase?: (force?: boolean) => Promise<void>;
 }
 
 export default function ProductManagementView({
@@ -81,6 +81,15 @@ export default function ProductManagementView({
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+
+  // Pagination state (smooth performance for 35,000+ items)
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+
+  // Reset to page 1 on filter or search change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, selectedCategory]);
 
   // Drag and Drop & Excel Import
   const [isDragging, setIsDragging] = useState(false);
@@ -112,9 +121,9 @@ export default function ProductManagementView({
   const handleRefresh = async () => {
     if (onRefreshFromSupabase) {
       setIsSyncing(true);
-      await onRefreshFromSupabase();
+      await onRefreshFromSupabase(true);
       setIsSyncing(false);
-      showToast("Supabase verileri kontrol edildi ve yenilendi.");
+      showToast("Supabase veritabanı kontrol edildi ve güncellendi.");
     }
   };
 
@@ -143,6 +152,13 @@ export default function ProductManagementView({
       return nameMatch || codeMatch || catMatch;
     });
   }, [products, searchQuery, selectedCategory]);
+
+  // Paginated Sliced Products for Instant DOM Rendering
+  const totalPages = Math.max(1, Math.ceil(filteredProducts.length / pageSize));
+  const paginatedProducts = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredProducts.slice(start, start + pageSize);
+  }, [filteredProducts, currentPage, pageSize]);
 
   // Statistics
   const stats = useMemo(() => {
@@ -493,7 +509,7 @@ export default function ProductManagementView({
               {productSource === "supabase" ? (
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-2xs">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  <span>Supabase Bulut Aktif ({products.length} Ürün Öncelikli)</span>
+                  <span>Supabase Bulut Aktif ({products.length.toLocaleString("tr-TR")} Ürün Öncelikli)</span>
                   {onRefreshFromSupabase && (
                     <button
                       type="button"
@@ -798,110 +814,172 @@ export default function ProductManagementView({
                     </td>
                   </tr>
                 ) : (
-                  filteredProducts.map((p, idx) => (
-                    <tr
-                      key={p.id}
-                      className="hover:bg-blue-50/40 transition-colors group"
-                    >
-                      {/* Index */}
-                      <td className="py-2.5 px-4 text-center text-slate-400 font-medium">
-                        {idx + 1}
-                      </td>
+                  paginatedProducts.map((p, idx) => {
+                    const displayIdx = (currentPage - 1) * pageSize + idx + 1;
+                    return (
+                      <tr
+                        key={p.id}
+                        className="hover:bg-blue-50/40 transition-colors group"
+                      >
+                        {/* Index */}
+                        <td className="py-2.5 px-4 text-center text-slate-400 font-medium">
+                          {displayIdx}
+                        </td>
 
-                      {/* Code */}
-                      <td className="py-2.5 px-4 font-mono text-[11px] font-semibold text-slate-600">
-                        {p.code ? (
-                          <span className="px-2 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-700">
-                            {p.code}
+                        {/* Code */}
+                        <td className="py-2.5 px-4 font-mono text-[11px] font-semibold text-slate-600">
+                          {p.code ? (
+                            <span className="px-2 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-700">
+                              {p.code}
+                            </span>
+                          ) : (
+                            <span className="text-slate-300">-</span>
+                          )}
+                        </td>
+
+                        {/* Name */}
+                        <td className="py-2.5 px-4 font-semibold text-slate-900">
+                          <div className="flex items-center gap-2">
+                            <span>{p.name}</span>
+                          </div>
+                        </td>
+
+                        {/* Category */}
+                        <td className="py-2.5 px-4 text-slate-600">
+                          {p.category ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-700 border border-slate-200/80">
+                              <Tag className="w-2.5 h-2.5 text-slate-400" />
+                              {p.category}
+                            </span>
+                          ) : (
+                            <span className="text-slate-300">-</span>
+                          )}
+                        </td>
+
+                        {/* Unit */}
+                        <td className="py-2.5 px-4 text-center">
+                          <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200/60">
+                            {p.unit || "Adet"}
                           </span>
-                        ) : (
-                          <span className="text-slate-300">-</span>
-                        )}
-                      </td>
+                        </td>
 
-                      {/* Name */}
-                      <td className="py-2.5 px-4 font-semibold text-slate-900">
-                        <div className="flex items-center gap-2">
-                          <span>{p.name}</span>
-                        </div>
-                      </td>
+                        {/* Price */}
+                        <td className="py-2.5 px-4 text-right font-bold text-slate-900 font-mono">
+                          {formatCurrency(p.unitPrice)}
+                        </td>
 
-                      {/* Category */}
-                      <td className="py-2.5 px-4 text-slate-600">
-                        {p.category ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-700 border border-slate-200/80">
-                            <Tag className="w-2.5 h-2.5 text-slate-400" />
-                            {p.category}
-                          </span>
-                        ) : (
-                          <span className="text-slate-300">-</span>
-                        )}
-                      </td>
+                        {/* Stock */}
+                        <td className="py-2.5 px-4 text-right font-mono text-slate-600">
+                          {p.stockQuantity !== undefined ? (
+                            <span
+                              className={`font-semibold ${
+                                p.stockQuantity <= 10
+                                  ? "text-amber-600"
+                                  : "text-slate-700"
+                              }`}
+                            >
+                              {p.stockQuantity.toLocaleString("tr-TR")} {p.unit}
+                            </span>
+                          ) : (
+                            <span className="text-slate-300">-</span>
+                          )}
+                        </td>
 
-                      {/* Unit */}
-                      <td className="py-2.5 px-4 text-center">
-                        <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200/60">
-                          {p.unit || "Adet"}
-                        </span>
-                      </td>
-
-                      {/* Price */}
-                      <td className="py-2.5 px-4 text-right font-bold text-slate-900 font-mono">
-                        {formatCurrency(p.unitPrice)}
-                      </td>
-
-                      {/* Stock */}
-                      <td className="py-2.5 px-4 text-right font-mono text-slate-600">
-                        {p.stockQuantity !== undefined ? (
-                          <span
-                            className={`font-semibold ${
-                              p.stockQuantity <= 10
-                                ? "text-amber-600"
-                                : "text-slate-700"
-                            }`}
-                          >
-                            {p.stockQuantity.toLocaleString("tr-TR")} {p.unit}
-                          </span>
-                        ) : (
-                          <span className="text-slate-300">-</span>
-                        )}
-                      </td>
-
-                      {/* Actions */}
-                      <td className="py-2.5 px-4 text-center">
-                        <div className="flex items-center justify-center gap-1 opacity-80 group-hover:opacity-100">
-                          <button
-                            onClick={() => handleOpenEditModal(p)}
-                            className="p-1 rounded-md text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors"
-                            title="Düzenle"
-                          >
-                            <Edit2 className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteItem(p.id, p.name)}
-                            className="p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
-                            title="Sil"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
+                        {/* Actions */}
+                        <td className="py-2.5 px-4 text-center">
+                          <div className="flex items-center justify-center gap-1 opacity-80 group-hover:opacity-100">
+                            <button
+                              onClick={() => handleOpenEditModal(p)}
+                              className="p-1 rounded-md text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                              title="Düzenle"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteItem(p.id, p.name)}
+                              className="p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                              title="Sil"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
           </div>
 
-          {/* Table Footer */}
-          <div className="p-3 bg-slate-50/80 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500">
-            <span>
-              Toplam {filteredProducts.length} ürün listeleniyor (Katalogda {products.length} ürün var)
-            </span>
-            <div className="flex items-center gap-3">
-              <span className="text-[11px] text-slate-400">
-                💡 Fiyat Teklifi modülünde ürün adı yazarken bu katalogdan otomatik tamamlanır.
+          {/* Table Footer with Pagination */}
+          <div className="p-3 bg-slate-50/80 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-600">
+            <div className="flex items-center gap-2">
+              <span className="font-semibold text-slate-800">
+                Toplam {filteredProducts.length.toLocaleString("tr-TR")} ürün
               </span>
+              <span className="text-slate-300">•</span>
+              <span>
+                Sayfa <span className="font-bold text-slate-900">{currentPage}</span> / {totalPages}
+              </span>
+            </div>
+
+            {/* Pagination Controls */}
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setCurrentPage(1)}
+                disabled={currentPage === 1}
+                className="px-2 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:hover:bg-white text-xs font-medium transition-colors"
+                title="İlk Sayfa"
+              >
+                « İlk
+              </button>
+              <button
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:hover:bg-white text-xs font-medium transition-colors"
+                title="Önceki Sayfa"
+              >
+                ‹ Önceki
+              </button>
+
+              <span className="px-3 py-1 rounded-lg bg-blue-50 text-blue-700 font-bold border border-blue-200 text-xs">
+                {currentPage}
+              </span>
+
+              <button
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className="px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:hover:bg-white text-xs font-medium transition-colors"
+                title="Sonraki Sayfa"
+              >
+                Sonraki ›
+              </button>
+              <button
+                onClick={() => setCurrentPage(totalPages)}
+                disabled={currentPage === totalPages}
+                className="px-2 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:hover:bg-white text-xs font-medium transition-colors"
+                title="Son Sayfa"
+              >
+                Son »
+              </button>
+
+              <div className="ml-2 flex items-center gap-1.5 border-l border-slate-200 pl-2">
+                <span className="text-[11px] text-slate-400 hidden md:inline">Sayfa:</span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value));
+                    setCurrentPage(1);
+                  }}
+                  className="bg-white border border-slate-200 rounded-lg text-xs py-1 px-1.5 font-medium text-slate-700 focus:outline-none"
+                >
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                  <option value={250}>250</option>
+                </select>
+              </div>
             </div>
           </div>
         </div>

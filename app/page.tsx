@@ -99,10 +99,10 @@ export default function Home() {
   const [productSource, setProductSource] = useState<"supabase" | "local" | "syncing">("syncing");
 
   // Function to load products with Supabase priority
-  const loadProductsWithPriority = async () => {
+  const loadProductsWithPriority = async (force: boolean = false) => {
     setProductSource("syncing");
     try {
-      const res = await fetch("/api/products");
+      const res = await fetch(`/api/products${force ? "?force=true" : ""}`);
       if (res.ok) {
         const data = await res.json();
         // Priority rule: If Supabase table has data, use it as primary catalog!
@@ -110,11 +110,14 @@ export default function Home() {
           setProducts(data.products);
           setProductSource("supabase");
           try {
+            // Cache in localStorage safely without crashing on quota for large catalogs
             localStorage.setItem(
               "easy_accounting_products_catalog_v1",
-              JSON.stringify(data.products)
+              JSON.stringify(data.products.slice(0, 5000))
             );
-          } catch {}
+          } catch (storageErr) {
+            console.warn("Local storage quota notice (catalog kept in-memory):", storageErr);
+          }
           return;
         }
       }
@@ -202,10 +205,13 @@ export default function Home() {
   useEffect(() => {
     try {
       if (products.length > 0) {
-        localStorage.setItem("easy_accounting_products_catalog_v1", JSON.stringify(products));
+        localStorage.setItem(
+          "easy_accounting_products_catalog_v1",
+          JSON.stringify(products.slice(0, 5000))
+        );
       }
     } catch {
-      // Ignore storage errors
+      // Ignore storage quota errors
     }
   }, [products]);
 

@@ -22,7 +22,26 @@ function getSupabaseServerClient() {
   });
 }
 
-export async function GET() {
+// In-memory cache for server responses to avoid repeated 36-request loops on fast reloads
+let cachedData: any = null;
+let lastFetchTime = 0;
+const CACHE_TTL_MS = 60 * 1000; // 60 seconds
+
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const force = searchParams.get("force") === "true";
+
+  // Return cache if valid and not force-refreshed
+  if (!force && cachedData && Date.now() - lastFetchTime < CACHE_TTL_MS) {
+    return NextResponse.json({
+      success: true,
+      hasData: cachedData.length > 0,
+      count: cachedData.length,
+      products: cachedData,
+      fromCache: true,
+    });
+  }
+
   const supabase = getSupabaseServerClient();
   if (!supabase) {
     return NextResponse.json(
@@ -32,24 +51,66 @@ export async function GET() {
   }
 
   try {
-    const { data, error, count } = await supabase
+    // 1. Get exact total count
+    const { count, error: countErr } = await supabase
       .from("products")
-      .select("*", { count: "exact" })
-      .order("name", { ascending: true });
+      .select("id", { count: "exact", head: true });
 
-    if (error) {
+    if (countErr) {
       return NextResponse.json(
-        { success: false, error: error.message, products: [] },
+        { success: false, error: countErr.message, products: [] },
         { status: 200 }
       );
     }
 
-    const mapped = (data || []).map(mapSupabaseToProductItem);
+    const totalCount = count || 0;
+    if (totalCount === 0) {
+      cachedData = [];
+      lastFetchTime = Date.now();
+      return NextResponse.json({
+        success: true,
+        hasData: false,
+        count: 0,
+        products: [],
+      });
+    }
+
+    // 2. Fetch all rows in batches of 1000 without hitting PostgREST 1000 limit
+    const PAGE_SIZE = 1000;
+    const ranges: { from: number; to: number }[] = [];
+    for (let from = 0; from < totalCount; from += PAGE_SIZE) {
+      const to = Math.min(from + PAGE_SIZE - 1, totalCount - 1);
+      ranges.push({ from, to });
+    }
+
+    const rawRows: any[] = [];
+    const CONCURRENCY = 6;
+    for (let i = 0; i < ranges.length; i += CONCURRENCY) {
+      const chunk = ranges.slice(i, i + CONCURRENCY);
+      const results = await Promise.all(
+        chunk.map((r) =>
+          supabase
+            .from("products")
+            .select("id, name, sale_price, unit_of_measure, stock_quantity, tags")
+            .range(r.from, r.to)
+        )
+      );
+
+      for (const res of results) {
+        if (res.data) {
+          rawRows.push(...res.data);
+        }
+      }
+    }
+
+    const mapped = rawRows.map(mapSupabaseToProductItem);
+    cachedData = mapped;
+    lastFetchTime = Date.now();
 
     return NextResponse.json({
       success: true,
       hasData: mapped.length > 0,
-      count: count ?? mapped.length,
+      count: mapped.length,
       products: mapped,
     });
   } catch (err: any) {
@@ -112,6 +173,9 @@ export async function POST(request: Request) {
           : error.hint,
       });
     }
+
+    // Invalidate server cache on new inserts
+    cachedData = null;
 
     return NextResponse.json({
       success: true,

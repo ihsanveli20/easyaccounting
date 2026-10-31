@@ -1,5 +1,6 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { ProductItem } from "../types/accounting";
+import { parseTurkishAmount } from "./excel";
 
 // Fallback hardcoded defaults from .env.local to ensure 100% reliability in client bundles
 const DEFAULT_SUPABASE_URL = "https://qcndlfastbrezugknkho.supabase.co";
@@ -53,29 +54,29 @@ export function mapSupabaseToProductItem(row: any): ProductItem {
     category = row.tags;
   }
 
-  // Parse price safely from sale_price, unit_price, price, or cost_price
+  // Parse price safely supporting Turkish formatted strings ("1.326,00") and numbers
   let price = 0;
   if (row.sale_price !== null && row.sale_price !== undefined) {
-    price = Number(row.sale_price);
+    price = typeof row.sale_price === "number" ? row.sale_price : parseTurkishAmount(row.sale_price);
   } else if (row.unit_price !== null && row.unit_price !== undefined) {
-    price = Number(row.unit_price);
+    price = typeof row.unit_price === "number" ? row.unit_price : parseTurkishAmount(row.unit_price);
   } else if (row.price !== null && row.price !== undefined) {
-    price = Number(row.price);
+    price = typeof row.price === "number" ? row.price : parseTurkishAmount(row.price);
   } else if (row.cost_price !== null && row.cost_price !== undefined) {
-    price = Number(row.cost_price);
+    price = typeof row.cost_price === "number" ? row.cost_price : parseTurkishAmount(row.cost_price);
   }
 
   // Parse unit safely from unit_of_measure, unit, uom, birim
   const unit =
     row.unit_of_measure || row.unit || row.uom || row.birim || "Adet";
 
-  // Parse stock quantity
-  const stock =
-    row.stock_quantity !== undefined && row.stock_quantity !== null
-      ? Number(row.stock_quantity)
-      : row.stock !== undefined && row.stock !== null
-        ? Number(row.stock)
-        : undefined;
+  // Parse stock quantity supporting Turkish number format
+  let stock: number | undefined = undefined;
+  if (row.stock_quantity !== undefined && row.stock_quantity !== null && row.stock_quantity !== "") {
+    stock = typeof row.stock_quantity === "number" ? row.stock_quantity : parseTurkishAmount(row.stock_quantity);
+  } else if (row.stock !== undefined && row.stock !== null && row.stock !== "") {
+    stock = typeof row.stock === "number" ? row.stock : parseTurkishAmount(row.stock);
+  }
 
   // Format date
   let updatedAt: string | undefined = undefined;
@@ -102,7 +103,7 @@ export function mapSupabaseToProductItem(row: any): ProductItem {
 }
 
 /**
- * Fetch products directly from Supabase products table
+ * Fetch ALL products directly from Supabase products table (with batch pagination over 1000 limit)
  */
 export async function fetchProductsFromSupabase(): Promise<{
   products: ProductItem[];
@@ -121,22 +122,23 @@ export async function fetchProductsFromSupabase(): Promise<{
   }
 
   try {
-    const { data, error, count } = await client
+    // 1. Get exact total count
+    const { count, error: countErr } = await client
       .from("products")
-      .select("*", { count: "exact" })
-      .order("name", { ascending: true });
+      .select("id", { count: "exact", head: true });
 
-    if (error) {
-      console.warn("Supabase products query error:", error.message);
+    if (countErr) {
+      console.warn("Supabase count query error:", countErr.message);
       return {
         products: [],
         count: 0,
         source: "error",
-        error: error.message,
+        error: countErr.message,
       };
     }
 
-    if (!data || data.length === 0) {
+    const totalCount = count || 0;
+    if (totalCount === 0) {
       return {
         products: [],
         count: 0,
@@ -144,10 +146,38 @@ export async function fetchProductsFromSupabase(): Promise<{
       };
     }
 
-    const mapped = data.map(mapSupabaseToProductItem);
+    // 2. Fetch in parallel batches of 1000
+    const PAGE_SIZE = 1000;
+    const ranges: { from: number; to: number }[] = [];
+    for (let from = 0; from < totalCount; from += PAGE_SIZE) {
+      const to = Math.min(from + PAGE_SIZE - 1, totalCount - 1);
+      ranges.push({ from, to });
+    }
+
+    const rawRows: any[] = [];
+    const CONCURRENCY = 6;
+    for (let i = 0; i < ranges.length; i += CONCURRENCY) {
+      const chunk = ranges.slice(i, i + CONCURRENCY);
+      const results = await Promise.all(
+        chunk.map((r) =>
+          client
+            .from("products")
+            .select("id, name, sale_price, unit_of_measure, stock_quantity, tags")
+            .range(r.from, r.to)
+        )
+      );
+
+      for (const res of results) {
+        if (res.data) {
+          rawRows.push(...res.data);
+        }
+      }
+    }
+
+    const mapped = rawRows.map(mapSupabaseToProductItem);
     return {
       products: mapped,
-      count: count ?? mapped.length,
+      count: mapped.length,
       source: "supabase",
     };
   } catch (err: any) {

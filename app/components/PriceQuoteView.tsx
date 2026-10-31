@@ -241,14 +241,17 @@ export default function PriceQuoteView({
     if (!q) {
       return catalogProducts.slice(0, 8);
     }
-    return catalogProducts
-      .filter((p) => {
-        const nameMatch = normalizeForSearch(p.name).includes(q);
-        const codeMatch = p.code ? normalizeForSearch(p.code).includes(q) : false;
-        const catMatch = p.category ? normalizeForSearch(p.category).includes(q) : false;
-        return nameMatch || codeMatch || catMatch;
-      })
-      .slice(0, 10);
+    const matches: ProductItem[] = [];
+    for (const p of catalogProducts) {
+      const nameMatch = normalizeForSearch(p.name).includes(q);
+      const codeMatch = p.code ? normalizeForSearch(p.code).includes(q) : false;
+      const catMatch = p.category ? normalizeForSearch(p.category).includes(q) : false;
+      if (nameMatch || codeMatch || catMatch) {
+        matches.push(p);
+        if (matches.length >= 10) break;
+      }
+    }
+    return matches;
   }, [catalogProducts, activeAutocompleteRow, currentQuery]);
 
   // Categories for Catalog Modal
@@ -260,19 +263,28 @@ export default function PriceQuoteView({
     return Array.from(set).sort((a, b) => a.localeCompare(b, "tr"));
   }, [catalogProducts]);
 
-  // Filtered Products in Catalog Modal
+  // Filtered Products in Catalog Modal (capped at 100 for instant UI rendering)
   const filteredCatalogList = useMemo(() => {
     const q = normalizeForSearch(catalogSearch);
-    return catalogProducts.filter((p) => {
+    const matches: ProductItem[] = [];
+    for (const p of catalogProducts) {
       if (selectedCatalogCategory !== "all" && p.category !== selectedCatalogCategory) {
-        return false;
+        continue;
       }
-      if (!q) return true;
+      if (!q) {
+        matches.push(p);
+        if (matches.length >= 100) break;
+        continue;
+      }
       const nameMatch = normalizeForSearch(p.name).includes(q);
       const codeMatch = p.code ? normalizeForSearch(p.code).includes(q) : false;
       const catMatch = p.category ? normalizeForSearch(p.category).includes(q) : false;
-      return nameMatch || codeMatch || catMatch;
-    });
+      if (nameMatch || codeMatch || catMatch) {
+        matches.push(p);
+        if (matches.length >= 100) break;
+      }
+    }
+    return matches;
   }, [catalogProducts, catalogSearch, selectedCatalogCategory]);
 
   // Load saved quote and company info from localStorage
@@ -1570,6 +1582,11 @@ export default function PriceQuoteView({
             <div className="flex items-center justify-between gap-3 pt-3 border-t border-slate-100 mt-3">
               <span className="text-xs text-slate-500">
                 {selectedCatalogIds.length} ürün seçildi
+                {filteredCatalogList.length >= 100 && (
+                  <span className="text-[11px] text-amber-600 ml-1">
+                    (İlk 100 gösteriliyor, diğerleri için arama yapın)
+                  </span>
+                )}
               </span>
               <div className="flex items-center gap-2">
                 <button

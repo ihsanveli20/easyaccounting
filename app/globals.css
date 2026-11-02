@@ -72,7 +72,9 @@ body {
     max-width: 100% !important;
     width: 100% !important;
   }
-  #printable-quote {
+  #printable-quote,
+  #history-printable-sheet,
+  #history-printable-wrapper {
     page-break-inside: avoid !important;
     break-inside: avoid !important;
     width: 100% !important;

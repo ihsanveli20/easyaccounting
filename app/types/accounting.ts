@@ -65,3 +65,51 @@ export interface ProductItem {
   updatedAt?: string; // Son Güncellenme Tarihi
 }
 
+export interface Customer {
+  id: number;
+  name: string;
+  created_at?: string;
+}
+
+export interface SavedProposalItem {
+  id: number;
+  proposal_id: number;
+  product_id: number | null;
+  quantity: number;
+  unit_price: number;
+  total_price: number;
+  created_at?: string;
+  product?: {
+    id: number;
+    name: string;
+    unit_of_measure?: string;
+    internal_reference?: string;
+    sale_price?: string | number;
+  } | null;
+}
+
+export interface SavedProposal {
+  id: number;
+  customer_id: number | null;
+  proposal_number: string;
+  raw_proposal_number?: string;
+  status: "draft" | "sent" | "accepted" | "rejected";
+  total_amount: number;
+  created_at: string;
+  customer?: { id: number; name: string } | null;
+  items?: SavedProposalItem[];
+  metadata?: {
+    notes?: string;
+    vatRate?: number;
+    vatNote?: string;
+    formTitle?: string;
+    preparedBy?: string;
+    quoteDate?: string;
+    customerName?: string;
+    customItems?: Array<{
+      materialName: string;
+      unit: string;
+    }>;
+  } | null;
+}
+

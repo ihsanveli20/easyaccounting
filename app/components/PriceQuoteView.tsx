@@ -29,13 +29,18 @@ import {
   Tag,
   X,
   Filter,
+  CloudUpload,
+  Users,
+  History,
+  Save,
 } from "lucide-react";
-import { ProductItem } from "../types/accounting";
+import { ProductItem, Customer, SavedProposal } from "../types/accounting";
 import { normalizeForSearch } from "../utils/excel";
 import { DEFAULT_SAMPLE_PRODUCTS } from "./ProductManagementView";
 
 export interface QuoteItem {
   id: string;
+  productId?: string | number; // MALZEME / ÜRÜN ID (Supabase products.id)
   materialName: string; // MALZEME CİNSİ
   quantity: number | ""; // MİKTAR
   unit: string; // BİRİM (Adet, Kg, Mt, Paket, vb.)
@@ -127,6 +132,73 @@ function numberToTurkishWords(amount: number): string {
   return sonuc.replace(/\s+/g, " ");
 }
 
+// Turkish quantity formatter (e.g. 14000 -> "14.000", 1000 -> "1.000", 200 -> "200")
+export function formatQuantityTurkish(qty: number | string | undefined | null): string {
+  if (qty === "" || qty === undefined || qty === null) return "";
+  const num =
+    typeof qty === "number"
+      ? qty
+      : parseFloat(String(qty).replace(/\./g, "").replace(",", "."));
+  if (isNaN(num)) return String(qty);
+  return new Intl.NumberFormat("tr-TR", {
+    maximumFractionDigits: 3,
+  }).format(num);
+}
+
+// Turkish quantity parser (e.g. "14.000" -> 14000, "1.000" -> 1000, "200" -> 200)
+export function parseQuantityTurkish(val: string): number | "" {
+  if (!val || val.trim() === "") return "";
+  const clean = val.trim().replace(/\./g, "").replace(",", ".");
+  const num = parseFloat(clean);
+  return isNaN(num) ? "" : num;
+}
+
+// Quantity input cell component for table
+interface QuantityCellProps {
+  value: number | "";
+  onChange: (val: number | "") => void;
+}
+
+function QuantityCell({ value, onChange }: QuantityCellProps) {
+  const [isFocused, setIsFocused] = useState(false);
+  const [text, setText] = useState("");
+
+  const displayValue = isFocused
+    ? text
+    : value !== ""
+    ? formatQuantityTurkish(value)
+    : "";
+
+  return (
+    <div className="relative w-full">
+      <input
+        type="text"
+        inputMode="decimal"
+        value={displayValue}
+        onFocus={() => {
+          setIsFocused(true);
+          setText(value !== "" ? String(value) : "");
+        }}
+        onChange={(e) => {
+          setText(e.target.value);
+          const parsed = parseQuantityTurkish(e.target.value);
+          onChange(parsed);
+        }}
+        onBlur={() => {
+          setIsFocused(false);
+          const parsed = parseQuantityTurkish(text);
+          onChange(parsed);
+        }}
+        className="w-full bg-transparent border-none focus:outline-none focus:bg-blue-50/50 rounded px-1 py-0.5 text-right font-medium text-slate-900 print:hidden text-xs"
+        placeholder="0"
+      />
+      <div className="hidden print:block font-medium text-slate-950 text-xs text-right">
+        {value !== "" && value !== 0 ? formatQuantityTurkish(value) : "\u00A0"}
+      </div>
+    </div>
+  );
+}
+
 // Generate empty row
 function createEmptyRow(): QuoteItem {
   return {
@@ -152,12 +224,18 @@ interface PriceQuoteViewProps {
   products?: ProductItem[];
   onGoToProducts?: () => void;
   productSource?: "supabase" | "local" | "syncing";
+  editingProposal?: SavedProposal | null;
+  onGoToHistory?: () => void;
+  onClearEditingProposal?: () => void;
 }
 
 export default function PriceQuoteView({
   products: initialProducts,
   onGoToProducts,
   productSource = "local",
+  editingProposal = null,
+  onGoToHistory,
+  onClearEditingProposal,
 }: PriceQuoteViewProps = {}) {
   // Today formatted as DD.MM.YYYY
   const getTodayStr = () => {
@@ -228,6 +306,125 @@ export default function PriceQuoteView({
   const [catalogSearch, setCatalogSearch] = useState<string>("");
   const [selectedCatalogCategory, setSelectedCatalogCategory] = useState<string>("all");
   const [selectedCatalogIds, setSelectedCatalogIds] = useState<string[]>([]);
+
+  // Customer selection from Supabase customers table
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [isLoadingCustomers, setIsLoadingCustomers] = useState<boolean>(false);
+  const [selectedCustomerId, setSelectedCustomerId] = useState<number | null>(null);
+  const [customerSearchModalOpen, setCustomerSearchModalOpen] = useState<boolean>(false);
+  const [customerModalSearch, setCustomerModalSearch] = useState<string>("");
+  const [customerDropdownOpen, setCustomerDropdownOpen] = useState<boolean>(false);
+
+  // Proposal persistence state (Supabase proposals & proposal_items)
+  const [proposalNumber, setProposalNumber] = useState<string>("");
+  const [proposalStatus, setProposalStatus] = useState<"draft" | "sent" | "accepted" | "rejected">("draft");
+  const [editingProposalId, setEditingProposalId] = useState<number | null>(null);
+  const [isSavingToSupabase, setIsSavingToSupabase] = useState<boolean>(false);
+
+  // Fetch customers from Supabase customers table on mount
+  useEffect(() => {
+    const loadCustomers = async () => {
+      setIsLoadingCustomers(true);
+      try {
+        const res = await fetch("/api/customers");
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && Array.isArray(data.customers)) {
+            setCustomers(data.customers);
+          }
+        }
+      } catch (err) {
+        console.warn("Could not fetch customers from Supabase:", err);
+      } finally {
+        setIsLoadingCustomers(false);
+      }
+    };
+    loadCustomers();
+  }, []);
+
+  // Load editingProposal when passed from ProposalHistoryView
+  useEffect(() => {
+    if (editingProposal) {
+      setEditingProposalId(editingProposal.id);
+      setProposalNumber(editingProposal.proposal_number);
+      setProposalStatus(editingProposal.status || "draft");
+      setSelectedCustomerId(editingProposal.customer_id);
+      setCustomerName(
+        editingProposal.customer?.name ||
+        editingProposal.metadata?.customerName ||
+        ""
+      );
+      if (editingProposal.metadata?.quoteDate) {
+        setQuoteDate(editingProposal.metadata.quoteDate);
+      }
+      if (editingProposal.metadata?.vatRate !== undefined) {
+        setVatRate(editingProposal.metadata.vatRate);
+      }
+      if (editingProposal.metadata?.vatNote !== undefined) {
+        setVatNote(editingProposal.metadata.vatNote);
+      }
+      if (editingProposal.metadata?.notes !== undefined) {
+        setNotes(editingProposal.metadata.notes);
+      }
+      if (editingProposal.metadata?.preparedBy !== undefined) {
+        setPreparedBy(editingProposal.metadata.preparedBy);
+      }
+
+      if (Array.isArray(editingProposal.items) && editingProposal.items.length > 0) {
+        const loadedRows: QuoteItem[] = editingProposal.items.map((it, idx) => {
+          const custom = editingProposal.metadata?.customItems?.[idx];
+          return {
+            id: String(it.id || idx + 1),
+            productId: it.product_id || undefined,
+            materialName: it.product?.name || custom?.materialName || "",
+            quantity: it.quantity,
+            unit: it.product?.unit_of_measure || custom?.unit || "Adet",
+            unitPrice: it.unit_price,
+            total: it.total_price || (it.quantity * it.unit_price),
+          };
+        });
+        while (loadedRows.length < 5) {
+          loadedRows.push(createEmptyRow());
+        }
+        setRows(loadedRows);
+      }
+    }
+  }, [editingProposal]);
+
+  // Customer matching for active input autocomplete
+  const matchingCustomers = useMemo(() => {
+    if (!customerDropdownOpen || !customerName.trim()) return [];
+    const q = normalizeForSearch(customerName);
+    const matches: Customer[] = [];
+    for (const c of customers) {
+      if (normalizeForSearch(c.name).includes(q)) {
+        matches.push(c);
+        if (matches.length >= 8) break;
+      }
+    }
+    return matches;
+  }, [customers, customerName, customerDropdownOpen]);
+
+  // Filtered customer list for modal (capped at 100 for instant UI responsiveness)
+  const filteredModalCustomers = useMemo(() => {
+    const q = normalizeForSearch(customerModalSearch);
+    if (!q) return customers.slice(0, 100);
+    const matches: Customer[] = [];
+    for (const c of customers) {
+      if (normalizeForSearch(c.name).includes(q)) {
+        matches.push(c);
+        if (matches.length >= 100) break;
+      }
+    }
+    return matches;
+  }, [customers, customerModalSearch]);
+
+  const handleSelectCustomer = (cust: Customer) => {
+    setCustomerName(cust.name.toLocaleUpperCase("tr-TR"));
+    setSelectedCustomerId(cust.id);
+    setCustomerDropdownOpen(false);
+    setCustomerSearchModalOpen(false);
+  };
 
   // Autocomplete matching products for current active row
   const currentQuery =
@@ -442,6 +639,7 @@ export default function PriceQuoteView({
     setRows((prev) => {
       const updated = [...prev];
       const row = { ...updated[index] };
+      row.productId = product.id;
       row.materialName = product.name;
       row.unit = product.unit || "Adet";
       row.unitPrice = product.unitPrice;
@@ -473,6 +671,7 @@ export default function PriceQuoteView({
           const targetIdx = emptyRowIndices.shift()!;
           updated[targetIdx] = {
             ...updated[targetIdx],
+            productId: item.id,
             materialName: item.name,
             unit: item.unit || "Adet",
             unitPrice: item.unitPrice,
@@ -482,6 +681,7 @@ export default function PriceQuoteView({
           // Append new row
           updated.push({
             id: Math.random().toString(36).substring(2, 9),
+            productId: item.id,
             materialName: item.name,
             quantity: "",
             unit: item.unit || "Adet",
@@ -504,7 +704,13 @@ export default function PriceQuoteView({
     if (confirm("Fiyat teklifini sıfırlamak istediğinize emin misiniz?")) {
       setRows(Array.from({ length: 5 }, () => createEmptyRow()));
       setCustomerName("");
+      setSelectedCustomerId(null);
+      setEditingProposalId(null);
+      setProposalNumber("");
+      setProposalStatus("draft");
       setQuoteDate(getTodayStr());
+      localStorage.removeItem("fiyat_teklifi_data_v2");
+      if (onClearEditingProposal) onClearEditingProposal();
       showToast("Teklif formu sıfırlandı.");
     }
   };
@@ -535,6 +741,99 @@ export default function PriceQuoteView({
   const subtotal = rows.reduce((acc, r) => acc + (r.total || 0), 0);
   const vatAmount = subtotal * (vatRate / 100);
   const grandTotal = subtotal + vatAmount;
+
+  // Save or Update Proposal in Supabase (proposals & proposal_items)
+  const handleSaveToSupabase = async () => {
+    const activeRows = rows.filter(
+      (r) =>
+        (r.materialName && r.materialName.trim() !== "") ||
+        (typeof r.quantity === "number" && r.quantity > 0)
+    );
+
+    if (activeRows.length === 0 && !customerName.trim()) {
+      showToast("Lütfen kaydetmeden önce müşteri adı veya en az bir ürün giriniz.");
+      return;
+    }
+
+    setIsSavingToSupabase(true);
+    try {
+      const itemsPayload = activeRows.map((r) => {
+        let pId = r.productId ? Number(r.productId) : null;
+        if (!pId && r.materialName.trim()) {
+          const matched = catalogProducts.find(
+            (cp) => normalizeForSearch(cp.name) === normalizeForSearch(r.materialName)
+          );
+          if (matched && matched.id) {
+            pId = Number(matched.id) || null;
+          }
+        }
+        return {
+          product_id: pId,
+          quantity: typeof r.quantity === "number" ? r.quantity : parseFloat(String(r.quantity)) || 1,
+          unit_price: typeof r.unitPrice === "number" ? r.unitPrice : parseFloat(String(r.unitPrice)) || 0,
+        };
+      });
+
+      const customItemsMeta = activeRows.map((r) => ({
+        materialName: r.materialName,
+        unit: r.unit,
+      }));
+
+      const metadata = {
+        notes,
+        vatRate,
+        vatNote,
+        formTitle,
+        preparedBy,
+        quoteDate,
+        customerName: customerName.trim(),
+        customItems: customItemsMeta,
+      };
+
+      const payload = {
+        id: editingProposalId || undefined,
+        customer_id: selectedCustomerId,
+        proposal_number: proposalNumber.trim() || undefined,
+        status: proposalStatus,
+        total_amount: grandTotal,
+        items: itemsPayload,
+        metadata,
+      };
+
+      const method = editingProposalId ? "PUT" : "POST";
+      const res = await fetch("/api/proposals", {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.proposal) {
+          if (!editingProposalId && data.proposal.id) {
+            setEditingProposalId(data.proposal.id);
+          }
+          if (data.proposal.proposal_number) {
+            setProposalNumber(data.proposal.proposal_number);
+          }
+          showToast(
+            editingProposalId
+              ? `Teklif (${data.proposal.proposal_number}) başarıyla güncellendi!`
+              : `Teklif (${data.proposal.proposal_number}) Supabase'e kaydedildi!`
+          );
+        } else {
+          showToast(`Kayıt hatası: ${data.error || "İşlem başarısız"}`);
+        }
+      } else {
+        const err = await res.json();
+        showToast(`Kayıt hatası: ${err.error || "Sunucu hatası"}`);
+      }
+    } catch (err: any) {
+      showToast(`Hata: ${err.message}`);
+    } finally {
+      setIsSavingToSupabase(false);
+    }
+  };
 
   // Print
   const handlePrint = () => {
@@ -810,6 +1109,45 @@ export default function PriceQuoteView({
             <span>Excel</span>
           </button>
 
+          {/* History Button */}
+          {onGoToHistory && (
+            <button
+              onClick={onGoToHistory}
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-semibold transition-colors shadow-2xs"
+              title="Daha önce verdiğiniz teklifleri görüntüleyin ve düzenleyin"
+            >
+              <History className="w-3.5 h-3.5 text-indigo-600" />
+              <span>Teklif Geçmişi</span>
+            </button>
+          )}
+
+          {/* Save / Update to Supabase Button */}
+          <button
+            onClick={handleSaveToSupabase}
+            disabled={isSavingToSupabase}
+            className={`flex items-center gap-1.5 px-3.5 sm:px-4 py-1.5 sm:py-2 text-white rounded-xl text-xs font-bold shadow-md transition-all active:scale-98 ${
+              editingProposalId
+                ? "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20"
+                : "bg-blue-600 hover:bg-blue-700 shadow-blue-600/20"
+            }`}
+            title="Teklifi Supabase bulut veritabanına kaydet"
+          >
+            {isSavingToSupabase ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : editingProposalId ? (
+              <CheckCircle2 className="w-3.5 h-3.5" />
+            ) : (
+              <CloudUpload className="w-3.5 h-3.5" />
+            )}
+            <span>
+              {isSavingToSupabase
+                ? "Kaydediliyor..."
+                : editingProposalId
+                ? "Teklifi Güncelle"
+                : "Supabase'e Kaydet"}
+            </span>
+          </button>
+
           {/* Download PDF Button */}
           <button
             onClick={handleDownloadPdf}
@@ -836,6 +1174,37 @@ export default function PriceQuoteView({
           </button>
         </div>
       </div>
+
+      {/* Editing proposal banner */}
+      {editingProposalId && (
+        <div className="no-print bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="font-bold text-emerald-900">
+              Kayıtlı Teklif Düzenleniyor:
+            </span>
+            <span className="font-mono font-bold text-emerald-800 bg-emerald-100/70 px-2 py-0.5 rounded">
+              {proposalNumber || `#${editingProposalId}`}
+            </span>
+            <span className="text-emerald-700 text-[11px]">
+              (Değişikliklerinizi &quot;Teklifi Güncelle&quot; butonuna basarak kaydedebilirsiniz)
+            </span>
+          </div>
+          <button
+            onClick={() => {
+              setEditingProposalId(null);
+              setProposalNumber("");
+              setCustomerName("");
+              setSelectedCustomerId(null);
+              setRows(Array.from({ length: 5 }, () => createEmptyRow()));
+              if (onClearEditingProposal) onClearEditingProposal();
+            }}
+            className="text-[11px] font-semibold text-emerald-800 hover:text-emerald-950 underline"
+          >
+            Yeni Teklife Geç →
+          </button>
+        </div>
+      )}
 
       {/* Optional Company Details Panel (Hidden in Print, editable for customization) */}
       {showCompanySettings && (
@@ -1024,16 +1393,55 @@ export default function PriceQuoteView({
                 >
                   MÜŞTERİ FİRMA ADI
                 </td>
-                <td className="border border-black py-1.5 px-2.5 font-bold text-slate-950 text-xs">
-                  <textarea
-                    rows={1}
-                    value={customerName}
-                    onChange={(e) =>
-                      setCustomerName(e.target.value.toLocaleUpperCase("tr-TR"))
-                    }
-                    placeholder="MÜŞTERİ FİRMA ADINI GİRİNİZ (ÖRN: ABC İNŞAAT SAN. VE TİC. A.Ş.)..."
-                    className="w-full bg-transparent border-none focus:outline-none font-bold text-slate-900 placeholder:font-normal placeholder:text-slate-300 resize-none overflow-hidden leading-snug print:hidden uppercase"
-                  />
+                <td className="border border-black py-1.5 px-2.5 font-bold text-slate-950 text-xs relative">
+                  <div className="flex items-start gap-1">
+                    <div className="relative flex-1">
+                      <textarea
+                        rows={1}
+                        value={customerName}
+                        onFocus={() => setCustomerDropdownOpen(true)}
+                        onChange={(e) => {
+                          setCustomerName(e.target.value.toLocaleUpperCase("tr-TR"));
+                          setCustomerDropdownOpen(true);
+                        }}
+                        placeholder="MÜŞTERİ FİRMA ADINI GİRİNİZ VEYA LİSTEDEN SEÇİNİZ..."
+                        className="w-full bg-transparent border-none focus:outline-none font-bold text-slate-900 placeholder:font-normal placeholder:text-slate-300 resize-none overflow-hidden leading-snug print:hidden uppercase"
+                      />
+                      {/* Customer Autocomplete Dropdown */}
+                      {customerDropdownOpen && matchingCustomers.length > 0 && (
+                        <div
+                          className="absolute left-0 top-full mt-1 w-full max-w-lg bg-white rounded-xl shadow-xl border border-slate-200 z-50 overflow-hidden divide-y divide-slate-100 no-print"
+                        >
+                          <div className="px-3 py-1.5 bg-slate-50 text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
+                            <span>Supabase Kayıtlı Müşteriler</span>
+                            <span>{matchingCustomers.length} Eşleşme</span>
+                          </div>
+                          {matchingCustomers.map((cust) => (
+                            <div
+                              key={cust.id}
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                handleSelectCustomer(cust);
+                              }}
+                              className="px-3 py-2 text-xs font-semibold text-slate-800 hover:bg-blue-50 hover:text-blue-700 cursor-pointer flex items-center justify-between gap-2"
+                            >
+                              <span className="truncate">{cust.name}</span>
+                              <span className="text-[10px] text-slate-400 font-mono shrink-0">#{cust.id}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    {/* Choose customer modal trigger button */}
+                    <button
+                      type="button"
+                      onClick={() => setCustomerSearchModalOpen(true)}
+                      className="no-print p-1 hover:bg-slate-100 text-slate-500 hover:text-blue-600 rounded shrink-0 transition-colors"
+                      title="Kayıtlı Müşteri Listesinden Seç (Supabase)"
+                    >
+                      <Users className="w-4 h-4" />
+                    </button>
+                  </div>
                   <div className="hidden print:block font-bold text-slate-950 text-xs leading-snug uppercase">
                     {customerName || "-"}
                   </div>
@@ -1222,23 +1630,10 @@ export default function PriceQuoteView({
 
                   {/* MİKTAR */}
                   <td className="border border-black py-1 px-2 text-right">
-                    <input
-                      type="number"
-                      step="any"
+                    <QuantityCell
                       value={row.quantity}
-                      onChange={(e) =>
-                        handleUpdateRow(
-                          idx,
-                          "quantity",
-                          e.target.value === "" ? "" : parseFloat(e.target.value) || 0
-                        )
-                      }
-                      className="w-full bg-transparent border-none focus:outline-none focus:bg-blue-50/50 rounded px-1 py-0.5 text-right font-medium text-slate-900 print:hidden text-xs"
-                      placeholder="0"
+                      onChange={(newQty) => handleUpdateRow(idx, "quantity", newQty)}
                     />
-                    <div className="hidden print:block font-medium text-slate-950 text-xs text-right">
-                      {row.quantity !== "" && row.quantity !== 0 ? row.quantity : "\u00A0"}
-                    </div>
                   </td>
 
                   {/* BİRİM */}
@@ -1613,6 +2008,97 @@ export default function PriceQuoteView({
                   Teklife Ekle ({selectedCatalogIds.length})
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Customer Selection Modal (Supabase customers) */}
+      {customerSearchModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl max-w-xl w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[80vh]">
+            <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center shadow-xs">
+                  <Building className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">
+                    Müşteri Seç (Supabase)
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Kayıtlı {customers.length} müşteri arasından seçim yapın
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setCustomerSearchModalOpen(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-3 border-b border-slate-100">
+              <div className="relative">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  autoFocus
+                  value={customerModalSearch}
+                  onChange={(e) => setCustomerModalSearch(e.target.value)}
+                  placeholder="Firma adı veya kurum ara..."
+                  className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10"
+                />
+              </div>
+            </div>
+
+            <div className="p-2 overflow-y-auto flex-1 divide-y divide-slate-100 max-h-96">
+              {filteredModalCustomers.length === 0 ? (
+                <div className="p-8 text-center text-slate-400 text-xs">
+                  <Building className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                  <p className="font-semibold text-slate-600">Aranan müşteri bulunamadı</p>
+                </div>
+              ) : (
+                filteredModalCustomers.map((cust) => {
+                  const isSelected = selectedCustomerId === cust.id;
+                  return (
+                    <div
+                      key={cust.id}
+                      onClick={() => handleSelectCustomer(cust)}
+                      className={`p-2.5 rounded-lg flex items-center justify-between gap-3 cursor-pointer transition-colors ${
+                        isSelected ? "bg-blue-50 text-blue-900 font-bold" : "hover:bg-slate-50"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div
+                          className={`w-6 h-6 rounded flex items-center justify-center shrink-0 text-[10px] font-bold ${
+                            isSelected
+                              ? "bg-blue-600 text-white"
+                              : "bg-slate-100 text-slate-600"
+                          }`}
+                        >
+                          {cust.id}
+                        </div>
+                        <span className="text-xs truncate">{cust.name}</span>
+                      </div>
+                      {isSelected && (
+                        <Check className="w-4 h-4 text-blue-600 shrink-0" />
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            <div className="p-3 border-t border-slate-100 bg-slate-50 flex items-center justify-between text-xs text-slate-500">
+              <span>{filteredModalCustomers.length} müşteri listelendi</span>
+              <button
+                onClick={() => setCustomerSearchModalOpen(false)}
+                className="px-3 py-1 bg-white border border-slate-200 hover:bg-slate-100 rounded-lg text-slate-700 font-medium"
+              >
+                Kapat
+              </button>
             </div>
           </div>
         </div>

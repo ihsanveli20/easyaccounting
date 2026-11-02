@@ -30,12 +30,14 @@ import {
   PanelLeftClose,
   PanelLeft,
   ShieldCheck,
+  History,
 } from "lucide-react";
 import {
   AccountRecord,
   ColumnMapping,
   CompanyDetail,
   ProductItem,
+  SavedProposal,
 } from "./types/accounting";
 import {
   SAMPLE_DATA,
@@ -51,13 +53,17 @@ import CompanyDetailView from "./components/CompanyDetailView";
 import DetailedCalculator from "./components/DetailedCalculator";
 import ReconciliationView from "./components/ReconciliationView";
 import PriceQuoteView from "./components/PriceQuoteView";
+import ProposalHistoryView from "./components/ProposalHistoryView";
 import ProductManagementView, { DEFAULT_SAMPLE_PRODUCTS } from "./components/ProductManagementView";
 
 export default function Home() {
-  // Navigation Tab: "summary" = Hesap Planı / Bakiye Listesi, "details" = Firma Detay Hareketleri, "calculator" = Ayrıntılı Hesap Makinesi, "reconciliation" = Ekstre & Luca Mutabakat, "quote" = Fiyat Teklifi, "stock-tracking" = Ürün Stok Takibi
+  // Navigation Tab: "summary" = Hesap Planı / Bakiye Listesi, "details" = Firma Detay Hareketleri, "calculator" = Ayrıntılı Hesap Makinesi, "reconciliation" = Ekstre & Luca Mutabakat, "quote" = Fiyat Teklifi, "proposal-history" = Teklif Geçmişi, "stock-tracking" = Ürün Stok Takibi
   const [activeTab, setActiveTab] = useState<
-    "summary" | "details" | "calculator" | "reconciliation" | "quote" | "stock-tracking"
+    "summary" | "details" | "calculator" | "reconciliation" | "quote" | "proposal-history" | "stock-tracking"
   >("summary");
+
+  // State for proposal editing when navigating from history to editor
+  const [editingProposal, setEditingProposal] = useState<SavedProposal | null>(null);
 
   // Sidebar Layout State
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -635,6 +641,17 @@ export default function Home() {
       tag: "YAZDIR",
     },
     {
+      id: "proposal-history" as const,
+      name: "Teklif Geçmişi",
+      shortName: "Geçmiş Teklifler",
+      description: "Kayıtlı Teklifler & Düzenle",
+      icon: History,
+      activeBg: "bg-indigo-600 text-white shadow-md shadow-indigo-600/25",
+      badge: null,
+      badgeStyle: "bg-white/20 text-white",
+      tag: "BULUT",
+    },
+    {
       id: "stock-tracking" as const,
       name: "Ürün & Stok Yönetimi",
       shortName: "Ürün Yönetimi",
@@ -1003,7 +1020,9 @@ export default function Home() {
                         ? "bg-gradient-to-tr from-rose-600 to-amber-500 shadow-rose-500/20"
                         : activeTab === "quote"
                           ? "bg-gradient-to-tr from-blue-600 to-cyan-500 shadow-blue-500/20"
-                          : "bg-gradient-to-tr from-amber-600 to-orange-500 shadow-amber-500/20"
+                          : activeTab === "proposal-history"
+                            ? "bg-gradient-to-tr from-indigo-600 to-purple-500 shadow-indigo-500/20"
+                            : "bg-gradient-to-tr from-amber-600 to-orange-500 shadow-amber-500/20"
                   }`}
               >
                 {activeTab === "summary" ? (
@@ -1016,6 +1035,8 @@ export default function Home() {
                   <Scale className="w-4 h-4 sm:w-5 sm:h-5" />
                 ) : activeTab === "quote" ? (
                   <FileText className="w-4 h-4 sm:w-5 sm:h-5" />
+                ) : activeTab === "proposal-history" ? (
+                  <History className="w-4 h-4 sm:w-5 sm:h-5" />
                 ) : (
                   <Package className="w-4 h-4 sm:w-5 sm:h-5" />
                 )}
@@ -1034,7 +1055,9 @@ export default function Home() {
                             ? "Ekstre & Luca Karşılaştırma"
                             : activeTab === "quote"
                               ? "Fiyat Teklifi"
-                              : "Ürün Stok Takibi"}
+                              : activeTab === "proposal-history"
+                                ? "Teklif Geçmişi"
+                                : "Ürün Stok Takibi"}
                   </span>
                   <span
                     className={`hidden sm:inline-block text-xs font-semibold px-2 py-0.5 rounded-full border ${activeTab === "summary"
@@ -1047,7 +1070,9 @@ export default function Home() {
                             ? "bg-rose-50 text-rose-700 border-rose-200"
                             : activeTab === "quote"
                               ? "bg-blue-50 text-blue-700 border-blue-200"
-                              : "bg-blue-50 text-blue-700 border-blue-200"
+                              : activeTab === "proposal-history"
+                                ? "bg-purple-50 text-purple-700 border-purple-200"
+                                : "bg-blue-50 text-blue-700 border-blue-200"
                       }`}
                   >
                     {activeTab === "summary"
@@ -1060,7 +1085,9 @@ export default function Home() {
                             ? "Mutabakat"
                             : activeTab === "quote"
                               ? "Teklif & Yazdır"
-                              : "Ürün Kataloğu"}
+                              : activeTab === "proposal-history"
+                                ? "Kayıtlı Teklifler"
+                                : "Ürün Kataloğu"}
                   </span>
                 </h1>
                 <p className="text-xs text-slate-500 hidden md:block truncate">
@@ -1074,7 +1101,9 @@ export default function Home() {
                           ? "Firma PDF ekstreleri ile Luca mizanını karşılaştırın, eksik ve uyuşmayanları bulun"
                           : activeTab === "quote"
                             ? "Fiyat teklifi oluşturun, otomatik KDV ve toplamlar hesaplayıp yazdırın"
-                            : "Excel ile ürün listenizi içe aktarın, kaydedin ve teklif hazırlarken anında çekin"}
+                            : activeTab === "proposal-history"
+                              ? "Supabase bulutunda kayıtlı teklifleri görüntüleyin, düzenleyin ve durumlarını takip edin"
+                              : "Excel ile ürün listenizi içe aktarın, kaydedin ve teklif hazırlarken anında çekin"}
                 </p>
               </div>
             </div>
@@ -1802,6 +1831,25 @@ export default function Home() {
               products={products}
               productSource={productSource}
               onGoToProducts={() => setActiveTab("stock-tracking")}
+              editingProposal={editingProposal}
+              onGoToHistory={() => setActiveTab("proposal-history")}
+              onClearEditingProposal={() => setEditingProposal(null)}
+            />
+          )}
+
+          {/* ========================================================================= */}
+          {/* TAB 5.5: PROPOSAL HISTORY (TEKLİF GEÇMİŞİ & DÜZENLEME)                      */}
+          {/* ========================================================================= */}
+          {activeTab === "proposal-history" && (
+            <ProposalHistoryView
+              onNewProposal={() => {
+                setEditingProposal(null);
+                setActiveTab("quote");
+              }}
+              onEditProposal={(prop) => {
+                setEditingProposal(prop);
+                setActiveTab("quote");
+              }}
             />
           )}
 

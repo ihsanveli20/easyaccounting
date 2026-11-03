@@ -52,9 +52,9 @@ export const SYSTEM_MENUS: MenuItemDefinition[] = [
   },
   {
     id: "proposal-comparison",
-    name: "Teklif Karşılaştırma",
-    shortName: "Teklif Kıyas",
-    description: "Teklif revizyonları, versiyon farkları ve fiyat kıyaslaması",
+    name: "Fiyat & Tedarikçi Kıyaslama",
+    shortName: "Fiyat Kıyaslama",
+    description: "Ürün için farklı yerlerden fiyat çekme, en uygun tedarikçi ve piyasa analizi",
     category: "sales",
   },
   {

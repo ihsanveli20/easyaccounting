@@ -7,9 +7,9 @@
       "reconciliation",
       "quote",
       "proposal-history",
-      "proposal-comparison",
       "stock-tracking",
-      "admin-users"
+      "admin-users",
+      "proposal-comparison"
     ],
     "sales": [
       "quote",

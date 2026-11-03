@@ -400,6 +400,40 @@ export default function PriceQuoteView({
     }
   }, [editingProposal]);
 
+  // Check for prefill item from ProposalComparisonView (Fiyat & Tedarikçi Kıyaslama)
+  useEffect(() => {
+    try {
+      const prefillRaw = sessionStorage.getItem("easy_accounting_quote_prefill");
+      if (prefillRaw) {
+        const item = JSON.parse(prefillRaw);
+        if (item && item.materialName) {
+          sessionStorage.removeItem("easy_accounting_quote_prefill");
+          setRows((prev) => {
+            const emptyIdx = prev.findIndex((r) => !r.materialName.trim());
+            const qty = item.quantity || 1;
+            const price = item.unitPrice || 0;
+            const newRow: QuoteItem = {
+              id: Math.random().toString(36).substring(2, 9),
+              materialName: item.materialName,
+              unit: item.unit || "Adet",
+              unitPrice: price,
+              quantity: qty,
+              total: qty * price,
+            };
+            if (emptyIdx !== -1) {
+              const copy = [...prev];
+              copy[emptyIdx] = newRow;
+              return copy;
+            }
+            return [...prev, newRow];
+          });
+          setToastMsg(`"${item.materialName}" kıyaslamadan teklif formuna aktarıldı!`);
+          setTimeout(() => setToastMsg(null), 3500);
+        }
+      }
+    } catch {}
+  }, []);
+
   // Customer matching for active input autocomplete
   const matchingCustomers = useMemo(() => {
     if (!customerDropdownOpen || !customerName.trim()) return [];

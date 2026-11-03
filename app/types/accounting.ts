@@ -166,3 +166,36 @@ export interface AppPermissionsConfig {
   userPermissions: UserMenuPermissions;
 }
 
+export interface SupplierQuote {
+  id: string;
+  supplierName: string;
+  productName: string;
+  productCode?: string;
+  unit: string;
+  unitPrice: number; // Liste veya baz birim fiyat (₺)
+  discountPercent?: number; // İskonto (%)
+  vatRate?: number; // KDV (%) varsayılan 20
+  vatIncluded?: boolean; // Fiyat KDV dahil mi?
+  shippingCostPerUnit?: number; // Birim başına nakliye/lojistik maliyeti
+  paymentTerm?: "cash" | "30_days" | "60_days" | "90_days" | "credit_card" | string; // Vade koşulu
+  minOrderQuantity?: number; // Min sipariş miktarı
+  leadTimeDays?: number; // Teslimat süresi (gün)
+  notes?: string;
+  sourceType: "supplier" | "market_web" | "factory" | "manual";
+  sourceUrl?: string;
+  updatedAt: string;
+}
+
+export interface MarketPriceResult {
+  id: string;
+  title: string;
+  source: string; // e.g. "Akakçe", "Cimri", "Koçtaş Pro", "Hepsiburada"
+  price: number;
+  currency: string;
+  unit?: string;
+  url?: string;
+  inStock?: boolean;
+  shippingInfo?: string;
+  lastUpdated: string;
+}
+

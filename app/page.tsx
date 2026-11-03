@@ -679,14 +679,14 @@ export default function Home() {
     },
     {
       id: "proposal-comparison" as const,
-      name: "Teklif Karşılaştırma",
-      shortName: "Teklif Kıyas",
-      description: "Revizyon Kıyas & Fark Analizi",
+      name: "Fiyat & Tedarikçi Kıyaslama",
+      shortName: "Fiyat Kıyaslama",
+      description: "Farklı Yerlerden Fiyat Çekme & En Uygun Tedarikçi",
       icon: ArrowLeftRight,
-      activeBg: "bg-purple-600 text-white shadow-md shadow-purple-600/25",
+      activeBg: "bg-emerald-600 text-white shadow-md shadow-emerald-600/25",
       badge: null,
       badgeStyle: "bg-white/20 text-white",
-      tag: "ÇOK YAKINDA",
+      tag: "YENİ",
     },
     {
       id: "stock-tracking" as const,
@@ -1233,7 +1233,7 @@ export default function Home() {
                               : activeTab === "proposal-history"
                                 ? "Teklif Geçmişi"
                                 : activeTab === "proposal-comparison"
-                                  ? "Teklif Karşılaştırma"
+                                  ? "Fiyat & Tedarikçi Kıyaslama"
                                   : activeTab === "stock-tracking"
                                     ? "Ürün Stok Takibi"
                                     : "Kullanıcı & Yetki Yönetimi"}
@@ -1252,7 +1252,7 @@ export default function Home() {
                               : activeTab === "proposal-history"
                                 ? "bg-purple-50 text-purple-700 border-purple-200"
                                 : activeTab === "proposal-comparison"
-                                  ? "bg-amber-100 text-amber-900 border-amber-300 font-extrabold"
+                                  ? "bg-emerald-100 text-emerald-900 border-emerald-300 font-extrabold"
                                   : activeTab === "stock-tracking"
                                     ? "bg-blue-50 text-blue-700 border-blue-200"
                                     : "bg-purple-50 text-purple-700 border-purple-200"
@@ -1271,7 +1271,7 @@ export default function Home() {
                               : activeTab === "proposal-history"
                                 ? "Kayıtlı Teklifler"
                                 : activeTab === "proposal-comparison"
-                                  ? "ÇOK YAKINDA"
+                                  ? "En Uygun Fiyat"
                                   : activeTab === "stock-tracking"
                                     ? "Ürün Kataloğu"
                                     : "Admin Paneli"}
@@ -1291,7 +1291,7 @@ export default function Home() {
                             : activeTab === "proposal-history"
                               ? "Supabase bulutunda kayıtlı teklifleri görüntüleyin, düzenleyin ve durumlarını takip edin"
                               : activeTab === "proposal-comparison"
-                                ? "Teklif revizyonlarını, alternatif teklifleri ve tedarikçi maliyetlerini yan yana kıyaslayın"
+                                ? "Ürün bazında farklı tedarikçi ve internet fiyatlarını çekin, en uygun maliyeti bulun"
                                 : activeTab === "stock-tracking"
                                   ? "Excel ile ürün listenizi içe aktarın, kaydedin ve teklif hazırlarken anında çekin"
                                   : "Kullanıcıları görüntüleyin, rolleri güncelleyin ve yetki matrisini yönetin"}
@@ -2098,10 +2098,11 @@ export default function Home() {
           )}
 
           {/* ========================================================================= */}
-          {/* TAB 5.6: PROPOSAL COMPARISON (TEKLİF KARŞILAŞTIRMA - ÇOK YAKINDA)         */}
+          {/* TAB 5.6: PROPOSAL COMPARISON (FİYAT & TEDARİKÇİ KIYASLAMA)                */}
           {/* ========================================================================= */}
           {activeTab === "proposal-comparison" && hasMenuAccess("proposal-comparison") && (
             <ProposalComparisonView
+              products={products}
               onGoToQuote={() => setActiveTab("quote")}
               onGoToHistory={() => setActiveTab("proposal-history")}
             />

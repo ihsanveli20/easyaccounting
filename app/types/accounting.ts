@@ -140,7 +140,10 @@ export type AppMenuId =
   | "proposal-history"
   | "proposal-comparison"
   | "stock-tracking"
+  | "kurban-reporting"
   | "admin-users";
+
+export * from "./kurban";
 
 export interface MenuItemDefinition {
   id: AppMenuId;

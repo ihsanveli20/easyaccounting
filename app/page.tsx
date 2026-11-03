@@ -37,6 +37,7 @@ import {
   UserCheck,
   Lock,
   ArrowLeftRight,
+  Truck,
 } from "lucide-react";
 import {
   AccountRecord,
@@ -62,6 +63,7 @@ import PriceQuoteView from "./components/PriceQuoteView";
 import ProposalHistoryView from "./components/ProposalHistoryView";
 import ProposalComparisonView from "./components/ProposalComparisonView";
 import ProductManagementView, { DEFAULT_SAMPLE_PRODUCTS } from "./components/ProductManagementView";
+import KurbanReportingView from "./components/KurbanReportingView";
 import LoginView from "./components/LoginView";
 import AdminUsersView from "./components/AdminUsersView";
 import { useAuth } from "./context/AuthContext";
@@ -83,9 +85,9 @@ export default function Home() {
     hasMenuAccess,
   } = useAuth();
 
-  // Navigation Tab: "summary" = Hesap Planı / Bakiye Listesi, "details" = Firma Detay Hareketleri, "calculator" = Ayrıntılı Hesap Makinesi, "reconciliation" = Ekstre & Luca Mutabakat, "quote" = Fiyat Teklifi, "proposal-history" = Teklif Geçmişi, "proposal-comparison" = Teklif Karşılaştırma, "stock-tracking" = Ürün Stok Takibi, "admin-users" = Kullanıcı & Yetki Yönetimi
+  // Navigation Tab: "summary" = Hesap Planı / Bakiye Listesi, "details" = Firma Detay Hareketleri, "calculator" = Ayrıntılı Hesap Makinesi, "reconciliation" = Ekstre & Luca Mutabakat, "quote" = Fiyat Teklifi, "proposal-history" = Teklif Geçmişi, "proposal-comparison" = Teklif Karşılaştırma, "stock-tracking" = Ürün Stok Takibi, "kurban-reporting" = Kurban Raporlama & Takip, "admin-users" = Kullanıcı & Yetki Yönetimi
   const [activeTab, setActiveTab] = useState<
-    "summary" | "details" | "calculator" | "reconciliation" | "quote" | "proposal-history" | "proposal-comparison" | "stock-tracking" | "admin-users"
+    "summary" | "details" | "calculator" | "reconciliation" | "quote" | "proposal-history" | "proposal-comparison" | "stock-tracking" | "kurban-reporting" | "admin-users"
   >("summary");
 
   // State for proposal editing when navigating from history to editor
@@ -699,6 +701,17 @@ export default function Home() {
       badgeStyle: "bg-white/20 text-white",
       tag: "YENİ",
     },
+    {
+      id: "kurban-reporting" as const,
+      name: "Kurban Raporlama & Takip",
+      shortName: "Kurban Raporlama",
+      description: "Sevkiyat, Kesimhane & Hissedar Takibi",
+      icon: Truck,
+      activeBg: "bg-amber-600 text-white shadow-md shadow-amber-600/25",
+      badge: null,
+      badgeStyle: "bg-white/20 text-white",
+      tag: "YENİ",
+    },
     ...(isAdmin
       ? [
           {
@@ -1193,7 +1206,9 @@ export default function Home() {
                               ? "bg-gradient-to-tr from-purple-700 via-indigo-600 to-purple-900 shadow-purple-600/20"
                               : activeTab === "stock-tracking"
                                 ? "bg-gradient-to-tr from-amber-600 to-orange-500 shadow-amber-500/20"
-                                : "bg-gradient-to-tr from-purple-600 to-indigo-600 shadow-purple-500/20"
+                                : activeTab === "kurban-reporting"
+                                  ? "bg-gradient-to-tr from-amber-600 via-emerald-600 to-teal-700 shadow-amber-600/20"
+                                  : "bg-gradient-to-tr from-purple-600 to-indigo-600 shadow-purple-500/20"
                   }`}
               >
                 {activeTab === "summary" ? (
@@ -1212,6 +1227,8 @@ export default function Home() {
                   <ArrowLeftRight className="w-4 h-4 sm:w-5 sm:h-5 text-amber-300" />
                 ) : activeTab === "stock-tracking" ? (
                   <Package className="w-4 h-4 sm:w-5 sm:h-5" />
+                ) : activeTab === "kurban-reporting" ? (
+                  <Truck className="w-4 h-4 sm:w-5 sm:h-5 text-amber-100" />
                 ) : (
                   <UserCheck className="w-4 h-4 sm:w-5 sm:h-5" />
                 )}
@@ -1236,7 +1253,9 @@ export default function Home() {
                                   ? "Fiyat & Tedarikçi Kıyaslama"
                                   : activeTab === "stock-tracking"
                                     ? "Ürün Stok Takibi"
-                                    : "Kullanıcı & Yetki Yönetimi"}
+                                    : activeTab === "kurban-reporting"
+                                      ? "Kurban Raporlama & Takip"
+                                      : "Kullanıcı & Yetki Yönetimi"}
                   </span>
                   <span
                     className={`hidden sm:inline-block text-xs font-semibold px-2 py-0.5 rounded-full border ${activeTab === "summary"
@@ -1255,7 +1274,9 @@ export default function Home() {
                                   ? "bg-emerald-100 text-emerald-900 border-emerald-300 font-extrabold"
                                   : activeTab === "stock-tracking"
                                     ? "bg-blue-50 text-blue-700 border-blue-200"
-                                    : "bg-purple-50 text-purple-700 border-purple-200"
+                                    : activeTab === "kurban-reporting"
+                                      ? "bg-amber-100 text-amber-900 border-amber-300 font-extrabold"
+                                      : "bg-purple-50 text-purple-700 border-purple-200"
                       }`}
                   >
                     {activeTab === "summary"
@@ -1274,7 +1295,9 @@ export default function Home() {
                                   ? "En Uygun Fiyat"
                                   : activeTab === "stock-tracking"
                                     ? "Ürün Kataloğu"
-                                    : "Admin Paneli"}
+                                    : activeTab === "kurban-reporting"
+                                      ? "Dijital Rapor & Karne"
+                                      : "Admin Paneli"}
                   </span>
                 </h1>
                 <p className="text-xs text-slate-500 hidden md:block truncate">
@@ -1294,7 +1317,9 @@ export default function Home() {
                                 ? "Ürün bazında farklı tedarikçi ve internet fiyatlarını çekin, en uygun maliyeti bulun"
                                 : activeTab === "stock-tracking"
                                   ? "Excel ile ürün listenizi içe aktarın, kaydedin ve teklif hazırlarken anında çekin"
-                                  : "Kullanıcıları görüntüleyin, rolleri güncelleyin ve yetki matrisini yönetin"}
+                                  : activeTab === "kurban-reporting"
+                                    ? "400-500 kurbanlık için sevkiyat tırı, çiftlik menşei, faturası, kesimhane, 7 hisse dağıtımı, fotoğraflar ve dijital karne"
+                                    : "Kullanıcıları görüntüleyin, rolleri güncelleyin ve yetki matrisini yönetin"}
                 </p>
               </div>
             </div>
@@ -2119,6 +2144,13 @@ export default function Home() {
               onRefreshFromSupabase={loadProductsWithPriority}
               onGoToQuote={() => setActiveTab("quote")}
             />
+          )}
+
+          {/* ========================================================================= */}
+          {/* TAB 6.5: KURBAN REPORTING (KURBAN RAPORLAMA & DİJİTAL KARNE)             */}
+          {/* ========================================================================= */}
+          {activeTab === "kurban-reporting" && hasMenuAccess("kurban-reporting") && (
+            <KurbanReportingView />
           )}
 
           {/* ========================================================================= */}

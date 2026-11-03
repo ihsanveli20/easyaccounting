@@ -65,6 +65,13 @@ export const SYSTEM_MENUS: MenuItemDefinition[] = [
     category: "sales",
   },
   {
+    id: "kurban-reporting",
+    name: "Kurban Raporlama & Takip",
+    shortName: "Kurban Raporlama",
+    description: "400-500 kurbanlık sevkiyat, kesimhane, hisse dağıtımı ve fotoğraflı dijital raporlama",
+    category: "sales",
+  },
+  {
     id: "admin-users",
     name: "Kullanıcı & Yetki Yönetimi",
     shortName: "Yetki Paneli",
@@ -83,6 +90,7 @@ export const DEFAULT_ROLE_PERMISSIONS: RoleMenuPermissions = {
     "proposal-history",
     "proposal-comparison",
     "stock-tracking",
+    "kurban-reporting",
     "admin-users",
   ],
   sales: [
@@ -90,6 +98,7 @@ export const DEFAULT_ROLE_PERMISSIONS: RoleMenuPermissions = {
     "proposal-history",
     "proposal-comparison",
     "stock-tracking",
+    "kurban-reporting",
     "details",
     "calculator",
   ],
@@ -98,10 +107,12 @@ export const DEFAULT_ROLE_PERMISSIONS: RoleMenuPermissions = {
     "details",
     "proposal-history",
     "proposal-comparison",
+    "kurban-reporting",
   ],
   purchasing: [
     "stock-tracking",
     "proposal-comparison",
+    "kurban-reporting",
     "summary",
     "calculator",
   ],
@@ -109,6 +120,7 @@ export const DEFAULT_ROLE_PERMISSIONS: RoleMenuPermissions = {
     "summary",
     "details",
     "proposal-comparison",
+    "kurban-reporting",
     "calculator",
   ],
 };

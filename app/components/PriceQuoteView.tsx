@@ -166,8 +166,8 @@ function QuantityCell({ value, onChange }: QuantityCellProps) {
   const displayValue = isFocused
     ? text
     : value !== ""
-    ? formatQuantityTurkish(value)
-    : "";
+      ? formatQuantityTurkish(value)
+      : "";
 
   return (
     <div className="relative w-full">
@@ -290,7 +290,7 @@ export default function PriceQuoteView({
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       }
-    } catch {}
+    } catch { }
     return DEFAULT_SAMPLE_PRODUCTS;
   });
 
@@ -819,7 +819,7 @@ export default function PriceQuoteView({
           showToast(
             editingProposalId
               ? `Teklif (${data.proposal.proposal_number}) başarıyla güncellendi!`
-              : `Teklif (${data.proposal.proposal_number}) Supabase'e kaydedildi!`
+              : `Teklif (${data.proposal.proposal_number}) kaydedildi!`
           );
         } else {
           showToast(`Kayıt hatası: ${data.error || "İşlem başarısız"}`);
@@ -1060,7 +1060,7 @@ export default function PriceQuoteView({
             )}
             {productSource === "supabase" && (
               <span className="hidden sm:inline text-[9px] font-bold px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 border border-emerald-300">
-                Supabase
+                DB
               </span>
             )}
           </button>
@@ -1080,8 +1080,8 @@ export default function PriceQuoteView({
           <button
             onClick={() => setShowCompanySettings((prev) => !prev)}
             className={`flex items-center gap-1 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl text-xs font-semibold border transition-colors ${showCompanySettings
-                ? "bg-slate-800 text-white border-slate-800"
-                : "bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200"
+              ? "bg-slate-800 text-white border-slate-800"
+              : "bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200"
               }`}
             title="Firma unvanı, adres ve iletişim bilgilerini düzenle"
           >
@@ -1125,12 +1125,11 @@ export default function PriceQuoteView({
           <button
             onClick={handleSaveToSupabase}
             disabled={isSavingToSupabase}
-            className={`flex items-center gap-1.5 px-3.5 sm:px-4 py-1.5 sm:py-2 text-white rounded-xl text-xs font-bold shadow-md transition-all active:scale-98 ${
-              editingProposalId
-                ? "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20"
-                : "bg-blue-600 hover:bg-blue-700 shadow-blue-600/20"
-            }`}
-            title="Teklifi Supabase bulut veritabanına kaydet"
+            className={`flex items-center gap-1.5 px-3.5 sm:px-4 py-1.5 sm:py-2 text-white rounded-xl text-xs font-bold shadow-md transition-all active:scale-98 ${editingProposalId
+              ? "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20"
+              : "bg-blue-600 hover:bg-blue-700 shadow-blue-600/20"
+              }`}
+            title="Teklifi Bulut veritabanına kaydet"
           >
             {isSavingToSupabase ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -1143,8 +1142,8 @@ export default function PriceQuoteView({
               {isSavingToSupabase
                 ? "Kaydediliyor..."
                 : editingProposalId
-                ? "Teklifi Güncelle"
-                : "Supabase'e Kaydet"}
+                  ? "Teklifi Güncelle"
+                  : "Kaydet"}
             </span>
           </button>
 
@@ -1413,7 +1412,7 @@ export default function PriceQuoteView({
                           className="absolute left-0 top-full mt-1 w-full max-w-lg bg-white rounded-xl shadow-xl border border-slate-200 z-50 overflow-hidden divide-y divide-slate-100 no-print"
                         >
                           <div className="px-3 py-1.5 bg-slate-50 text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
-                            <span>Supabase Kayıtlı Müşteriler</span>
+                            <span>Kayıtlı Müşteriler</span>
                             <span>{matchingCustomers.length} Eşleşme</span>
                           </div>
                           {matchingCustomers.map((cust) => (
@@ -1437,7 +1436,7 @@ export default function PriceQuoteView({
                       type="button"
                       onClick={() => setCustomerSearchModalOpen(true)}
                       className="no-print p-1 hover:bg-slate-100 text-slate-500 hover:text-blue-600 rounded shrink-0 transition-colors"
-                      title="Kayıtlı Müşteri Listesinden Seç (Supabase)"
+                      title="Kayıtlı Müşteri Listesinden Seç"
                     >
                       <Users className="w-4 h-4" />
                     </button>
@@ -1849,7 +1848,7 @@ export default function PriceQuoteView({
                   <span>Katalogdan Teklife Ürün Seç ({catalogProducts.length} Ürün)</span>
                   {productSource === "supabase" ? (
                     <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                      🟢 Supabase Bulut
+                      🟢 Bulut
                     </span>
                   ) : (
                     <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-slate-100 text-slate-600 border border-slate-200">
@@ -1932,17 +1931,15 @@ export default function PriceQuoteView({
                           isSelected ? prev.filter((id) => id !== p.id) : [...prev, p.id]
                         );
                       }}
-                      className={`p-2.5 sm:p-3 flex items-center justify-between gap-3 cursor-pointer transition-colors ${
-                        isSelected ? "bg-indigo-50/70" : "hover:bg-slate-50"
-                      }`}
+                      className={`p-2.5 sm:p-3 flex items-center justify-between gap-3 cursor-pointer transition-colors ${isSelected ? "bg-indigo-50/70" : "hover:bg-slate-50"
+                        }`}
                     >
                       <div className="flex items-center gap-3 min-w-0">
                         <div
-                          className={`w-4 h-4 rounded border flex items-center justify-center transition-colors shrink-0 ${
-                            isSelected
-                              ? "bg-indigo-600 border-indigo-600 text-white"
-                              : "border-slate-300 bg-white"
-                          }`}
+                          className={`w-4 h-4 rounded border flex items-center justify-center transition-colors shrink-0 ${isSelected
+                            ? "bg-indigo-600 border-indigo-600 text-white"
+                            : "border-slate-300 bg-white"
+                            }`}
                         >
                           {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
                         </div>
@@ -2024,7 +2021,7 @@ export default function PriceQuoteView({
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-slate-900">
-                    Müşteri Seç (Supabase)
+                    Müşteri Seç
                   </h3>
                   <p className="text-[11px] text-slate-500">
                     Kayıtlı {customers.length} müşteri arasından seçim yapın
@@ -2066,17 +2063,15 @@ export default function PriceQuoteView({
                     <div
                       key={cust.id}
                       onClick={() => handleSelectCustomer(cust)}
-                      className={`p-2.5 rounded-lg flex items-center justify-between gap-3 cursor-pointer transition-colors ${
-                        isSelected ? "bg-blue-50 text-blue-900 font-bold" : "hover:bg-slate-50"
-                      }`}
+                      className={`p-2.5 rounded-lg flex items-center justify-between gap-3 cursor-pointer transition-colors ${isSelected ? "bg-blue-50 text-blue-900 font-bold" : "hover:bg-slate-50"
+                        }`}
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
                         <div
-                          className={`w-6 h-6 rounded flex items-center justify-center shrink-0 text-[10px] font-bold ${
-                            isSelected
-                              ? "bg-blue-600 text-white"
-                              : "bg-slate-100 text-slate-600"
-                          }`}
+                          className={`w-6 h-6 rounded flex items-center justify-center shrink-0 text-[10px] font-bold ${isSelected
+                            ? "bg-blue-600 text-white"
+                            : "bg-slate-100 text-slate-600"
+                            }`}
                         >
                           {cust.id}
                         </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useRef } from "react";
+import React, { useState, useMemo, useRef, useEffect } from "react";
 import {
   Truck,
   FileText,
@@ -37,6 +37,8 @@ import {
   ArrowUpDown,
   FileDown,
   Sparkles,
+  Database,
+  Loader2,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import {
@@ -53,12 +55,25 @@ import {
   exportQurbanRecordsToExcel,
   downloadQurbanImportTemplate,
 } from "../utils/kurbanData";
+import {
+  fetchQurbansApi,
+  createQurbanApi,
+  updateQurbanApi,
+  deleteQurbanApi,
+  bulkImportQurbansApi,
+} from "../utils/kurbanApi";
 
 export default function KurbanReportingView() {
   // Main records state
   const [records, setRecords] = useState<QurbanRecord[]>(() =>
     getStoredQurbanRecords()
   );
+
+  // Supabase Cloud Sync States
+  const [isCloudLoading, setIsCloudLoading] = useState<boolean>(false);
+  const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [isSupabaseConnected, setIsSupabaseConnected] = useState<boolean>(false);
+  const [cloudError, setCloudError] = useState<string | null>(null);
 
   // Search & Filter State
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -93,6 +108,63 @@ export default function KurbanReportingView() {
   const handleSaveRecords = (updated: QurbanRecord[]) => {
     setRecords(updated);
     saveStoredQurbanRecords(updated);
+  };
+
+  // Fetch from Supabase on mount
+  const loadFromSupabase = async (showNotification = false) => {
+    setIsCloudLoading(true);
+    setCloudError(null);
+    try {
+      const res = await fetchQurbansApi();
+      if (res.success) {
+        setIsSupabaseConnected(true);
+        if (res.data.length > 0) {
+          setRecords(res.data);
+          saveStoredQurbanRecords(res.data);
+          if (showNotification) {
+            showToast(`${res.data.length} adet kurban Supabase'den güncellendi.`);
+          }
+        } else {
+          // If Supabase table is empty, fall back to local stored records
+          const local = getStoredQurbanRecords();
+          if (local.length > 0) {
+            setRecords(local);
+          }
+          if (showNotification) {
+            showToast("Supabase tablonuz şu an boş. Örnek verileri yükleyebilirsiniz.");
+          }
+        }
+      } else {
+        setCloudError(res.error || "Supabase bağlantısı kurulamadı");
+        if (showNotification) {
+          showToast(`Supabase bağlantı uyarısı: ${res.error || "Bilinmeyen hata"}`);
+        }
+      }
+    } catch (err: any) {
+      setCloudError(err?.message || "Bağlantı hatası");
+    } finally {
+      setIsCloudLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadFromSupabase(false);
+  }, []);
+
+  // Bulk Seed Demo Records to Supabase
+  const handleSeedDemoToSupabase = async () => {
+    if (confirm("Örnek 5 kurban kaydını ve hissedarlarını Supabase veritabanına aktarmak istiyor musunuz?")) {
+      setIsSaving(true);
+      showToast("Örnek kayıtlar Supabase'e aktarılıyor...");
+      const res = await bulkImportQurbansApi(SAMPLE_QURBAN_RECORDS);
+      setIsSaving(false);
+      if (res.success) {
+        showToast("Örnek kayıtlar Supabase bulutuna başarıyla yüklendi!");
+        await loadFromSupabase(false);
+      } else {
+        alert("Supabase'e aktarma başarısız oldu: " + (res.error || "Bilinmeyen hata"));
+      }
+    }
   };
 
   // Form State for Add / Edit
@@ -308,49 +380,85 @@ export default function KurbanReportingView() {
     setEditModalOpen(true);
   };
 
-  // Save Add/Edit Record
-  const handleSaveModalForm = (e: React.FormEvent) => {
+  // Save Add/Edit Record with Supabase CRUD
+  const handleSaveModalForm = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.qurbanNo?.trim() || !formData.earTagNo?.trim()) {
       alert("Lütfen Kurban No ve Küpe No alanlarını doldurunuz.");
       return;
     }
 
-    if (editingRecordId) {
-      // Update
-      const updated = records.map((r) =>
-        r.id === editingRecordId
-          ? ({
-              ...r,
-              ...formData,
-              updatedAt: new Date().toISOString().split("T")[0],
-            } as QurbanRecord)
-          : r
-      );
-      handleSaveRecords(updated);
-      showToast(`${formData.qurbanNo} başarıyla güncellendi.`);
-    } else {
-      // Create new
-      const newRec: QurbanRecord = {
-        ...formData,
-        id: `krb-${Date.now()}`,
-        createdAt: new Date().toISOString().split("T")[0],
-        updatedAt: new Date().toISOString().split("T")[0],
-      } as QurbanRecord;
+    setIsSaving(true);
+    try {
+      if (editingRecordId) {
+        // UPDATE in Supabase
+        const updatedRecord = {
+          ...records.find((r) => r.id === editingRecordId),
+          ...formData,
+          id: editingRecordId,
+          updatedAt: new Date().toISOString(),
+        } as QurbanRecord;
 
-      handleSaveRecords([newRec, ...records]);
-      showToast(`${formData.qurbanNo} sisteme kaydedildi.`);
+        const res = await updateQurbanApi(updatedRecord);
+        if (res.success && res.data) {
+          const updated = records.map((r) =>
+            r.id === editingRecordId ? res.data! : r
+          );
+          handleSaveRecords(updated);
+          showToast(`${formData.qurbanNo} Supabase'de başarıyla güncellendi.`);
+        } else {
+          // Fallback to local
+          const updated = records.map((r) =>
+            r.id === editingRecordId ? updatedRecord : r
+          );
+          handleSaveRecords(updated);
+          showToast(`${formData.qurbanNo} yerel olarak güncellendi.`);
+        }
+      } else {
+        // CREATE in Supabase
+        const res = await createQurbanApi(formData);
+        if (res.success && res.data) {
+          handleSaveRecords([res.data, ...records]);
+          showToast(`${formData.qurbanNo} Supabase veritabanına kaydedildi.`);
+        } else {
+          // Fallback to local
+          const newRec: QurbanRecord = {
+            ...formData,
+            id: `krb-${Date.now()}`,
+            createdAt: new Date().toISOString().split("T")[0],
+            updatedAt: new Date().toISOString().split("T")[0],
+          } as QurbanRecord;
+
+          handleSaveRecords([newRec, ...records]);
+          showToast(`${formData.qurbanNo} yerel olarak kaydedildi.`);
+        }
+      }
+      setEditModalOpen(false);
+    } catch (err: any) {
+      alert("Kayıt sırasında hata oluştu: " + err?.message);
+    } finally {
+      setIsSaving(false);
     }
-
-    setEditModalOpen(false);
   };
 
-  // Delete Record
-  const handleDeleteRecord = (id: string, no: string) => {
-    if (confirm(`${no} nolu kurban kaydını silmek istediğinize emin misiniz?`)) {
-      const updated = records.filter((r) => r.id !== id);
-      handleSaveRecords(updated);
-      showToast(`${no} silindi.`);
+  // Delete Record in Supabase
+  const handleDeleteRecord = async (id: string, no: string) => {
+    if (confirm(`${no} nolu kurban kaydını ve ilişkili tüm hissedarlarını silmek istediğinize emin misiniz?`)) {
+      setIsSaving(true);
+      try {
+        const res = await deleteQurbanApi(id);
+        const updated = records.filter((r) => r.id !== id);
+        handleSaveRecords(updated);
+        if (res.success) {
+          showToast(`${no} Supabase'den başarıyla silindi.`);
+        } else {
+          showToast(`${no} yerel listeden silindi.`);
+        }
+      } catch (err: any) {
+        alert("Silme işlemi başarısız: " + err?.message);
+      } finally {
+        setIsSaving(false);
+      }
     }
   };
 
@@ -499,9 +607,29 @@ export default function KurbanReportingView() {
         });
 
         const importedList = Array.from(kurbanMap.values()) as QurbanRecord[];
-        handleSaveRecords([...importedList, ...records]);
-        setImportModalOpen(false);
-        showToast(`Tebrikler! ${importedList.length} adet kurban başarıyla içe aktarıldı.`);
+
+        // Bulk insert to Supabase
+        setIsSaving(true);
+        showToast(`${importedList.length} adet kurban Supabase bulutuna aktarılıyor...`);
+
+        bulkImportQurbansApi(importedList)
+          .then((res) => {
+            if (res.success) {
+              showToast(`Tebrikler! ${res.count || importedList.length} adet kurban Supabase'e aktarıldı.`);
+              loadFromSupabase(false);
+            } else {
+              handleSaveRecords([...importedList, ...records]);
+              showToast(`${importedList.length} adet kurban yerel olarak aktarıldı (Supabase: ${res.error}).`);
+            }
+          })
+          .catch((err) => {
+            handleSaveRecords([...importedList, ...records]);
+            showToast(`${importedList.length} adet kurban yerel olarak aktarıldı.`);
+          })
+          .finally(() => {
+            setIsSaving(false);
+            setImportModalOpen(false);
+          });
       } catch (err: any) {
         alert("Excel okuma hatası: " + err?.message);
       }
@@ -509,8 +637,8 @@ export default function KurbanReportingView() {
     reader.readAsBinaryString(file);
   };
 
-  // Reset to sample records
-  const handleResetSampleRecords = () => {
+  // Reset to sample records or seed to Supabase
+  const handleResetSampleRecords = async () => {
     if (confirm("Örnek kurban kayıtlarını yüklemek istediğinize emin misiniz?")) {
       handleSaveRecords(SAMPLE_QURBAN_RECORDS);
       showToast("Örnek kurban kayıtları yüklendi.");
@@ -572,6 +700,49 @@ export default function KurbanReportingView() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
+            {/* Supabase Cloud Status Pill */}
+            <div
+              className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold backdrop-blur-md border ${
+                isCloudLoading
+                  ? "bg-amber-500/15 border-amber-500/30 text-amber-200"
+                  : isSupabaseConnected
+                  ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-200"
+                  : "bg-slate-800/80 border-slate-700 text-slate-300"
+              }`}
+            >
+              {isCloudLoading ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-300" />
+              ) : (
+                <Database className="w-3.5 h-3.5 text-emerald-400" />
+              )}
+              <span>
+                {isCloudLoading
+                  ? "Eşitleniyor..."
+                  : isSupabaseConnected
+                  ? `Supabase (${records.length})`
+                  : "Yerel Mod"}
+              </span>
+              <button
+                onClick={() => loadFromSupabase(true)}
+                disabled={isCloudLoading}
+                title="Supabase'den verileri yeniden çek"
+                className="ml-1 p-0.5 hover:text-white transition-colors"
+              >
+                <RefreshCw className={`w-3 h-3 ${isCloudLoading ? "animate-spin" : ""}`} />
+              </button>
+            </div>
+
+            {records.length === 0 && (
+              <button
+                onClick={handleSeedDemoToSupabase}
+                disabled={isSaving}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/40 text-amber-200 font-bold text-xs sm:text-sm transition-all shadow-md"
+              >
+                <Sparkles className="w-4 h-4 text-amber-300" />
+                <span>Örnek 5 Kaydı Supabase'e Yaz</span>
+              </button>
+            )}
+
             <button
               onClick={handleOpenNew}
               className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs sm:text-sm transition-all shadow-lg shadow-emerald-600/25 hover:scale-102"
@@ -1734,9 +1905,11 @@ export default function KurbanReportingView() {
                 </button>
                 <button
                   type="submit"
-                  className="px-6 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold shadow-lg shadow-emerald-600/25 transition-all"
+                  disabled={isSaving}
+                  className="inline-flex items-center gap-2 px-6 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold shadow-lg shadow-emerald-600/25 transition-all"
                 >
-                  Kaydet
+                  {isSaving && <Loader2 className="w-4 h-4 animate-spin" />}
+                  <span>{isSaving ? "Kaydediliyor..." : "Kaydet"}</span>
                 </button>
               </div>
             </form>

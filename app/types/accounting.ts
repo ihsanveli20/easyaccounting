@@ -113,3 +113,56 @@ export interface SavedProposal {
   } | null;
 }
 
+export interface UserRole {
+  id: number;
+  name: "admin" | "sales" | "viewer" | "purchasing" | "user" | string;
+  description?: string;
+  created_at?: string;
+}
+
+export interface UserProfile {
+  id: string; // uuid from auth.users
+  email: string;
+  full_name?: string;
+  role_id: number;
+  user_name?: string | null;
+  created_at?: string;
+  updated_at?: string;
+  roles?: UserRole | null;
+}
+
+export type AppMenuId =
+  | "summary"
+  | "details"
+  | "calculator"
+  | "reconciliation"
+  | "quote"
+  | "proposal-history"
+  | "proposal-comparison"
+  | "stock-tracking"
+  | "admin-users";
+
+export interface MenuItemDefinition {
+  id: AppMenuId;
+  name: string;
+  shortName: string;
+  description: string;
+  category: "accounting" | "sales" | "admin";
+}
+
+export interface RoleMenuPermissions {
+  [roleName: string]: AppMenuId[];
+}
+
+export interface UserMenuPermissions {
+  [userIdOrEmail: string]: {
+    custom: boolean;
+    allowedMenus: AppMenuId[];
+  };
+}
+
+export interface AppPermissionsConfig {
+  rolePermissions: RoleMenuPermissions;
+  userPermissions: UserMenuPermissions;
+}
+

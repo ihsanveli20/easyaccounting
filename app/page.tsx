@@ -31,6 +31,12 @@ import {
   PanelLeft,
   ShieldCheck,
   History,
+  LogOut,
+  Key,
+  Loader2,
+  UserCheck,
+  Lock,
+  ArrowLeftRight,
 } from "lucide-react";
 import {
   AccountRecord,
@@ -54,12 +60,32 @@ import DetailedCalculator from "./components/DetailedCalculator";
 import ReconciliationView from "./components/ReconciliationView";
 import PriceQuoteView from "./components/PriceQuoteView";
 import ProposalHistoryView from "./components/ProposalHistoryView";
+import ProposalComparisonView from "./components/ProposalComparisonView";
 import ProductManagementView, { DEFAULT_SAMPLE_PRODUCTS } from "./components/ProductManagementView";
+import LoginView from "./components/LoginView";
+import AdminUsersView from "./components/AdminUsersView";
+import { useAuth } from "./context/AuthContext";
 
 export default function Home() {
-  // Navigation Tab: "summary" = Hesap Planı / Bakiye Listesi, "details" = Firma Detay Hareketleri, "calculator" = Ayrıntılı Hesap Makinesi, "reconciliation" = Ekstre & Luca Mutabakat, "quote" = Fiyat Teklifi, "proposal-history" = Teklif Geçmişi, "stock-tracking" = Ürün Stok Takibi
+  // Auth context & dynamic menu permissions
+  const {
+    user,
+    profile,
+    role,
+    roleName,
+    isAdmin,
+    isSales,
+    isViewer,
+    isAuthenticated,
+    isLoading: isAuthLoading,
+    signOut,
+    allowedMenus,
+    hasMenuAccess,
+  } = useAuth();
+
+  // Navigation Tab: "summary" = Hesap Planı / Bakiye Listesi, "details" = Firma Detay Hareketleri, "calculator" = Ayrıntılı Hesap Makinesi, "reconciliation" = Ekstre & Luca Mutabakat, "quote" = Fiyat Teklifi, "proposal-history" = Teklif Geçmişi, "proposal-comparison" = Teklif Karşılaştırma, "stock-tracking" = Ürün Stok Takibi, "admin-users" = Kullanıcı & Yetki Yönetimi
   const [activeTab, setActiveTab] = useState<
-    "summary" | "details" | "calculator" | "reconciliation" | "quote" | "proposal-history" | "stock-tracking"
+    "summary" | "details" | "calculator" | "reconciliation" | "quote" | "proposal-history" | "proposal-comparison" | "stock-tracking" | "admin-users"
   >("summary");
 
   // State for proposal editing when navigating from history to editor
@@ -652,6 +678,17 @@ export default function Home() {
       tag: "BULUT",
     },
     {
+      id: "proposal-comparison" as const,
+      name: "Teklif Karşılaştırma",
+      shortName: "Teklif Kıyas",
+      description: "Revizyon Kıyas & Fark Analizi",
+      icon: ArrowLeftRight,
+      activeBg: "bg-purple-600 text-white shadow-md shadow-purple-600/25",
+      badge: null,
+      badgeStyle: "bg-white/20 text-white",
+      tag: "ÇOK YAKINDA",
+    },
+    {
       id: "stock-tracking" as const,
       name: "Ürün & Stok Yönetimi",
       shortName: "Ürün Yönetimi",
@@ -662,7 +699,61 @@ export default function Home() {
       badgeStyle: "bg-white/20 text-white",
       tag: "YENİ",
     },
+    ...(isAdmin
+      ? [
+          {
+            id: "admin-users" as const,
+            name: "Kullanıcı & Yetki Yönetimi",
+            shortName: "Yetki Paneli",
+            description: "Roller & Kullanıcı İzinleri",
+            icon: UserCheck,
+            activeBg: "bg-purple-600 text-white shadow-md shadow-purple-600/25",
+            badge: null,
+            badgeStyle: "bg-white/20 text-white",
+            tag: "ADMIN",
+          },
+        ]
+      : []),
   ];
+
+  // Filter navigation items based on active user's permissions
+  const visibleNavItems = useMemo(() => {
+    return navItems.filter((item) => hasMenuAccess(item.id));
+  }, [navItems, hasMenuAccess]);
+
+  // Auto-switch to first allowed tab if current tab is not accessible
+  useEffect(() => {
+    if (visibleNavItems.length > 0 && !hasMenuAccess(activeTab)) {
+      setActiveTab(visibleNavItems[0].id);
+    }
+  }, [visibleNavItems, hasMenuAccess, activeTab]);
+
+  // Auth Loading Screen
+  if (isAuthLoading) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-900 text-white selection:bg-emerald-500">
+        <div className="relative mb-6">
+          <div className="w-20 h-20 rounded-2xl bg-white p-2 flex items-center justify-center shadow-2xl shadow-emerald-500/20 border border-slate-700 animate-pulse overflow-hidden">
+            <img src="/logo.jpg" alt="Logo" className="w-full h-full object-contain" />
+          </div>
+          <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-slate-900 rounded-full flex items-center justify-center border-2 border-slate-900">
+            <Loader2 className="w-4 h-4 text-emerald-400 animate-spin" />
+          </div>
+        </div>
+        <h2 className="text-lg font-bold text-slate-100 tracking-tight mb-1">
+          EasyAccounting
+        </h2>
+        <p className="text-xs text-slate-400 font-medium flex items-center gap-2">
+          <span>Oturum ve yetkiler kontrol ediliyor...</span>
+        </p>
+      </div>
+    );
+  }
+
+  // Unauthenticated Login Guard
+  if (!isAuthenticated) {
+    return <LoginView />;
+  }
 
   return (
     <div className="min-h-screen flex bg-slate-50/60 font-sans">
@@ -681,8 +772,8 @@ export default function Home() {
       >
         <div className="h-16 border-b border-slate-100 flex items-center justify-between px-4">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white shadow-sm shadow-emerald-600/20 shrink-0">
-              <Building2 className="w-5 h-5" />
+            <div className="w-9 h-9 rounded-xl bg-white p-1 border border-slate-200 shadow-2xs flex items-center justify-center shrink-0 overflow-hidden">
+              <img src="/logo.jpg" alt="Logo" className="w-full h-full object-contain" />
             </div>
             <div>
               <h2 className="text-sm font-bold text-slate-900 tracking-tight flex items-center gap-1.5">
@@ -707,7 +798,7 @@ export default function Home() {
             Ana Menü
           </div>
           <nav className="space-y-1.5">
-            {navItems.map((item) => {
+            {visibleNavItems.map((item) => {
               const isActive = activeTab === item.id;
               const Icon = item.icon;
               return (
@@ -761,6 +852,8 @@ export default function Home() {
                       <span
                         className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider ${isActive
                           ? "bg-white/20 text-white"
+                          : item.tag === "ÇOK YAKINDA"
+                          ? "bg-amber-100 text-amber-800 border border-amber-300 font-extrabold"
                           : "bg-slate-100 text-slate-600 border border-slate-200"
                           }`}
                       >
@@ -774,16 +867,48 @@ export default function Home() {
           </nav>
         </div>
 
-        <div className="p-3 border-t border-slate-100">
-          <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/70">
-            <div className="flex items-center gap-2 mb-1">
-              <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span className="text-xs font-semibold text-slate-700">
-                Yerel & Güvenli
+        <div className="p-3 border-t border-slate-100 bg-slate-50/80 space-y-2.5">
+          <div className="p-2.5 rounded-xl bg-white border border-slate-200/80 shadow-2xs flex items-center justify-between gap-2.5">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-purple-600 to-indigo-600 text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-2xs">
+                {(profile?.full_name || profile?.user_name || user?.email || "U").charAt(0).toUpperCase()}
+              </div>
+              <div className="min-w-0">
+                <div className="text-xs font-semibold text-slate-800 truncate">
+                  {profile?.full_name || profile?.user_name || user?.email?.split("@")[0]}
+                </div>
+                <div className="text-[10px] text-slate-500 truncate flex items-center gap-1.5">
+                  <span
+                    className={`inline-block w-1.5 h-1.5 rounded-full ${isAdmin ? "bg-purple-500" : isSales ? "bg-blue-500" : "bg-slate-400"
+                      }`}
+                  />
+                  <span className="font-medium text-slate-600">
+                    {isAdmin ? "Admin / Yönetici" : isSales ? "Satış Temsilcisi" : "Görüntüleyici"}
+                  </span>
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                setMobileMenuOpen(false);
+                signOut();
+              }}
+              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors shrink-0"
+              title="Güvenli Çıkış Yap"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="p-2.5 rounded-xl bg-slate-100/70 border border-slate-200/50">
+            <div className="flex items-center gap-2 mb-0.5">
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+              <span className="text-[11px] font-semibold text-slate-700">
+                EasyAccounting Güvenli Oturum
               </span>
             </div>
-            <p className="text-[11px] text-slate-500">
-              Tüm veriler tarayıcınızda işlenir, sunucuya gönderilmez.
+            <p className="text-[10px] text-slate-500">
+              {isAdmin ? "Tüm sistem yetkileri aktif." : "Kullanıcı rolü yetkileri aktif."}
             </p>
           </div>
         </div>
@@ -801,8 +926,8 @@ export default function Home() {
         >
           {!sidebarCollapsed ? (
             <div className="flex items-center gap-3 min-w-0">
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white shadow-sm shadow-emerald-600/20 shrink-0">
-                <Building2 className="w-5 h-5" />
+              <div className="w-9 h-9 rounded-xl bg-white p-1 border border-slate-200 shadow-2xs flex items-center justify-center shrink-0 overflow-hidden">
+                <img src="/logo.jpg" alt="Logo" className="w-full h-full object-contain" />
               </div>
               <div className="min-w-0">
                 <h2 className="text-sm font-bold text-slate-900 tracking-tight truncate flex items-center gap-1.5">
@@ -818,11 +943,11 @@ export default function Home() {
             </div>
           ) : (
             <div
-              className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white shadow-sm shadow-emerald-600/20 shrink-0 cursor-pointer"
+              className="w-10 h-10 rounded-xl bg-white p-1 border border-slate-200 shadow-2xs flex items-center justify-center shrink-0 cursor-pointer overflow-hidden"
               title="Menüyü Genişlet"
               onClick={() => setSidebarCollapsed(false)}
             >
-              <Building2 className="w-5 h-5" />
+              <img src="/logo.jpg" alt="Logo" className="w-full h-full object-contain" />
             </div>
           )}
 
@@ -846,7 +971,7 @@ export default function Home() {
           )}
 
           <nav className="space-y-1.5">
-            {navItems.map((item) => {
+            {visibleNavItems.map((item) => {
               const isActive = activeTab === item.id;
               const Icon = item.icon;
 
@@ -928,6 +1053,8 @@ export default function Home() {
                       <span
                         className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider ${isActive
                           ? "bg-white/20 text-white"
+                          : item.tag === "ÇOK YAKINDA"
+                          ? "bg-amber-100 text-amber-800 border border-amber-300 font-extrabold"
                           : "bg-slate-100 text-slate-600 border border-slate-200"
                           }`}
                       >
@@ -941,33 +1068,73 @@ export default function Home() {
           </nav>
         </div>
 
-        {/* Sidebar Footer Status */}
-        <div className="p-3 border-t border-slate-100">
+        {/* Sidebar Footer Status & User Profile */}
+        <div className="p-3 border-t border-slate-100 bg-slate-50/50 space-y-2">
           {!sidebarCollapsed ? (
-            <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/70">
-              <div className="flex items-center gap-2 mb-1.5">
-                <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span className="text-xs font-semibold text-slate-700">
-                  Yerel & Güvenli
-                </span>
+            <>
+              {/* User Account Card */}
+              <div className="p-2.5 rounded-xl bg-white border border-slate-200/80 shadow-2xs flex items-center justify-between gap-2.5">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-purple-600 to-indigo-600 text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-2xs">
+                    {(profile?.full_name || profile?.user_name || user?.email || "U").charAt(0).toUpperCase()}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-xs font-semibold text-slate-800 truncate">
+                      {profile?.full_name || profile?.user_name || user?.email?.split("@")[0]}
+                    </div>
+                    <div className="text-[10px] text-slate-500 truncate flex items-center gap-1.5">
+                      <span
+                        className={`inline-block w-1.5 h-1.5 rounded-full ${isAdmin ? "bg-purple-500" : isSales ? "bg-blue-500" : "bg-slate-400"
+                          }`}
+                      />
+                      <span className="font-medium text-slate-600">
+                        {isAdmin ? "Admin" : isSales ? "Satış" : "Görüntüleyici"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => signOut()}
+                  className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors shrink-0"
+                  title="Güvenli Çıkış Yap"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
               </div>
-              <div className="text-[11px] text-slate-500 space-y-0.5">
-                <div className="flex justify-between">
-                  <span>Hesap Kaydı:</span>
-                  <span className="font-semibold text-slate-700">
-                    {records.length}
+
+              {/* Status info */}
+              <div className="p-2 rounded-xl bg-slate-100/70 border border-slate-200/60">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  <span className="text-[11px] font-semibold text-slate-700">
+                    Sistem Durumu
                   </span>
                 </div>
-                <div className="flex justify-between">
-                  <span>Firma Sayısı:</span>
-                  <span className="font-semibold text-slate-700">
-                    {companies.length}
-                  </span>
+                <div className="text-[10px] text-slate-500 space-y-0.5">
+                  <div className="flex justify-between">
+                    <span>Hesap Kaydı:</span>
+                    <span className="font-semibold text-slate-700">
+                      {records.length}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Firma Sayısı:</span>
+                    <span className="font-semibold text-slate-700">
+                      {companies.length}
+                    </span>
+                  </div>
                 </div>
               </div>
-            </div>
+            </>
           ) : (
             <div className="flex flex-col items-center gap-2">
+              <button
+                onClick={() => signOut()}
+                className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                title="Güvenli Çıkış Yap"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
               <button
                 onClick={() => setSidebarCollapsed(false)}
                 className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
@@ -1022,7 +1189,11 @@ export default function Home() {
                           ? "bg-gradient-to-tr from-blue-600 to-cyan-500 shadow-blue-500/20"
                           : activeTab === "proposal-history"
                             ? "bg-gradient-to-tr from-indigo-600 to-purple-500 shadow-indigo-500/20"
-                            : "bg-gradient-to-tr from-amber-600 to-orange-500 shadow-amber-500/20"
+                            : activeTab === "proposal-comparison"
+                              ? "bg-gradient-to-tr from-purple-700 via-indigo-600 to-purple-900 shadow-purple-600/20"
+                              : activeTab === "stock-tracking"
+                                ? "bg-gradient-to-tr from-amber-600 to-orange-500 shadow-amber-500/20"
+                                : "bg-gradient-to-tr from-purple-600 to-indigo-600 shadow-purple-500/20"
                   }`}
               >
                 {activeTab === "summary" ? (
@@ -1037,8 +1208,12 @@ export default function Home() {
                   <FileText className="w-4 h-4 sm:w-5 sm:h-5" />
                 ) : activeTab === "proposal-history" ? (
                   <History className="w-4 h-4 sm:w-5 sm:h-5" />
-                ) : (
+                ) : activeTab === "proposal-comparison" ? (
+                  <ArrowLeftRight className="w-4 h-4 sm:w-5 sm:h-5 text-amber-300" />
+                ) : activeTab === "stock-tracking" ? (
                   <Package className="w-4 h-4 sm:w-5 sm:h-5" />
+                ) : (
+                  <UserCheck className="w-4 h-4 sm:w-5 sm:h-5" />
                 )}
               </div>
 
@@ -1057,7 +1232,11 @@ export default function Home() {
                               ? "Fiyat Teklifi"
                               : activeTab === "proposal-history"
                                 ? "Teklif Geçmişi"
-                                : "Ürün Stok Takibi"}
+                                : activeTab === "proposal-comparison"
+                                  ? "Teklif Karşılaştırma"
+                                  : activeTab === "stock-tracking"
+                                    ? "Ürün Stok Takibi"
+                                    : "Kullanıcı & Yetki Yönetimi"}
                   </span>
                   <span
                     className={`hidden sm:inline-block text-xs font-semibold px-2 py-0.5 rounded-full border ${activeTab === "summary"
@@ -1072,7 +1251,11 @@ export default function Home() {
                               ? "bg-blue-50 text-blue-700 border-blue-200"
                               : activeTab === "proposal-history"
                                 ? "bg-purple-50 text-purple-700 border-purple-200"
-                                : "bg-blue-50 text-blue-700 border-blue-200"
+                                : activeTab === "proposal-comparison"
+                                  ? "bg-amber-100 text-amber-900 border-amber-300 font-extrabold"
+                                  : activeTab === "stock-tracking"
+                                    ? "bg-blue-50 text-blue-700 border-blue-200"
+                                    : "bg-purple-50 text-purple-700 border-purple-200"
                       }`}
                   >
                     {activeTab === "summary"
@@ -1087,7 +1270,11 @@ export default function Home() {
                               ? "Teklif & Yazdır"
                               : activeTab === "proposal-history"
                                 ? "Kayıtlı Teklifler"
-                                : "Ürün Kataloğu"}
+                                : activeTab === "proposal-comparison"
+                                  ? "ÇOK YAKINDA"
+                                  : activeTab === "stock-tracking"
+                                    ? "Ürün Kataloğu"
+                                    : "Admin Paneli"}
                   </span>
                 </h1>
                 <p className="text-xs text-slate-500 hidden md:block truncate">
@@ -1103,7 +1290,11 @@ export default function Home() {
                             ? "Fiyat teklifi oluşturun, otomatik KDV ve toplamlar hesaplayıp yazdırın"
                             : activeTab === "proposal-history"
                               ? "Supabase bulutunda kayıtlı teklifleri görüntüleyin, düzenleyin ve durumlarını takip edin"
-                              : "Excel ile ürün listenizi içe aktarın, kaydedin ve teklif hazırlarken anında çekin"}
+                              : activeTab === "proposal-comparison"
+                                ? "Teklif revizyonlarını, alternatif teklifleri ve tedarikçi maliyetlerini yan yana kıyaslayın"
+                                : activeTab === "stock-tracking"
+                                  ? "Excel ile ürün listenizi içe aktarın, kaydedin ve teklif hazırlarken anında çekin"
+                                  : "Kullanıcıları görüntüleyin, rolleri güncelleyin ve yetki matrisini yönetin"}
                 </p>
               </div>
             </div>
@@ -1166,7 +1357,7 @@ export default function Home() {
                 </>
               ) : (
                 <div className="flex items-center gap-2">
-                  {companies.length === 0 && (
+                  {activeTab === "details" && companies.length === 0 && (
                     <button
                       onClick={() => setCompanies(SAMPLE_COMPANY_DETAILS)}
                       className="inline-flex items-center gap-1 px-2.5 sm:px-3.5 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors border border-indigo-200 shadow-2xs"
@@ -1178,16 +1369,69 @@ export default function Home() {
                   )}
                 </div>
               )}
+
+              {/* User profile chip & quick logout */}
+              <div className="flex items-center gap-2 pl-2 border-l border-slate-200">
+                <div className="hidden sm:flex items-center gap-2 px-2.5 py-1 rounded-xl bg-slate-50 border border-slate-200/80">
+                  <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-purple-600 to-indigo-600 text-white font-bold text-[10px] flex items-center justify-center shadow-2xs">
+                    {(profile?.full_name || profile?.user_name || user?.email || "U").charAt(0).toUpperCase()}
+                  </div>
+                  <div className="text-left">
+                    <div className="text-xs font-semibold text-slate-800 leading-tight max-w-[120px] truncate">
+                      {profile?.full_name || profile?.user_name || user?.email?.split("@")[0]}
+                    </div>
+                    <div className="text-[10px] leading-tight text-slate-500 font-medium">
+                      {isAdmin ? (
+                        <span className="text-purple-600 font-bold">Admin</span>
+                      ) : isSales ? (
+                        <span className="text-blue-600 font-semibold">Satış</span>
+                      ) : (
+                        <span className="text-slate-600">İzleyici</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => signOut()}
+                  className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                  title="Güvenli Çıkış Yap"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
+              </div>
             </div>
           </div>
         </header>
 
         {/* Main Content Area */}
         <main className="max-w-[1600px] w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 flex-1 flex flex-col gap-4 sm:gap-6">
+          {/* Access denied fallback if tab is not permitted */}
+          {!hasMenuAccess(activeTab) && (
+            <div className="flex-1 flex flex-col items-center justify-center p-8 sm:p-12 text-center bg-white rounded-2xl border border-slate-200 shadow-xs my-8 max-w-lg mx-auto">
+              <div className="w-16 h-16 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mb-4 border border-amber-200/80 shadow-xs">
+                <Lock className="w-8 h-8" />
+              </div>
+              <h3 className="text-lg font-bold text-slate-900 mb-2">
+                Bu Sayfaya Erişim Yetkiniz Yok
+              </h3>
+              <p className="text-xs text-slate-500 max-w-sm mb-6 leading-relaxed">
+                Yöneticiniz bu menüyü hesabınız veya rolünüz için yetkilendirmemiş. Yetki değişikliği için sistem yöneticiniz ile iletişime geçebilirsiniz.
+              </p>
+              {visibleNavItems.length > 0 && (
+                <button
+                  onClick={() => setActiveTab(visibleNavItems[0].id)}
+                  className="px-4 py-2.5 rounded-xl bg-slate-900 text-white font-semibold text-xs hover:bg-slate-800 transition-colors shadow-xs"
+                >
+                  {visibleNavItems[0].name} Sayfasına Dön
+                </button>
+              )}
+            </div>
+          )}
+
           {/* ========================================================================= */}
           {/* TAB 1: SUMMARY ACCOUNT LIST (HESAP PLANI & BAKİYELER)                      */}
           {/* ========================================================================= */}
-          {activeTab === "summary" && (
+          {activeTab === "summary" && hasMenuAccess("summary") && (
             <>
               {/* Error notification banner */}
               {errorMsg && (
@@ -1797,7 +2041,7 @@ export default function Home() {
           {/* ========================================================================= */}
           {/* TAB 2: DETAILED COMPANY LEDGERS (FİRMA DETAY HAREKETLERİ & EKSTRELER)      */}
           {/* ========================================================================= */}
-          {activeTab === "details" && (
+          {activeTab === "details" && hasMenuAccess("details") && (
             <CompanyDetailView
               companies={companies}
               setCompanies={setCompanies}
@@ -1811,12 +2055,12 @@ export default function Home() {
           {/* ========================================================================= */}
           {/* TAB 3: DETAILED ACCOUNTING CALCULATOR (AYRINTILI HESAP MAKİNESİ)          */}
           {/* ========================================================================= */}
-          {activeTab === "calculator" && <DetailedCalculator />}
+          {activeTab === "calculator" && hasMenuAccess("calculator") && <DetailedCalculator />}
 
           {/* ========================================================================= */}
           {/* TAB 4: RECONCILIATION & DISCREPANCY (PDF EKSTRE VS LUCA MUTABAKAT)        */}
           {/* ========================================================================= */}
-          {activeTab === "reconciliation" && (
+          {activeTab === "reconciliation" && hasMenuAccess("reconciliation") && (
             <ReconciliationView
               companies={companies}
               summaryRecords={records}
@@ -1826,7 +2070,7 @@ export default function Home() {
           {/* ========================================================================= */}
           {/* TAB 5: PRICE QUOTATION SHEET (FİYAT TEKLİFİ)                               */}
           {/* ========================================================================= */}
-          {activeTab === "quote" && (
+          {activeTab === "quote" && hasMenuAccess("quote") && (
             <PriceQuoteView
               products={products}
               productSource={productSource}
@@ -1840,7 +2084,7 @@ export default function Home() {
           {/* ========================================================================= */}
           {/* TAB 5.5: PROPOSAL HISTORY (TEKLİF GEÇMİŞİ & DÜZENLEME)                      */}
           {/* ========================================================================= */}
-          {activeTab === "proposal-history" && (
+          {activeTab === "proposal-history" && hasMenuAccess("proposal-history") && (
             <ProposalHistoryView
               onNewProposal={() => {
                 setEditingProposal(null);
@@ -1854,9 +2098,19 @@ export default function Home() {
           )}
 
           {/* ========================================================================= */}
+          {/* TAB 5.6: PROPOSAL COMPARISON (TEKLİF KARŞILAŞTIRMA - ÇOK YAKINDA)         */}
+          {/* ========================================================================= */}
+          {activeTab === "proposal-comparison" && hasMenuAccess("proposal-comparison") && (
+            <ProposalComparisonView
+              onGoToQuote={() => setActiveTab("quote")}
+              onGoToHistory={() => setActiveTab("proposal-history")}
+            />
+          )}
+
+          {/* ========================================================================= */}
           {/* TAB 6: PRODUCT & STOCK MANAGEMENT (ÜRÜN & STOK YÖNETİMİ)                   */}
           {/* ========================================================================= */}
-          {activeTab === "stock-tracking" && (
+          {activeTab === "stock-tracking" && hasMenuAccess("stock-tracking") && (
             <ProductManagementView
               products={products}
               setProducts={setProducts}
@@ -1864,6 +2118,13 @@ export default function Home() {
               onRefreshFromSupabase={loadProductsWithPriority}
               onGoToQuote={() => setActiveTab("quote")}
             />
+          )}
+
+          {/* ========================================================================= */}
+          {/* TAB 7: ADMIN USERS & ROLE MANAGEMENT (KULLANICI & YETKİ YÖNETİMİ)         */}
+          {/* ========================================================================= */}
+          {activeTab === "admin-users" && isAdmin && hasMenuAccess("admin-users") && (
+            <AdminUsersView />
           )}
         </main>
 

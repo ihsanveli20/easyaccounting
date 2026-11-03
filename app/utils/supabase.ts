@@ -31,8 +31,13 @@ export function getSupabaseClient(): SupabaseClient | null {
   if (!isConfigured) return null;
 
   try {
+    const isBrowser = typeof window !== "undefined";
     supabaseInstance = createClient(url, key, {
-      auth: { persistSession: false },
+      auth: {
+        persistSession: isBrowser,
+        autoRefreshToken: isBrowser,
+        detectSessionInUrl: isBrowser,
+      },
     });
     return supabaseInstance;
   } catch (err) {

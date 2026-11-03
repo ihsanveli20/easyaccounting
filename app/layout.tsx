@@ -17,13 +17,21 @@ export const metadata: Metadata = {
   description: "Excel dosyalarınızı yükleyin, isim veya hesap adına göre anında arayın, borç, alacak ve bakiye tutarlarını listeleyin.",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+import { AuthProvider } from "./context/AuthContext";
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html
       lang="tr"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <AuthProvider>{children}</AuthProvider>
+      </body>
     </html>
   );
 }

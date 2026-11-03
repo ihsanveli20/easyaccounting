@@ -37,6 +37,10 @@ import {
 import { ProductItem, Customer, SavedProposal } from "../types/accounting";
 import { normalizeForSearch } from "../utils/excel";
 import { DEFAULT_SAMPLE_PRODUCTS } from "./ProductManagementView";
+import WhatsAppShareModal from "./WhatsAppShareModal";
+import { WhatsAppProposalData, sharePdfViaWhatsApp } from "../utils/whatsapp";
+import { renderElementToPdf } from "../utils/pdfGenerator";
+import { useAuth } from "../context/AuthContext";
 
 export interface QuoteItem {
   id: string;
@@ -263,12 +267,16 @@ export default function PriceQuoteView({
   const [customerName, setCustomerName] = useState<string>("");
   const [quoteDate, setQuoteDate] = useState<string>(getTodayStr());
 
+  const { user, profile, isViewer } = useAuth();
+
   // Additional settings
   const [vatNote, setVatNote] = useState<string>("Birim fiyatlara KDV dahil değildir.");
   const [notes, setNotes] = useState<string>(
     "1. Fiyatlarımız teklif tarihinden itibaren 15 gün süreyle geçerlidir.\n2. Teslimat şantiye/depo teslimidir.\n3. Ödeme vadesi teslimat sonrası 30 gündür."
   );
-  const [preparedBy, setPreparedBy] = useState<string>("Satış & Pazarlama Departmanı");
+  const [preparedBy, setPreparedBy] = useState<string>(
+    profile?.full_name || profile?.user_name || "Satış & Pazarlama Departmanı"
+  );
 
   // KDV Rate (%20 default)
   const [vatRate, setVatRate] = useState<number>(20);
@@ -320,6 +328,7 @@ export default function PriceQuoteView({
   const [proposalStatus, setProposalStatus] = useState<"draft" | "sent" | "accepted" | "rejected">("draft");
   const [editingProposalId, setEditingProposalId] = useState<number | null>(null);
   const [isSavingToSupabase, setIsSavingToSupabase] = useState<boolean>(false);
+  const [whatsappModalOpen, setWhatsappModalOpen] = useState<boolean>(false);
 
   // Fetch customers from Supabase customers table on mount
   useEffect(() => {
@@ -744,6 +753,11 @@ export default function PriceQuoteView({
 
   // Save or Update Proposal in Supabase (proposals & proposal_items)
   const handleSaveToSupabase = async () => {
+    if (isViewer) {
+      showToast("Yetki Uyarısı: İzleyici rolü yeni teklif kaydedemez veya düzenleyemez.");
+      return;
+    }
+
     const activeRows = rows.filter(
       (r) =>
         (r.materialName && r.materialName.trim() !== "") ||
@@ -832,6 +846,135 @@ export default function PriceQuoteView({
       showToast(`Hata: ${err.message}`);
     } finally {
       setIsSavingToSupabase(false);
+    }
+  };
+
+  // Keep latest save handler in ref for global keyboard shortcuts
+  const handleSaveRef = useRef(handleSaveToSupabase);
+  useEffect(() => {
+    handleSaveRef.current = handleSaveToSupabase;
+  });
+
+  // Global Keyboard Shortcut: F2 to save proposal (and Ctrl+S / Cmd+S support)
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      // Check for F2 or Ctrl+S / Cmd+S
+      if (
+        e.key === "F2" ||
+        e.code === "F2" ||
+        ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s")
+      ) {
+        e.preventDefault();
+        e.stopPropagation();
+        handleSaveRef.current();
+      }
+    };
+
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleGlobalKeyDown);
+    };
+  }, []);
+
+  // WhatsApp Proposal Data preparation
+  const currentWhatsAppProposalData: WhatsAppProposalData = useMemo(() => {
+    const validRows = rows.filter(
+      (r) =>
+        (r.materialName && r.materialName.trim() !== "") ||
+        (typeof r.quantity === "number" && r.quantity > 0)
+    );
+
+    return {
+      proposalNumber: proposalNumber.trim() || undefined,
+      quoteDate: quoteDate,
+      customerName: customerName.trim() || undefined,
+      preparedBy: preparedBy.trim() || undefined,
+      companyName: companyInfo.name.trim() || undefined,
+      items: validRows.map((r) => ({
+        materialName: r.materialName,
+        quantity: r.quantity,
+        unit: r.unit,
+        unitPrice: r.unitPrice,
+        total: r.total,
+      })),
+      subtotal,
+      vatRate,
+      vatAmount,
+      grandTotal,
+      notes: notes.trim() || undefined,
+    };
+  }, [
+    rows,
+    proposalNumber,
+    quoteDate,
+    customerName,
+    preparedBy,
+    companyInfo.name,
+    subtotal,
+    vatRate,
+    vatAmount,
+    grandTotal,
+    notes,
+  ]);
+
+  const handleOpenWhatsAppShare = () => {
+    const activeRows = rows.filter(
+      (r) =>
+        (r.materialName && r.materialName.trim() !== "") ||
+        (typeof r.quantity === "number" && r.quantity > 0)
+    );
+
+    if (activeRows.length === 0 && !customerName.trim()) {
+      showToast("Lütfen WhatsApp ile paylaşmadan önce müşteri adı veya en az bir ürün giriniz.");
+      return;
+    }
+
+    setWhatsappModalOpen(true);
+  };
+
+  // Share PDF via WhatsApp
+  const handleSharePdfViaWhatsApp = async (
+    recipientPhone: string,
+    messageText: string
+  ) => {
+    const quoteElement = document.getElementById("printable-quote");
+    if (!quoteElement) {
+      showToast("Teklif formu bulunamadı.");
+      return;
+    }
+
+    const safeCustomer = (customerName.trim() || "Musteri_Teklif")
+      .replace(/[^a-zA-Z0-9_\u00C0-\u017F-]/g, "_")
+      .substring(0, 35);
+    const safeDate = quoteDate.replace(/\./g, "-");
+    const fileName = `Teklif_${safeCustomer}_${safeDate}.pdf`;
+
+    setIsGeneratingPdf(true);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      const { blob } = await renderElementToPdf(quoteElement);
+
+      const result = await sharePdfViaWhatsApp({
+        pdfBlob: blob,
+        fileName,
+        phoneNumber: recipientPhone,
+        messageText,
+      });
+
+      if (result.sharedViaNative) {
+        showToast("Teklif PDF'i WhatsApp ile paylaşıldı.");
+      } else {
+        showToast("PDF indirildi ve WhatsApp Web açıldı. Belgeyi sohbete ekleyebilirsiniz.");
+      }
+
+      return result;
+    } catch (err: unknown) {
+      console.error("PDF share error:", err);
+      const msg = err instanceof Error ? err.message : "Bilinmeyen hata";
+      alert("PDF paylaşılırken hata oluştu: " + msg);
+    } finally {
+      setIsGeneratingPdf(false);
     }
   };
 
@@ -1121,7 +1264,7 @@ export default function PriceQuoteView({
             </button>
           )}
 
-          {/* Save / Update to Supabase Button */}
+          {/* Save / Update to Supabase Button (Kısayol: F2) */}
           <button
             onClick={handleSaveToSupabase}
             disabled={isSavingToSupabase}
@@ -1129,7 +1272,7 @@ export default function PriceQuoteView({
               ? "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20"
               : "bg-blue-600 hover:bg-blue-700 shadow-blue-600/20"
               }`}
-            title="Teklifi Bulut veritabanına kaydet"
+            title="Teklifi Bulut veritabanına kaydet (Kısayol: F2 veya Ctrl+S)"
           >
             {isSavingToSupabase ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -1145,7 +1288,29 @@ export default function PriceQuoteView({
                   ? "Teklifi Güncelle"
                   : "Kaydet"}
             </span>
+            <kbd className="hidden sm:inline-flex items-center px-1.5 py-0.5 text-[10px] font-semibold text-white/90 bg-white/20 rounded border border-white/30 ml-0.5">
+              F2
+            </kbd>
           </button>
+
+          {/* WhatsApp Share Button */}
+          <button
+            onClick={handleOpenWhatsAppShare}
+            className="flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 sm:py-2 bg-[#25D366] hover:bg-[#20BD5A] text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/20 transition-all active:scale-98"
+            title="Teklifi veya PDF belgesini WhatsApp ile paylaş"
+          >
+            <svg
+              className="w-3.5 h-3.5 fill-current"
+              viewBox="0 0 24 24"
+            >
+              <path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91C2.13 13.66 2.59 15.36 3.45 16.86L2.05 22L7.3 20.62C8.75 21.41 10.38 21.83 12.04 21.83C17.5 21.83 21.95 17.38 21.95 11.92C21.95 9.27 20.92 6.78 19.05 4.91C17.18 3.03 14.69 2 12.04 2M12.05 3.67C14.25 3.67 16.31 4.53 17.87 6.09C19.42 7.65 20.28 9.72 20.28 11.92C20.28 16.46 16.58 20.15 12.04 20.15C10.56 20.15 9.11 19.76 7.85 19L7.55 18.83L4.43 19.65L5.26 16.61L5.06 16.29C4.24 15 3.8 13.47 3.8 11.91C3.81 7.37 7.5 3.67 12.05 3.67M9.53 7.03C9.36 7.03 9.09 7.1 8.87 7.33C8.65 7.57 8.02 8.16 8.02 9.36C8.02 10.56 8.9 11.71 9.02 11.87C9.14 12.03 10.73 14.5 13.18 15.56C15.22 16.44 15.63 16.26 16.07 16.22C16.52 16.18 17.5 15.63 17.7 15.07C17.91 14.5 17.91 14.02 17.84 13.92C17.78 13.82 17.62 13.76 17.37 13.63C17.12 13.51 15.91 12.92 15.68 12.83C15.46 12.75 15.3 12.71 15.13 12.95C14.97 13.2 14.51 13.76 14.37 13.92C14.23 14.08 14.1 14.1 13.85 13.97C13.6 13.85 12.81 13.59 11.87 12.75C11.14 12.1 10.65 11.29 10.51 11.05C10.37 10.8 10.5 10.67 10.62 10.54C10.73 10.43 10.87 10.25 11 10.1C11.12 9.94 11.17 9.82 11.25 9.66C11.33 9.49 11.29 9.35 11.23 9.22C11.17 9.1 10.68 7.9 10.47 7.41C10.27 6.93 10.07 7 9.92 6.99C9.78 6.99 9.61 7.03 9.53 7.03Z"/>
+            </svg>
+            <span>WhatsApp</span>
+            <span className="hidden sm:inline-block px-1 py-0.2 text-[9px] font-bold bg-white/25 rounded border border-white/30 text-white">
+              PDF
+            </span>
+          </button>
+
 
           {/* Download PDF Button */}
           <button
@@ -2098,6 +2263,16 @@ export default function PriceQuoteView({
           </div>
         </div>
       )}
+
+      {/* WhatsApp Share Modal */}
+      <WhatsAppShareModal
+        isOpen={whatsappModalOpen}
+        onClose={() => setWhatsappModalOpen(false)}
+        proposalData={currentWhatsAppProposalData}
+        defaultMode="pdf"
+        onSharePdf={handleSharePdfViaWhatsApp}
+        onDownloadPdfOnly={handleDownloadPdf}
+      />
     </div>
   );
 }

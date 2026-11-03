@@ -1,0 +1,96 @@
+{
+  "rolePermissions": {
+    "admin": [
+      "summary",
+      "details",
+      "calculator",
+      "reconciliation",
+      "quote",
+      "proposal-history",
+      "stock-tracking",
+      "admin-users"
+    ],
+    "sales": [
+      "quote",
+      "proposal-history",
+      "stock-tracking",
+      "details",
+      "calculator"
+    ],
+    "viewer": [
+      "summary",
+      "details",
+      "proposal-history"
+    ],
+    "purchasing": [
+      "stock-tracking",
+      "summary",
+      "calculator"
+    ],
+    "user": [
+      "summary",
+      "details",
+      "calculator"
+    ]
+  },
+  "userPermissions": {
+    "bektassk@ea.co": {
+      "custom": true,
+      "allowedMenus": [
+        "quote",
+        "proposal-history",
+        "stock-tracking",
+        "calculator"
+      ]
+    },
+    "omerfrk@ea.co": {
+      "custom": true,
+      "allowedMenus": [
+        "quote",
+        "proposal-history",
+        "stock-tracking",
+        "calculator",
+        "reconciliation"
+      ]
+    },
+    "ekremsyn@ea.co": {
+      "custom": true,
+      "allowedMenus": [
+        "details",
+        "calculator",
+        "summary",
+        "reconciliation"
+      ]
+    },
+    "ysftrz@ea.co": {
+      "custom": true,
+      "allowedMenus": [
+        "details",
+        "calculator",
+        "summary",
+        "reconciliation"
+      ]
+    },
+    "rustemskn@ea.co": {
+      "custom": true,
+      "allowedMenus": [
+        "quote",
+        "proposal-history",
+        "stock-tracking",
+        "calculator"
+      ]
+    },
+    "bilalersy@ea.co": {
+      "custom": true,
+      "allowedMenus": [
+        "quote",
+        "proposal-history",
+        "stock-tracking",
+        "details",
+        "calculator",
+        "summary",
+        "reconciliation"
+      ]
+    }
+  }
+}

@@ -30,6 +30,14 @@ import {
   Loader2,
 } from "lucide-react";
 import { SavedProposal, Customer } from "../types/accounting";
+import WhatsAppShareModal from "./WhatsAppShareModal";
+import {
+  savedProposalToWhatsAppProposalData,
+  WhatsAppProposalData,
+  sharePdfViaWhatsApp,
+} from "../utils/whatsapp";
+import { renderElementToPdf } from "../utils/pdfGenerator";
+import { useAuth } from "../context/AuthContext";
 
 interface ProposalHistoryViewProps {
   onNewProposal?: () => void;
@@ -143,6 +151,7 @@ export default function ProposalHistoryView({
   onNewProposal,
   onEditProposal,
 }: ProposalHistoryViewProps) {
+  const { isAdmin, isViewer } = useAuth();
   const [proposals, setProposals] = useState<SavedProposal[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -154,6 +163,9 @@ export default function ProposalHistoryView({
   // Printing & PDF Download State
   const [activeProposalForPrint, setActiveProposalForPrint] = useState<SavedProposal | null>(null);
   const [generatingPdfId, setGeneratingPdfId] = useState<number | null>(null);
+
+  // WhatsApp Share State
+  const [sharingProposalForWhatsApp, setSharingProposalForWhatsApp] = useState<SavedProposal | null>(null);
 
   // Company Information for quotation sheet
   const [companyInfo, setCompanyInfo] = useState({
@@ -174,6 +186,14 @@ export default function ProposalHistoryView({
       }
     } catch {}
   }, []);
+
+  const whatsappProposalData: WhatsAppProposalData | null = useMemo(() => {
+    if (!sharingProposalForWhatsApp) return null;
+    return savedProposalToWhatsAppProposalData(
+      sharingProposalForWhatsApp,
+      companyInfo.name
+    );
+  }, [sharingProposalForWhatsApp, companyInfo.name]);
 
   const showToast = (msg: string) => {
     setToastMsg(msg);
@@ -203,8 +223,12 @@ export default function ProposalHistoryView({
     fetchProposals();
   }, []);
 
-  // Delete proposal
+  // Delete proposal (Only Admin)
   const handleDelete = async (id: number, proposalNumber: string) => {
+    if (!isAdmin) {
+      showToast("Yetki Hatası: Teklif silme işlemi yalnızca Yönetici (Admin) yetkisine sahiptir.");
+      return;
+    }
     if (!confirm(`"${proposalNumber}" numaralı teklifi silmek istediğinize emin misiniz? Bu işlem geri alınamaz.`)) {
       return;
     }
@@ -344,6 +368,57 @@ export default function ProposalHistoryView({
     } catch (err: any) {
       console.error("PDF download error:", err);
       alert("PDF oluşturulurken bir hata meydana geldi: " + (err?.message || "Bilinmeyen hata"));
+    } finally {
+      setGeneratingPdfId(null);
+    }
+  };
+
+  // Share History Proposal PDF via WhatsApp
+  const handleShareHistoryPdfViaWhatsApp = async (
+    recipientPhone: string,
+    messageText: string
+  ) => {
+    if (!sharingProposalForWhatsApp) return;
+
+    const prop = sharingProposalForWhatsApp;
+    setGeneratingPdfId(prop.id);
+    setActiveProposalForPrint(prop);
+
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      const printElement = document.getElementById("history-printable-sheet");
+      if (!printElement) {
+        throw new Error("Teklif formu görseli hazırlanamadı.");
+      }
+
+      const { blob } = await renderElementToPdf(printElement);
+
+      const custName = prop.customer?.name || prop.metadata?.customerName || "Musteri";
+      const safeCustomer = custName
+        .replace(/[^a-zA-Z0-9_\u00C0-\u017F-]/g, "_")
+        .substring(0, 30);
+      const safeNumber = (prop.proposal_number || "Teklif").replace(/[^a-zA-Z0-9_-]/g, "_");
+      const fileName = `${safeNumber}_${safeCustomer}.pdf`;
+
+      const result = await sharePdfViaWhatsApp({
+        pdfBlob: blob,
+        fileName,
+        phoneNumber: recipientPhone,
+        messageText,
+      });
+
+      if (result.sharedViaNative) {
+        showToast(`"${prop.proposal_number}" teklif PDF'i WhatsApp ile paylaşıldı.`);
+      } else {
+        showToast("PDF indirildi ve WhatsApp Web açıldı. Belgeyi sohbete ekleyebilirsiniz.");
+      }
+
+      return result;
+    } catch (err: unknown) {
+      console.error("PDF share error:", err);
+      const msg = err instanceof Error ? err.message : "Bilinmeyen hata";
+      alert("PDF paylaşılırken hata oluştu: " + msg);
     } finally {
       setGeneratingPdfId(null);
     }
@@ -651,6 +726,20 @@ export default function ProposalHistoryView({
                               )}
                             </button>
 
+                            {/* WhatsApp ile Paylaş */}
+                            <button
+                              onClick={() => setSharingProposalForWhatsApp(prop)}
+                              className="p-1.5 rounded-lg text-slate-600 hover:text-[#25D366] hover:bg-emerald-50 transition-colors"
+                              title="Teklifi WhatsApp ile Paylaş"
+                            >
+                              <svg
+                                className="w-4 h-4 fill-current text-emerald-600"
+                                viewBox="0 0 24 24"
+                              >
+                                <path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91C2.13 13.66 2.59 15.36 3.45 16.86L2.05 22L7.3 20.62C8.75 21.41 10.38 21.83 12.04 21.83C17.5 21.83 21.95 17.38 21.95 11.92C21.95 9.27 20.92 6.78 19.05 4.91C17.18 3.03 14.69 2 12.04 2M12.05 3.67C14.25 3.67 16.31 4.53 17.87 6.09C19.42 7.65 20.28 9.72 20.28 11.92C20.28 16.46 16.58 20.15 12.04 20.15C10.56 20.15 9.11 19.76 7.85 19L7.55 18.83L4.43 19.65L5.26 16.61L5.06 16.29C4.24 15 3.8 13.47 3.8 11.91C3.81 7.37 7.5 3.67 12.05 3.67M9.53 7.03C9.36 7.03 9.09 7.1 8.87 7.33C8.65 7.57 8.02 8.16 8.02 9.36C8.02 10.56 8.9 11.71 9.02 11.87C9.14 12.03 10.73 14.5 13.18 15.56C15.22 16.44 15.63 16.26 16.07 16.22C16.52 16.18 17.5 15.63 17.7 15.07C17.91 14.5 17.91 14.02 17.84 13.92C17.78 13.82 17.62 13.76 17.37 13.63C17.12 13.51 15.91 12.92 15.68 12.83C15.46 12.75 15.3 12.71 15.13 12.95C14.97 13.2 14.51 13.76 14.37 13.92C14.23 14.08 14.1 14.1 13.85 13.97C13.6 13.85 12.81 13.59 11.87 12.75C11.14 12.1 10.65 11.29 10.51 11.05C10.37 10.8 10.5 10.67 10.62 10.54C10.73 10.43 10.87 10.25 11 10.1C11.12 9.94 11.17 9.82 11.25 9.66C11.33 9.49 11.29 9.35 11.23 9.22C11.17 9.1 10.68 7.9 10.47 7.41C10.27 6.93 10.07 7 9.92 6.99C9.78 6.99 9.61 7.03 9.53 7.03Z" />
+                              </svg>
+                            </button>
+
                             {/* Detay / Ön İzleme Görüntüle */}
                             <button
                               onClick={() => setSelectedProposalForDetail(prop)}
@@ -663,23 +752,42 @@ export default function ProposalHistoryView({
                             {/* Düzenle */}
                             {onEditProposal && (
                               <button
-                                onClick={() => onEditProposal(prop)}
-                                className="p-1.5 rounded-lg text-slate-600 hover:text-emerald-600 hover:bg-emerald-50 transition-colors"
-                                title="Teklifi Düzenle & Formda Aç"
+                                onClick={() => {
+                                  if (isViewer) {
+                                    showToast("İzleyici (Viewer) rolü teklifleri düzenleyemez.");
+                                    return;
+                                  }
+                                  onEditProposal(prop);
+                                }}
+                                className={`p-1.5 rounded-lg transition-colors ${isViewer
+                                  ? "text-slate-300 hover:text-slate-400 cursor-not-allowed"
+                                  : "text-slate-600 hover:text-emerald-600 hover:bg-emerald-50"
+                                  }`}
+                                title={isViewer ? "İzleyici rolü düzenleme yapamaz" : "Teklifi Düzenle & Formda Aç"}
                               >
-                                <Edit2 className="w-4 h-4 text-emerald-600" />
+                                <Edit2 className={`w-4 h-4 ${isViewer ? "text-slate-300" : "text-emerald-600"}`} />
                               </button>
                             )}
 
-                            {/* Sil */}
-                            <button
-                              onClick={() => handleDelete(prop.id, prop.proposal_number)}
-                              disabled={deletingId === prop.id}
-                              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-50"
-                              title="Teklifi Sil"
-                            >
-                              <Trash2 className="w-4 h-4 text-rose-500" />
-                            </button>
+                            {/* Sil (Yalnızca Admin) */}
+                            {isAdmin ? (
+                              <button
+                                onClick={() => handleDelete(prop.id, prop.proposal_number)}
+                                disabled={deletingId === prop.id}
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-50"
+                                title="Teklifi Sil (Yönetici)"
+                              >
+                                <Trash2 className="w-4 h-4 text-rose-500" />
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => showToast("Teklif silme işlemi yalnızca Yönetici (Admin) yetkisine sahiptir.")}
+                                className="p-1.5 rounded-lg text-slate-300 hover:text-slate-400 hover:bg-slate-50 transition-colors cursor-not-allowed opacity-60"
+                                title="Teklif silme yetkisi sadece Admin'e aittir"
+                              >
+                                <Trash2 className="w-4 h-4 text-slate-300" />
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -984,6 +1092,18 @@ export default function ProposalHistoryView({
                       <span>PDF İndir</span>
                     </button>
 
+                    {/* WhatsApp Paylaş */}
+                    <button
+                      onClick={() => setSharingProposalForWhatsApp(selectedProposalForDetail)}
+                      className="px-3 py-2 bg-[#25D366] hover:bg-[#20BD5A] text-white font-semibold text-xs rounded-xl flex items-center gap-1.5 shadow-xs transition-colors"
+                      title="Teklifi WhatsApp ile müşteriye gönder veya paylaş"
+                    >
+                      <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+                        <path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91C2.13 13.66 2.59 15.36 3.45 16.86L2.05 22L7.3 20.62C8.75 21.41 10.38 21.83 12.04 21.83C17.5 21.83 21.95 17.38 21.95 11.92C21.95 9.27 20.92 6.78 19.05 4.91C17.18 3.03 14.69 2 12.04 2M12.05 3.67C14.25 3.67 16.31 4.53 17.87 6.09C19.42 7.65 20.28 9.72 20.28 11.92C20.28 16.46 16.58 20.15 12.04 20.15C10.56 20.15 9.11 19.76 7.85 19L7.55 18.83L4.43 19.65L5.26 16.61L5.06 16.29C4.24 15 3.8 13.47 3.8 11.91C3.81 7.37 7.5 3.67 12.05 3.67M9.53 7.03C9.36 7.03 9.09 7.1 8.87 7.33C8.65 7.57 8.02 8.16 8.02 9.36C8.02 10.56 8.9 11.71 9.02 11.87C9.14 12.03 10.73 14.5 13.18 15.56C15.22 16.44 15.63 16.26 16.07 16.22C16.52 16.18 17.5 15.63 17.7 15.07C17.91 14.5 17.91 14.02 17.84 13.92C17.78 13.82 17.62 13.76 17.37 13.63C17.12 13.51 15.91 12.92 15.68 12.83C15.46 12.75 15.3 12.71 15.13 12.95C14.97 13.2 14.51 13.76 14.37 13.92C14.23 14.08 14.1 14.1 13.85 13.97C13.6 13.85 12.81 13.59 11.87 12.75C11.14 12.1 10.65 11.29 10.51 11.05C10.37 10.8 10.5 10.67 10.62 10.54C10.73 10.43 10.87 10.25 11 10.1C11.12 9.94 11.17 9.82 11.25 9.66C11.33 9.49 11.29 9.35 11.23 9.22C11.17 9.1 10.68 7.9 10.47 7.41C10.27 6.93 10.07 7 9.92 6.99C9.78 6.99 9.61 7.03 9.53 7.03Z" />
+                      </svg>
+                      <span>WhatsApp</span>
+                    </button>
+
                     {/* Teklifi Düzenle */}
                     {onEditProposal && (
                       <button
@@ -1216,6 +1336,21 @@ export default function ProposalHistoryView({
             </div>
           </div>
         </div>
+      )}
+
+      {/* WhatsApp Share Modal */}
+      {sharingProposalForWhatsApp && whatsappProposalData && (
+        <WhatsAppShareModal
+          isOpen={Boolean(sharingProposalForWhatsApp)}
+          onClose={() => setSharingProposalForWhatsApp(null)}
+          proposalData={whatsappProposalData}
+          defaultMode="pdf"
+          onSharePdf={handleShareHistoryPdfViaWhatsApp}
+          onDownloadPdfOnly={() =>
+            sharingProposalForWhatsApp &&
+            handleDownloadProposalPdf(sharingProposalForWhatsApp)
+          }
+        />
       )}
     </>
   );

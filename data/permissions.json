@@ -7,12 +7,14 @@
       "reconciliation",
       "quote",
       "proposal-history",
+      "proposal-comparison",
       "stock-tracking",
       "admin-users"
     ],
     "sales": [
       "quote",
       "proposal-history",
+      "proposal-comparison",
       "stock-tracking",
       "details",
       "calculator"
@@ -20,77 +22,21 @@
     "viewer": [
       "summary",
       "details",
-      "proposal-history"
+      "proposal-history",
+      "proposal-comparison"
     ],
     "purchasing": [
       "stock-tracking",
+      "proposal-comparison",
       "summary",
       "calculator"
     ],
     "user": [
       "summary",
       "details",
+      "proposal-comparison",
       "calculator"
     ]
   },
-  "userPermissions": {
-    "bektassk@ea.co": {
-      "custom": true,
-      "allowedMenus": [
-        "quote",
-        "proposal-history",
-        "stock-tracking",
-        "calculator"
-      ]
-    },
-    "omerfrk@ea.co": {
-      "custom": true,
-      "allowedMenus": [
-        "quote",
-        "proposal-history",
-        "stock-tracking",
-        "calculator",
-        "reconciliation"
-      ]
-    },
-    "ekremsyn@ea.co": {
-      "custom": true,
-      "allowedMenus": [
-        "details",
-        "calculator",
-        "summary",
-        "reconciliation"
-      ]
-    },
-    "ysftrz@ea.co": {
-      "custom": true,
-      "allowedMenus": [
-        "details",
-        "calculator",
-        "summary",
-        "reconciliation"
-      ]
-    },
-    "rustemskn@ea.co": {
-      "custom": true,
-      "allowedMenus": [
-        "quote",
-        "proposal-history",
-        "stock-tracking",
-        "calculator"
-      ]
-    },
-    "bilalersy@ea.co": {
-      "custom": true,
-      "allowedMenus": [
-        "quote",
-        "proposal-history",
-        "stock-tracking",
-        "details",
-        "calculator",
-        "summary",
-        "reconciliation"
-      ]
-    }
-  }
+  "userPermissions": {}
 }

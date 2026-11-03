@@ -285,6 +285,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           saveLocalPermissionsConfig(data.permissions);
           return { success: true };
         }
+      } else {
+        try {
+          const errData = await res.json();
+          if (errData?.error) {
+            return { success: false, error: errData.error };
+          }
+        } catch {}
       }
       return { success: false, error: "Sunucuya kaydedilemedi." };
     } catch (err: any) {

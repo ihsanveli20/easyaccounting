@@ -82,6 +82,7 @@ export async function GET(request: Request) {
           product:products(id, name, unit_of_measure, sale_price, internal_reference)
         )
       `)
+      .neq("status", "system_permissions")
       .order("id", { ascending: false });
 
     if (error) {
@@ -155,7 +156,8 @@ export async function POST(request: Request) {
       const year = new Date().getFullYear();
       const { count } = await supabase
         .from("proposals")
-        .select("id", { count: "exact", head: true });
+        .select("id", { count: "exact", head: true })
+        .neq("status", "system_permissions");
       const nextSeq = String((count || 0) + 1).padStart(4, "0");
       finalProposalNumber = `TEK-${year}-${nextSeq}`;
     }

@@ -72,6 +72,9 @@ import {
   KurbanProcessStats,
   AnimalStatus,
   DocumentCategory,
+  PartyType,
+  DeliveryTransportType,
+  ShipmentStatus,
 } from "../types/kurbanProcess";
 import {
   fetchProcessOverviewApi,
@@ -86,6 +89,8 @@ import {
   saveReportRevisionApi,
   exportAnimalsToExcel,
   downloadAnimalImportTemplate,
+  saveEntityApi,
+  deleteEntityApi,
 } from "../utils/kurbanProcessApi";
 import {
   compressImageFile,
@@ -148,6 +153,248 @@ export default function KurbanProcessModuleView() {
   const [animalModalOpen, setAnimalModalOpen] = useState<boolean>(false);
   const [editingAnimal, setEditingAnimal] = useState<Partial<KurbanAnimal> | null>(null);
   const [excelImportModalOpen, setExcelImportModalOpen] = useState<boolean>(false);
+
+  // =========================================================================
+  // MANUEL EKLEME & DÜZENLEME MODALLARI (PARTIES, LOCATIONS, SHIPMENTS, STORAGE, DELIVERIES)
+  // =========================================================================
+
+  // 1. Party (Müşteri / Kurbanı Aldığım Yer / Besici / Soğuk Depo Firması)
+  const [partyModalOpen, setPartyModalOpen] = useState<boolean>(false);
+  const [editingParty, setEditingParty] = useState<Partial<KurbanParty> | null>(null);
+  const [partyTypeFilter, setPartyTypeFilter] = useState<string>("all");
+
+  // 2. Cutting Location (Kesim Yeri Ekle)
+  const [locationModalOpen, setLocationModalOpen] = useState<boolean>(false);
+  const [editingLocation, setEditingLocation] = useState<Partial<KurbanCuttingLocation> | null>(null);
+
+  // 3. Shipment (TIR Ekle)
+  const [shipmentModalOpen, setShipmentModalOpen] = useState<boolean>(false);
+  const [editingShipment, setEditingShipment] = useState<Partial<KurbanShipment> | null>(null);
+
+  // 4. Cold Storage Record (Soğuk Hava Depolama Kaydı)
+  const [storageModalOpen, setStorageModalOpen] = useState<boolean>(false);
+  const [editingStorage, setEditingStorage] = useState<Partial<KurbanStorageRecord> | null>(null);
+
+  // 5. Delivery Transport (Taşıma Aracı - PLAKA ZORUNLU DEĞİL)
+  const [deliveryModalOpen, setDeliveryModalOpen] = useState<boolean>(false);
+  const [editingDelivery, setEditingDelivery] = useState<Partial<KurbanDelivery> | null>(null);
+
+  // Handlers for Save and Delete
+  const handleSaveParty = async (partyData: Partial<KurbanParty>) => {
+    if (!partyData.name?.trim()) {
+      showToast("Lütfen firma veya kişi adını giriniz.");
+      return;
+    }
+    setIsSaving(true);
+    try {
+      const res = await saveEntityApi("party", partyData);
+      if (res.success && res.party) {
+        setParties((prev) => {
+          const idx = prev.findIndex((p) => p.id === res.party.id);
+          if (idx >= 0) {
+            const updated = [...prev];
+            updated[idx] = res.party;
+            return updated;
+          }
+          return [res.party, ...prev];
+        });
+        setPartyModalOpen(false);
+        showToast("Paydaş / Firma kaydı başarıyla kaydedildi.");
+      } else {
+        showToast(res.error || "Firma kaydedilemedi.");
+      }
+    } catch {
+      showToast("Bir hata oluştu.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDeleteParty = async (id: string) => {
+    if (!confirm("Bu firma/paydaş kaydını silmek istediğinize emin misiniz?")) return;
+    try {
+      const res = await deleteEntityApi("party", id);
+      if (res.success) {
+        setParties((prev) => prev.filter((p) => p.id !== id));
+        showToast("Firma kaydı silindi.");
+      }
+    } catch {
+      showToast("Silme işlemi başarısız.");
+    }
+  };
+
+  const handleSaveLocation = async (locData: Partial<KurbanCuttingLocation>) => {
+    if (!locData.name?.trim()) {
+      showToast("Lütfen kesim yeri adını giriniz.");
+      return;
+    }
+    setIsSaving(true);
+    try {
+      const res = await saveEntityApi("location", locData);
+      if (res.success && res.location) {
+        setCuttingLocations((prev) => {
+          const idx = prev.findIndex((l) => l.id === res.location.id);
+          if (idx >= 0) {
+            const updated = [...prev];
+            updated[idx] = res.location;
+            return updated;
+          }
+          return [...prev, res.location];
+        });
+        setLocationModalOpen(false);
+        showToast("Kesim yeri tesisi başarıyla kaydedildi.");
+      } else {
+        showToast(res.error || "Kesim yeri kaydedilemedi.");
+      }
+    } catch {
+      showToast("Bir hata oluştu.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDeleteLocation = async (id: string) => {
+    if (!confirm("Bu kesim yerini silmek istediğinize emin misiniz?")) return;
+    try {
+      const res = await deleteEntityApi("location", id);
+      if (res.success) {
+        setCuttingLocations((prev) => prev.filter((l) => l.id !== id));
+        showToast("Kesim yeri silindi.");
+      }
+    } catch {
+      showToast("Silme işlemi başarısız.");
+    }
+  };
+
+  const handleSaveShipment = async (shpData: Partial<KurbanShipment>) => {
+    if (!shpData.driverName?.trim() && !shpData.vehiclePlate?.trim()) {
+      showToast("Lütfen şoför veya tır plakası bilgisini giriniz.");
+      return;
+    }
+    setIsSaving(true);
+    try {
+      const res = await saveEntityApi("shipment", shpData);
+      if (res.success && res.shipment) {
+        setShipments((prev) => {
+          const idx = prev.findIndex((s) => s.id === res.shipment.id);
+          if (idx >= 0) {
+            const updated = [...prev];
+            updated[idx] = res.shipment;
+            return updated;
+          }
+          return [res.shipment, ...prev];
+        });
+        setShipmentModalOpen(false);
+        showToast("Sevk tırı başarıyla kaydedildi.");
+      } else {
+        showToast(res.error || "Sevk tırı kaydedilemedi.");
+      }
+    } catch {
+      showToast("Bir hata oluştu.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDeleteShipment = async (id: string) => {
+    if (!confirm("Bu sevk tırı kaydını silmek istediğinize emin misiniz?")) return;
+    try {
+      const res = await deleteEntityApi("shipment", id);
+      if (res.success) {
+        setShipments((prev) => prev.filter((s) => s.id !== id));
+        showToast("Sevk tırı silindi.");
+      }
+    } catch {
+      showToast("Silme işlemi başarısız.");
+    }
+  };
+
+  const handleSaveStorage = async (stData: Partial<KurbanStorageRecord>) => {
+    if (!stData.warehouseName?.trim()) {
+      showToast("Lütfen soğuk hava deposu adını giriniz.");
+      return;
+    }
+    setIsSaving(true);
+    try {
+      const res = await saveEntityApi("storage", stData);
+      if (res.success && res.storage) {
+        setStorageRecords((prev) => {
+          const idx = prev.findIndex((st) => st.id === res.storage.id);
+          if (idx >= 0) {
+            const updated = [...prev];
+            updated[idx] = res.storage;
+            return updated;
+          }
+          return [res.storage, ...prev];
+        });
+        setStorageModalOpen(false);
+        showToast("Soğuk hava depolama kaydı başarıyla kaydedildi.");
+      } else {
+        showToast(res.error || "Depo kaydı kaydedilemedi.");
+      }
+    } catch {
+      showToast("Bir hata oluştu.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDeleteStorage = async (id: string) => {
+    if (!confirm("Bu depolama kaydını silmek istediğinize emin misiniz?")) return;
+    try {
+      const res = await deleteEntityApi("storage", id);
+      if (res.success) {
+        setStorageRecords((prev) => prev.filter((st) => st.id !== id));
+        showToast("Depolama kaydı silindi.");
+      }
+    } catch {
+      showToast("Silme işlemi başarısız.");
+    }
+  };
+
+  const handleSaveDelivery = async (delData: Partial<KurbanDelivery>) => {
+    if (!delData.driverName?.trim()) {
+      showToast("Lütfen şoför adını giriniz.");
+      return;
+    }
+    // PLAKA ZORUNLU DEĞİL!
+    setIsSaving(true);
+    try {
+      const res = await saveEntityApi("delivery", delData);
+      if (res.success && res.delivery) {
+        setDeliveries((prev) => {
+          const idx = prev.findIndex((d) => d.id === res.delivery.id);
+          if (idx >= 0) {
+            const updated = [...prev];
+            updated[idx] = res.delivery;
+            return updated;
+          }
+          return [res.delivery, ...prev];
+        });
+        setDeliveryModalOpen(false);
+        showToast("Taşıma aracı ve teslimat kaydı başarıyla kaydedildi.");
+      } else {
+        showToast(res.error || "Teslimat kaydedilemedi.");
+      }
+    } catch {
+      showToast("Bir hata oluştu.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDeleteDelivery = async (id: string) => {
+    if (!confirm("Bu taşıma aracı / teslimat kaydını silmek istediğinize emin misiniz?")) return;
+    try {
+      const res = await deleteEntityApi("delivery", id);
+      if (res.success) {
+        setDeliveries((prev) => prev.filter((d) => d.id !== id));
+        showToast("Taşıma aracı kaydı silindi.");
+      }
+    } catch {
+      showToast("Silme işlemi başarısız.");
+    }
+  };
 
   // Photo & Document Upload Modal States (Client-Side Compression + Supabase CDN)
   const [photoUploadModalOpen, setPhotoUploadModalOpen] = useState<boolean>(false);
@@ -1011,139 +1258,252 @@ export default function KurbanProcessModuleView() {
       {/* TAB 2: FİRMA / MÜŞTERİ BİLGİLERİ (PARTIES)                                 */}
       {/* ========================================================================= */}
       {activeTab === "parties" && (
-        <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+        <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm space-y-5">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-200 dark:border-slate-800">
             <div>
-              <h3 className="text-lg font-black text-slate-900 dark:text-slate-100">
+              <h3 className="text-lg font-black text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                <Building2 className="w-5 h-5 text-indigo-600" />
                 Süreç Paydaşları ve Firma Bilgileri
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
-                Alıcı firma, satıcı besi işletmeleri, mezbahalar, lojistik ve soğuk hava antrepoları
+                Kurban alınan yerler (besiciler/çiftlikler), alıcı müşteriler, mezbahalar, lojistik ve soğuk hava depo firmaları
               </p>
             </div>
+
+            <button
+              onClick={() => {
+                setEditingParty({
+                  partyType: "supplier_seller",
+                  city: "İstanbul",
+                });
+                setPartyModalOpen(true);
+              }}
+              className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-md shadow-indigo-600/20 flex items-center gap-1.5 transition-all self-start sm:self-auto active:scale-95"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Yeni Firma / Paydaş Ekle</span>
+            </button>
+          </div>
+
+          {/* Filter Chips */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin text-xs font-semibold">
+            {[
+              { id: "all", label: `Tümü (${parties.length})` },
+              { id: "supplier_seller", label: `Kurban Alınan Yerler / Besici (${parties.filter(p => p.partyType === "supplier_seller").length})` },
+              { id: "client_buyer", label: `Alıcı / Müşteriler (${parties.filter(p => p.partyType === "client_buyer").length})` },
+              { id: "cold_storage", label: `Soğuk Hava Depoları (${parties.filter(p => p.partyType === "cold_storage").length})` },
+              { id: "slaughterhouse", label: `Mezbahalar (${parties.filter(p => p.partyType === "slaughterhouse").length})` },
+              { id: "logistics_transporter", label: `Lojistik & Nakliye (${parties.filter(p => p.partyType === "logistics_transporter").length})` },
+            ].map((chip) => (
+              <button
+                key={chip.id}
+                onClick={() => setPartyTypeFilter(chip.id)}
+                className={`px-3 py-1.5 rounded-xl whitespace-nowrap transition-all ${
+                  partyTypeFilter === chip.id
+                    ? "bg-indigo-600 text-white font-bold shadow-xs"
+                    : "bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 text-slate-600"
+                }`}
+              >
+                {chip.label}
+              </button>
+            ))}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {parties.map((p) => (
-              <div
-                key={p.id}
-                className="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-3"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <span
-                    className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase ${
-                      p.partyType === "client_buyer"
-                        ? "bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300"
-                        : p.partyType === "supplier_seller"
-                        ? "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
-                        : p.partyType === "slaughterhouse"
-                        ? "bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300"
-                        : p.partyType === "logistics_transporter"
-                        ? "bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300"
-                        : "bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300"
-                    }`}
-                  >
-                    {p.partyType === "client_buyer"
-                      ? "Alıcı / Müşteri Firma"
-                      : p.partyType === "supplier_seller"
-                      ? "Satıcı / Besi İşletmesi"
-                      : p.partyType === "slaughterhouse"
-                      ? "Kesimhane / Mezbaha"
-                      : p.partyType === "logistics_transporter"
-                      ? "Nakliye & Lojistik"
-                      : "Soğuk Depo & Antrepo"}
-                  </span>
-                  <span className="text-xs font-bold text-slate-400 font-mono">{p.city}</span>
+            {parties
+              .filter((p) => partyTypeFilter === "all" || p.partyType === partyTypeFilter)
+              .map((p) => (
+                <div
+                  key={p.id}
+                  className="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-3 flex flex-col justify-between"
+                >
+                  <div className="space-y-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <span
+                        className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                          p.partyType === "client_buyer"
+                            ? "bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300"
+                            : p.partyType === "supplier_seller"
+                            ? "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+                            : p.partyType === "slaughterhouse"
+                            ? "bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300"
+                            : p.partyType === "logistics_transporter"
+                            ? "bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300"
+                            : "bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300"
+                        }`}
+                      >
+                        {p.partyType === "client_buyer"
+                          ? "Alıcı / Müşteri Firma"
+                          : p.partyType === "supplier_seller"
+                          ? "Satıcı / Besi İşletmesi"
+                          : p.partyType === "slaughterhouse"
+                          ? "Kesimhane / Mezbaha"
+                          : p.partyType === "logistics_transporter"
+                          ? "Nakliye & Lojistik"
+                          : "Soğuk Depo & Antrepo"}
+                      </span>
+                      <span className="text-xs font-bold text-slate-400 font-mono">{p.city}</span>
+                    </div>
+
+                    <h4 className="text-base font-bold text-slate-900 dark:text-slate-100 leading-snug">
+                      {p.name}
+                    </h4>
+
+                    <div className="space-y-1 text-xs text-slate-600 dark:text-slate-400">
+                      {p.taxId && (
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Vergi No:</span>
+                          <span className="font-mono">{p.taxId} ({p.taxOffice})</span>
+                        </div>
+                      )}
+                      {p.authorizedPerson && (
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Yetkili:</span>
+                          <span className="font-semibold text-slate-800 dark:text-slate-200">{p.authorizedPerson}</span>
+                        </div>
+                      )}
+                      {p.phone && (
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">İletişim:</span>
+                          <span className="font-mono text-indigo-600 font-semibold">{p.phone}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {p.notes && (
+                      <p className="text-[11px] text-slate-500 italic border-t border-slate-200/60 dark:border-slate-700/60 pt-2">
+                        {p.notes}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Actions Row */}
+                  <div className="pt-3 border-t border-slate-200/60 dark:border-slate-700/60 flex items-center justify-end gap-2">
+                    <button
+                      onClick={() => {
+                        setEditingParty(p);
+                        setPartyModalOpen(true);
+                      }}
+                      className="p-1.5 rounded-lg text-slate-600 hover:text-indigo-600 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors text-xs font-bold flex items-center gap-1"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                      <span>Düzenle</span>
+                    </button>
+                    <button
+                      onClick={() => handleDeleteParty(p.id)}
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
-
-                <h4 className="text-base font-bold text-slate-900 dark:text-slate-100 leading-snug">
-                  {p.name}
-                </h4>
-
-                <div className="space-y-1 text-xs text-slate-600 dark:text-slate-400">
-                  {p.taxId && (
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Vergi No:</span>
-                      <span className="font-mono">{p.taxId} ({p.taxOffice})</span>
-                    </div>
-                  )}
-                  {p.authorizedPerson && (
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Yetkili:</span>
-                      <span className="font-semibold text-slate-800 dark:text-slate-200">{p.authorizedPerson}</span>
-                    </div>
-                  )}
-                  {p.phone && (
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">İletişim:</span>
-                      <span className="font-mono text-indigo-600 font-semibold">{p.phone}</span>
-                    </div>
-                  )}
-                </div>
-
-                {p.notes && (
-                  <p className="text-[11px] text-slate-500 italic border-t border-slate-200/60 dark:border-slate-700/60 pt-2">
-                    {p.notes}
-                  </p>
-                )}
-              </div>
-            ))}
+              ))}
           </div>
         </div>
       )}
 
       {/* ========================================================================= */}
-      {/* TAB 3: KESİM YERLERİ (2 AYRI TESİS)                                        */}
+      {/* TAB 3: KESİM YERLERİ                                                       */}
       {/* ========================================================================= */}
       {activeTab === "locations" && (
         <div className="space-y-6">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h3 className="text-lg font-black text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                <MapPin className="w-5 h-5 text-rose-600" />
+                Yetkili Kesim Tesisleri ve Mezbahalar ({cuttingLocations.length} Tesis)
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Tarım ve Orman Bakanlığı onaylı entegre et kombinaları ve resmi kesimhaneler
+              </p>
+            </div>
+
+            <button
+              onClick={() => {
+                setEditingLocation({
+                  city: "İstanbul",
+                  dailyCapacity: 200,
+                  allocatedAnimalCount: 0,
+                  locationCode: `KSM-0${cuttingLocations.length + 1}`,
+                });
+                setLocationModalOpen(true);
+              }}
+              className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shadow-md shadow-rose-600/20 flex items-center gap-1.5 transition-all self-start sm:self-auto active:scale-95"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Yeni Kesim Yeri Ekle</span>
+            </button>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {cuttingLocations.map((loc, idx) => (
               <div
                 key={loc.id}
-                className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4"
+                className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4 flex flex-col justify-between"
               >
-                <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-                  <span className="text-xs font-black text-emerald-600 bg-emerald-50 dark:bg-emerald-950/60 px-3 py-1 rounded-full uppercase">
-                    Kesim Tesisi #{idx + 1}
-                  </span>
-                  <span className="font-mono text-xs font-bold text-slate-400">{loc.locationCode}</span>
-                </div>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+                    <span className="text-xs font-black text-emerald-600 bg-emerald-50 dark:bg-emerald-950/60 px-3 py-1 rounded-full uppercase">
+                      Kesim Tesisi #{idx + 1}
+                    </span>
+                    <span className="font-mono text-xs font-bold text-slate-400">{loc.locationCode}</span>
+                  </div>
 
-                <h3 className="text-xl font-black text-slate-900 dark:text-slate-100">{loc.name}</h3>
-                <p className="text-xs text-slate-500 leading-relaxed">{loc.address}</p>
+                  <h3 className="text-xl font-black text-slate-900 dark:text-slate-100">{loc.name}</h3>
+                  <p className="text-xs text-slate-500 leading-relaxed">{loc.address}</p>
 
-                <div className="grid grid-cols-2 gap-3 p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60">
-                  <div>
-                    <div className="text-[10px] uppercase font-bold text-slate-400">Tahsis Edilen Hayvan</div>
-                    <div className="text-2xl font-black text-slate-900 dark:text-slate-100 font-mono mt-1">
-                      {loc.allocatedAnimalCount} <span className="text-xs font-normal">Adet</span>
+                  <div className="grid grid-cols-2 gap-3 p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60">
+                    <div>
+                      <div className="text-[10px] uppercase font-bold text-slate-400">Tahsis Edilen Hayvan</div>
+                      <div className="text-2xl font-black text-slate-900 dark:text-slate-100 font-mono mt-1">
+                        {loc.allocatedAnimalCount} <span className="text-xs font-normal">Adet</span>
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] uppercase font-bold text-slate-400">Günlük Kesim Kapasitesi</div>
+                      <div className="text-2xl font-black text-indigo-600 font-mono mt-1">
+                        {loc.dailyCapacity} <span className="text-xs font-normal">Hayvan/Gün</span>
+                      </div>
                     </div>
                   </div>
-                  <div>
-                    <div className="text-[10px] uppercase font-bold text-slate-400">Günlük Kesim Kapasitesi</div>
-                    <div className="text-2xl font-black text-indigo-600 font-mono mt-1">
-                      {loc.dailyCapacity} <span className="text-xs font-normal">Hayvan/Gün</span>
+
+                  <div className="space-y-2 text-xs text-slate-600 dark:text-slate-400">
+                    <div>
+                      <span className="font-semibold text-slate-700 dark:text-slate-300">Bakanlık Ruhsat & Onay No: </span>
+                      <span className="font-mono text-emerald-600 font-bold">{loc.officialApprovalNo || "Onay No Bekleniyor"}</span>
+                    </div>
+                    <div>
+                      <span className="font-semibold text-slate-700 dark:text-slate-300">Sorumlu Yönetici: </span>
+                      <span>{loc.responsiblePerson || "-"} ({loc.responsiblePhone || "-"})</span>
+                    </div>
+                    <div>
+                      <span className="font-semibold text-slate-700 dark:text-slate-300">Görevli Veteriner Hekimler: </span>
+                      <span>{loc.veterinaryName || "-"}</span>
                     </div>
                   </div>
                 </div>
 
-                <div className="space-y-2 text-xs text-slate-600 dark:text-slate-400">
-                  <div>
-                    <span className="font-semibold text-slate-700 dark:text-slate-300">Bakanlık Ruhsat & Onay No: </span>
-                    <span className="font-mono text-emerald-600 font-bold">{loc.officialApprovalNo}</span>
+                <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => {
+                        setEditingLocation(loc);
+                        setLocationModalOpen(true);
+                      }}
+                      className="p-2 rounded-xl text-slate-600 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-xs font-bold flex items-center gap-1"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                      <span>Düzenle</span>
+                    </button>
+                    <button
+                      onClick={() => handleDeleteLocation(loc.id)}
+                      className="p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
+                      title="Kesim Yerini Sil"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
                   </div>
-                  <div>
-                    <span className="font-semibold text-slate-700 dark:text-slate-300">Sorumlu Yönetici: </span>
-                    <span>{loc.responsiblePerson} ({loc.responsiblePhone})</span>
-                  </div>
-                  <div>
-                    <span className="font-semibold text-slate-700 dark:text-slate-300">Görevli Veteriner Hekimler: </span>
-                    <span>{loc.veterinaryName}</span>
-                  </div>
-                </div>
 
-                <div className="pt-2">
                   <button
                     onClick={() => {
                       setSelectedLocationId(loc.id);
@@ -1151,10 +1511,10 @@ export default function KurbanProcessModuleView() {
                       const matched = reports.find((r) => r.cuttingLocationId === loc.id);
                       if (matched) setSelectedReportId(matched.id);
                     }}
-                    className="w-full py-2.5 rounded-xl bg-slate-900 text-white hover:bg-slate-800 font-bold text-xs transition-colors shadow-xs flex items-center justify-center gap-2"
+                    className="px-4 py-2 rounded-xl bg-slate-900 text-white hover:bg-slate-800 font-bold text-xs transition-colors shadow-xs flex items-center gap-1.5"
                   >
-                    <ScrollText className="w-4 h-4 text-emerald-400" />
-                    <span>Bu Kesimhanenin Resmî Raporunu Aç</span>
+                    <ScrollText className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Resmî Raporu Aç</span>
                   </button>
                 </div>
               </div>
@@ -1428,6 +1788,7 @@ export default function KurbanProcessModuleView() {
       )}
 
       {/* ========================================================================= */}
+      {/* ========================================================================= */}
       {/* TAB 5: SEVK İŞLEMLERİ (TIRLAR, ŞOFÖRLER, FOTOĞRAFLAR)                      */}
       {/* ========================================================================= */}
       {activeTab === "shipments" && (
@@ -1436,65 +1797,109 @@ export default function KurbanProcessModuleView() {
             <div>
               <h3 className="text-lg font-black text-slate-900 dark:text-slate-100 flex items-center gap-2">
                 <Truck className="w-5 h-5 text-sky-600" />
-                Canlı Hayvan Sevkiyat & Nakliye Takip
+                Canlı Hayvan Sevkiyat & Nakliye Takip ({shipments.length} Tır)
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
-                Kars ve Erzurum çiftliklerinden iki mezbahaya yapılan toplam 8 tır sevkiyatı
+                Besi çiftliklerinden kesimhanelere canlı hayvan nakliyesi, veteriner raporları ve araç takibi
               </p>
             </div>
+
+            <button
+              onClick={() => {
+                setEditingShipment({
+                  shipmentDate: new Date().toISOString().split("T")[0],
+                  destinationLocationId: cuttingLocations[0]?.id || "ksm-tuzla-01",
+                  animalCount: 40,
+                  originAddress: "Besi İşletmesi - Kars",
+                  status: "delivered_to_slaughterhouse",
+                  shipmentNo: `SVK-2026-00${shipments.length + 1}`,
+                  vehiclePlate: "36 KARS 101",
+                  driverName: "",
+                });
+                setShipmentModalOpen(true);
+              }}
+              className="px-4 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs shadow-md shadow-sky-600/20 flex items-center gap-1.5 transition-all self-start sm:self-auto active:scale-95"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Yeni Sevk Tırı Ekle</span>
+            </button>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {shipments.map((s) => (
               <div
                 key={s.id}
-                className="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-3"
+                className="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-3 flex flex-col justify-between"
               >
-                <div className="flex items-center justify-between">
-                  <span className="font-mono text-xs font-bold text-sky-700 bg-sky-100 dark:bg-sky-950 px-2.5 py-0.5 rounded-full">
-                    {s.shipmentNo}
-                  </span>
-                  <span className="text-xs font-semibold text-slate-500 flex items-center gap-1">
-                    <Calendar className="w-3.5 h-3.5" />
-                    {s.shipmentDate}
-                  </span>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-xs font-bold text-sky-700 bg-sky-100 dark:bg-sky-950 px-2.5 py-0.5 rounded-full">
+                      {s.shipmentNo}
+                    </span>
+                    <span className="text-xs font-semibold text-slate-500 flex items-center gap-1">
+                      <Calendar className="w-3.5 h-3.5" />
+                      {s.shipmentDate}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-base font-black text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                      <Truck className="w-4 h-4 text-slate-600" />
+                      {s.vehiclePlate || "Plakasız Tır"}
+                    </h4>
+                    <span className="text-xs font-bold font-mono px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800">
+                      {s.animalCount} Hayvan
+                    </span>
+                  </div>
+
+                  <div className="text-xs space-y-1.5 text-slate-600 dark:text-slate-400 bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
+                    <div>
+                      <span className="font-semibold text-slate-700 dark:text-slate-300">Varış Yeri: </span>
+                      <span className="text-emerald-600 font-bold">{s.destinationLocationName}</span>
+                    </div>
+                    <div>
+                      <span className="font-semibold text-slate-700 dark:text-slate-300">Çıkış Yeri: </span>
+                      <span>{s.originAddress}</span>
+                    </div>
+                    <div>
+                      <span className="font-semibold text-slate-700 dark:text-slate-300">Şoför: </span>
+                      <span>{s.driverName} {s.driverPhone ? `(${s.driverPhone})` : ""}</span>
+                    </div>
+                    {s.dispatchNoteNo && (
+                      <div>
+                        <span className="font-semibold text-slate-700 dark:text-slate-300">Sevk İrsaliyesi: </span>
+                        <span className="font-mono">{s.dispatchNoteNo}</span>
+                      </div>
+                    )}
+                    {s.vetHealthReportNo && (
+                      <div>
+                        <span className="font-semibold text-slate-700 dark:text-slate-300">Vet. Rapor No: </span>
+                        <span className="font-mono">{s.vetHealthReportNo}</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
-                <div className="flex items-center justify-between">
-                  <h4 className="text-base font-black text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                    <Truck className="w-4 h-4 text-slate-600" />
-                    {s.vehiclePlate}
-                  </h4>
-                  <span className="text-xs font-bold font-mono px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800">
-                    {s.animalCount} Hayvan
-                  </span>
-                </div>
-
-                <div className="text-xs space-y-1.5 text-slate-600 dark:text-slate-400 bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
-                  <div>
-                    <span className="font-semibold text-slate-700 dark:text-slate-300">Varış Yeri: </span>
-                    <span className="text-emerald-600 font-bold">{s.destinationLocationName}</span>
+                {/* Photo & Actions Row */}
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-slate-200/80 dark:border-slate-700/80">
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => {
+                        setEditingShipment(s);
+                        setShipmentModalOpen(true);
+                      }}
+                      className="p-1.5 rounded-lg text-slate-600 hover:text-sky-600 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-bold flex items-center gap-1"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                      <span>Düzenle</span>
+                    </button>
+                    <button
+                      onClick={() => handleDeleteShipment(s.id)}
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
                   </div>
-                  <div>
-                    <span className="font-semibold text-slate-700 dark:text-slate-300">Şoför: </span>
-                    <span>{s.driverName} ({s.driverPhone})</span>
-                  </div>
-                  <div>
-                    <span className="font-semibold text-slate-700 dark:text-slate-300">Sevk İrsaliyesi: </span>
-                    <span className="font-mono">{s.dispatchNoteNo}</span>
-                  </div>
-                  <div>
-                    <span className="font-semibold text-slate-700 dark:text-slate-300">Vet. Rapor No: </span>
-                    <span className="font-mono">{s.vetHealthReportNo}</span>
-                  </div>
-                </div>
-
-                {/* Photo Trigger */}
-                <div className="flex items-center justify-between pt-2 border-t border-slate-200/80 dark:border-slate-700/80">
-                  <span className="text-[11px] text-emerald-600 font-semibold flex items-center gap-1">
-                    <CheckCircle2 className="w-3 h-3" />
-                    Eksiksiz Varış Teyidi
-                  </span>
 
                   <div className="flex items-center gap-2">
                     <button
@@ -1502,7 +1907,7 @@ export default function KurbanProcessModuleView() {
                         openPhotoUploadModal(
                           "shipment",
                           s.id,
-                          `${s.vehiclePlate} Sevk Tırı & Sevkiyat Fotoğrafı`
+                          `${s.vehiclePlate || s.shipmentNo} Sevk Tırı & Sevkiyat Fotoğrafı`
                         )
                       }
                       className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600 hover:text-emerald-700 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-1 rounded-lg border border-emerald-200 dark:border-emerald-800 transition-colors"
@@ -1517,7 +1922,7 @@ export default function KurbanProcessModuleView() {
                         if (doc) {
                           setPhotoPreview({
                             url: doc.fileUrl,
-                            title: `${s.vehiclePlate} Sevk Tırı Görseli`,
+                            title: `${s.vehiclePlate || s.shipmentNo} Sevk Tırı Görseli`,
                             desc: doc.description,
                           });
                         }
@@ -1624,44 +2029,93 @@ export default function KurbanProcessModuleView() {
 
           {/* Cold Storage Records */}
           <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
-            <h3 className="text-lg font-black text-slate-900 dark:text-slate-100 flex items-center gap-2">
-              <Scale className="w-5 h-5 text-teal-600" />
-              Soğuk Hava Depolama, Şoklama ve Et Dinlendirme
-            </h3>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
+              <div>
+                <h3 className="text-lg font-black text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                  <Scale className="w-5 h-5 text-teal-600" />
+                  Soğuk Hava Depolama, Şoklama ve Et Dinlendirme
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  +4°C dinlendirme ve şoklama antrepoları, karkas et muhafaza tutanakları ve depo faturaları
+                </p>
+              </div>
+
+              <button
+                onClick={() => {
+                  setEditingStorage({
+                    temperatureCelsius: 4.0,
+                    entryDate: new Date().toISOString().split("T")[0],
+                    productType: "Karkas / Parçalanmış Soğuk Sığır Eti",
+                    status: "in_storage",
+                    cuttingLocationId: cuttingLocations[0]?.id || "ksm-tuzla-01",
+                    storageCompany: "Marmara Frigo Lojistik A.Ş.",
+                    warehouseName: "",
+                    storedQuantityKg: 50000,
+                  });
+                  setStorageModalOpen(true);
+                }}
+                className="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs shadow-md shadow-teal-600/20 flex items-center gap-1.5 transition-all self-start sm:self-auto active:scale-95"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Yeni Soğuk Hava Depo Kaydı Ekle</span>
+              </button>
+            </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {storageRecords.map((st) => (
                 <div
                   key={st.id}
-                  className="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-3"
+                  className="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-3 flex flex-col justify-between"
                 >
-                  <div className="flex items-center justify-between">
-                    <span className="font-mono text-xs font-bold text-teal-700 bg-teal-100 dark:bg-teal-950 px-2.5 py-0.5 rounded-full">
-                      Sabit Isı: +{st.temperatureCelsius} °C
-                    </span>
-                    <span className="text-xs text-slate-500 font-semibold">{st.entryDate} - {st.exitDate}</span>
-                  </div>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono text-xs font-bold text-teal-700 bg-teal-100 dark:bg-teal-950 px-2.5 py-0.5 rounded-full">
+                        Sabit Isı: +{st.temperatureCelsius} °C
+                      </span>
+                      <span className="text-xs text-slate-500 font-semibold">{st.entryDate} - {st.exitDate || "Devam Ediyor"}</span>
+                    </div>
 
-                  <h4 className="text-base font-bold text-slate-900 dark:text-slate-100">
-                    {st.warehouseName}
-                  </h4>
+                    <h4 className="text-base font-bold text-slate-900 dark:text-slate-100">
+                      {st.warehouseName}
+                    </h4>
+                    <p className="text-xs text-slate-500 font-medium">{st.storageCompany}</p>
 
-                  <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                    <div>
-                      <div className="text-[10px] uppercase text-slate-400 font-bold">Depolanan Miktar</div>
-                      <div className="text-xl font-black text-emerald-600 font-mono mt-0.5">
-                        {st.storedQuantityKg.toLocaleString("tr-TR")} Kg
+                    <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                      <div>
+                        <div className="text-[10px] uppercase text-slate-400 font-bold">Depolanan Miktar</div>
+                        <div className="text-xl font-black text-emerald-600 font-mono mt-0.5">
+                          {st.storedQuantityKg.toLocaleString("tr-TR")} Kg
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-[10px] uppercase text-slate-400 font-bold">Depo Fatura Tutarı</div>
+                        <div className="text-base font-bold text-slate-900 dark:text-slate-100 font-mono mt-0.5">
+                          {st.invoiceAmount.toLocaleString("tr-TR")} ₺
+                        </div>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <div className="text-[10px] uppercase text-slate-400 font-bold">Depo Fatura Tutarı</div>
-                      <div className="text-base font-bold text-slate-900 dark:text-slate-100 font-mono mt-0.5">
-                        {st.invoiceAmount.toLocaleString("tr-TR")} ₺
-                      </div>
-                    </div>
+
+                    {st.notes && <p className="text-xs text-slate-500 italic">{st.notes}</p>}
                   </div>
 
-                  <p className="text-xs text-slate-500">{st.notes}</p>
+                  <div className="pt-3 border-t border-slate-200/60 dark:border-slate-700/60 flex items-center justify-end gap-2">
+                    <button
+                      onClick={() => {
+                        setEditingStorage(st);
+                        setStorageModalOpen(true);
+                      }}
+                      className="p-1.5 rounded-lg text-slate-600 hover:text-teal-600 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-bold flex items-center gap-1"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                      <span>Düzenle</span>
+                    </button>
+                    <button
+                      onClick={() => handleDeleteStorage(st.id)}
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -1761,9 +2215,36 @@ export default function KurbanProcessModuleView() {
                 Müşteriye Satış, Frigorifik Sevk ve Teslimat
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
-                Şirket özmal araçları ve lojistik araçlarıyla parçalı teslimat yönetimi
+                Şirket özmal araçları ve lojistik araçlarıyla parçalı teslimat yönetimi (Plaka zorunlu değildir)
               </p>
             </div>
+            <button
+              onClick={() => {
+                setEditingDelivery({
+                  id: `del-custom-${Date.now()}`,
+                  organizationId: activeReport?.organizationId || "org-001",
+                  deliveryNo: `TES-${new Date().getFullYear()}-${String(deliveries.length + 1).padStart(3, "0")}`,
+                  deliveryDate: new Date().toISOString().split("T")[0],
+                  recipientCompany: parties.find((p) => p.partyType === "client_buyer")?.name || "Alıcı Firma",
+                  recipientPerson: "",
+                  deliveredByPerson: "",
+                  transportType: "company_vehicle",
+                  vehiclePlate: "",
+                  driverName: "",
+                  deliveredQuantityKg: 0,
+                  deliveredAnimalCount: 0,
+                  dispatchNoteNo: "",
+                  outgoingInvoiceNo: "",
+                  deliveryAddress: "",
+                  status: "completed",
+                });
+                setDeliveryModalOpen(true);
+              }}
+              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md shadow-emerald-600/20 transition-all shrink-0"
+            >
+              <Plus className="w-4 h-4" />
+              <span>+ Yeni Taşıma Aracı / Teslimat Ekle</span>
+            </button>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1785,7 +2266,13 @@ export default function KurbanProcessModuleView() {
                       {d.transportType === "company_vehicle" ? "★ Şirket Özmal Aracı" : "Lojistik Şirketi"}
                     </div>
                     <h4 className="text-base font-bold text-slate-900 dark:text-slate-100">
-                      {d.vehiclePlate}
+                      {d.vehiclePlate && d.vehiclePlate.trim() !== "" ? (
+                        d.vehiclePlate
+                      ) : (
+                        <span className="text-slate-400 font-normal italic text-xs">
+                          (Plakasız / Belirtilmemiş Araç)
+                        </span>
+                      )}
                     </h4>
                   </div>
                   <div className="text-right">
@@ -1810,6 +2297,24 @@ export default function KurbanProcessModuleView() {
                   </span>
 
                   <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        setEditingDelivery({ ...d });
+                        setDeliveryModalOpen(true);
+                      }}
+                      className="p-1.5 text-slate-400 hover:text-indigo-600 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                      title="Taşıma Aracı / Teslimatı Düzenle"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteDelivery(d.id)}
+                      className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                      title="Teslimat Kaydını Sil"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+
                     <button
                       onClick={() =>
                         openPhotoUploadModal(
@@ -2574,6 +3079,1278 @@ export default function KurbanProcessModuleView() {
                   )}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 5: PARTIES (MÜŞTERİ / KURBANI ALDIĞIM YER / SOĞUK DEPO FİRMASI)       */}
+      {/* ========================================================================= */}
+      {partyModalOpen && editingParty && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 max-w-2xl w-full shadow-2xl my-8 space-y-5">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-400 flex items-center justify-center font-bold">
+                  <Building2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-slate-900 dark:text-slate-100">
+                    {editingParty.id && parties.some((p) => p.id === editingParty.id)
+                      ? "Firma / Paydaş Düzenle"
+                      : "Yeni Firma / Paydaş Ekle"}
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Müşteri, kurban alınan besici/çiftlik veya soğuk hava firma bilgileri
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setPartyModalOpen(false)}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[60vh] overflow-y-auto p-1 text-xs">
+              <div className="md:col-span-2">
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Paydaş Rolü / Türü <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={editingParty.partyType || "supplier_seller"}
+                  onChange={(e) =>
+                    setEditingParty((prev) => ({
+                      ...prev,
+                      partyType: e.target.value as PartyType,
+                    }))
+                  }
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="supplier_seller">🌿 Kurbanı Aldığım Yer / Besici / Çiftlik (Tedarikçi)</option>
+                  <option value="client_buyer">🏢 Alıcı Firma / Müşteri (Kurumsal Alıcı)</option>
+                  <option value="cold_storage">❄️ Soğuk Hava Depo Şirketi</option>
+                  <option value="slaughterhouse">🔪 Kesimhane / Mezbaha İşletmesi</option>
+                  <option value="logistics_transporter">🚚 Lojistik / Nakliye Şirketi</option>
+                </select>
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Firma / Çiftlik / Şahıs Adı <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={editingParty.name || ""}
+                  onChange={(e) => setEditingParty((prev) => ({ ...prev, name: e.target.value }))}
+                  placeholder="Örn: Anadolu Besi Çiftliği Ltd. Şti. veya Ahmet Yılmaz"
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Yetkili Kişi
+                </label>
+                <input
+                  type="text"
+                  value={editingParty.authorizedPerson || ""}
+                  onChange={(e) =>
+                    setEditingParty((prev) => ({ ...prev, authorizedPerson: e.target.value }))
+                  }
+                  placeholder="Örn: Mehmet Demir"
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Telefon Numarası
+                </label>
+                <input
+                  type="text"
+                  value={editingParty.phone || ""}
+                  onChange={(e) => setEditingParty((prev) => ({ ...prev, phone: e.target.value }))}
+                  placeholder="0532 000 00 00"
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  VKN / TCKN
+                </label>
+                <input
+                  type="text"
+                  value={editingParty.taxId || ""}
+                  onChange={(e) => setEditingParty((prev) => ({ ...prev, taxId: e.target.value }))}
+                  placeholder="10 veya 11 haneli kimlik/vergi no"
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Vergi Dairesi
+                </label>
+                <input
+                  type="text"
+                  value={editingParty.taxOffice || ""}
+                  onChange={(e) =>
+                    setEditingParty((prev) => ({ ...prev, taxOffice: e.target.value }))
+                  }
+                  placeholder="Örn: Erzurum Vergi Dairesi"
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Şehir / İlçe
+                </label>
+                <input
+                  type="text"
+                  value={editingParty.city || ""}
+                  onChange={(e) => setEditingParty((prev) => ({ ...prev, city: e.target.value }))}
+                  placeholder="Örn: Erzurum / Palandöken"
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  E-Posta (Opsiyonel)
+                </label>
+                <input
+                  type="email"
+                  value={editingParty.email || ""}
+                  onChange={(e) => setEditingParty((prev) => ({ ...prev, email: e.target.value }))}
+                  placeholder="iletisim@ciftlik.com"
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Açık Adres
+                </label>
+                <textarea
+                  rows={2}
+                  value={editingParty.address || ""}
+                  onChange={(e) =>
+                    setEditingParty((prev) => ({ ...prev, address: e.target.value }))
+                  }
+                  placeholder="Köy, mahalle, cadde, numara bilgileri"
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Açıklama & Özel Notlar
+                </label>
+                <textarea
+                  rows={2}
+                  value={editingParty.notes || ""}
+                  onChange={(e) => setEditingParty((prev) => ({ ...prev, notes: e.target.value }))}
+                  placeholder="Besi ırkı, sözleşme şartları, ödeme koşulları vb."
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between pt-3 border-t border-slate-200 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setPartyModalOpen(false)}
+                className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs"
+              >
+                Vazgeç
+              </button>
+              <button
+                type="button"
+                disabled={isSaving}
+                onClick={() => handleSaveParty(editingParty)}
+                className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold text-xs shadow-md shadow-indigo-600/20 flex items-center gap-1.5 transition-all"
+              >
+                {isSaving ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Kaydediliyor...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Paydaş / Firma Kaydet</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 6: CUTTING LOCATIONS (KESİM YERİ EKLE / DÜZENLE)                     */}
+      {/* ========================================================================= */}
+      {locationModalOpen && editingLocation && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 max-w-2xl w-full shadow-2xl my-8 space-y-5">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-400 flex items-center justify-center font-bold">
+                  <Building className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-slate-900 dark:text-slate-100">
+                    {editingLocation.id && cuttingLocations.some((l) => l.id === editingLocation.id)
+                      ? "Kesim Yeri Düzenle"
+                      : "Yeni Kesim Yeri Ekle"}
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Mezbaha ve kesim tesisi resmi izin ve operasyonel bilgileri
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setLocationModalOpen(false)}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[60vh] overflow-y-auto p-1 text-xs">
+              <div className="md:col-span-2">
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Kesim Yeri / Mezbaha Adı <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={editingLocation.name || ""}
+                  onChange={(e) =>
+                    setEditingLocation((prev) => ({ ...prev, name: e.target.value }))
+                  }
+                  placeholder="Örn: Tuzla Modern Et Kombinası ve Kesimhanesi"
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-amber-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Kesimhane Kodu
+                </label>
+                <input
+                  type="text"
+                  value={editingLocation.locationCode || ""}
+                  onChange={(e) =>
+                    setEditingLocation((prev) => ({ ...prev, locationCode: e.target.value }))
+                  }
+                  placeholder="Örn: KSM-01"
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-amber-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  İl / İlçe
+                </label>
+                <input
+                  type="text"
+                  value={editingLocation.city || ""}
+                  onChange={(e) =>
+                    setEditingLocation((prev) => ({ ...prev, city: e.target.value }))
+                  }
+                  placeholder="Örn: İstanbul / Tuzla"
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-amber-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Tarım Bakanlığı Onay / İşletme No
+                </label>
+                <input
+                  type="text"
+                  value={editingLocation.officialApprovalNo || ""}
+                  onChange={(e) =>
+                    setEditingLocation((prev) => ({ ...prev, officialApprovalNo: e.target.value }))
+                  }
+                  placeholder="Örn: TR-34-KSM-089"
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-amber-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Tahsis Edilen Kurban Sayısı (Adet)
+                </label>
+                <input
+                  type="number"
+                  value={editingLocation.allocatedAnimalCount || 0}
+                  onChange={(e) =>
+                    setEditingLocation((prev) => ({
+                      ...prev,
+                      allocatedAnimalCount: Number(e.target.value),
+                    }))
+                  }
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-amber-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Günlük Kesim Kapasitesi (Adet)
+                </label>
+                <input
+                  type="number"
+                  value={editingLocation.dailyCapacity || 0}
+                  onChange={(e) =>
+                    setEditingLocation((prev) => ({
+                      ...prev,
+                      dailyCapacity: Number(e.target.value),
+                    }))
+                  }
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-amber-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Tesis Sorumlusu
+                </label>
+                <input
+                  type="text"
+                  value={editingLocation.responsiblePerson || ""}
+                  onChange={(e) =>
+                    setEditingLocation((prev) => ({ ...prev, responsiblePerson: e.target.value }))
+                  }
+                  placeholder="Örn: Ali Kemal Demir"
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-amber-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Sorumlu Telefonu
+                </label>
+                <input
+                  type="text"
+                  value={editingLocation.responsiblePhone || ""}
+                  onChange={(e) =>
+                    setEditingLocation((prev) => ({ ...prev, responsiblePhone: e.target.value }))
+                  }
+                  placeholder="0533 000 00 00"
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-amber-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Sorumlu Veteriner Hekim
+                </label>
+                <input
+                  type="text"
+                  value={editingLocation.veterinaryName || ""}
+                  onChange={(e) =>
+                    setEditingLocation((prev) => ({ ...prev, veterinaryName: e.target.value }))
+                  }
+                  placeholder="Örn: Vet. Hekim Murat Can (Oda Sicil No: 3412)"
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-amber-500"
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Açık Adres
+                </label>
+                <textarea
+                  rows={2}
+                  value={editingLocation.address || ""}
+                  onChange={(e) =>
+                    setEditingLocation((prev) => ({ ...prev, address: e.target.value }))
+                  }
+                  placeholder="Mezbaha açık adres bilgisi"
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-amber-500"
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Tesis Açıklaması & Notlar
+                </label>
+                <textarea
+                  rows={2}
+                  value={editingLocation.notes || ""}
+                  onChange={(e) =>
+                    setEditingLocation((prev) => ({ ...prev, notes: e.target.value }))
+                  }
+                  placeholder="Hijyen sertifikası, parçalama hatları, soğuk hava odaları bilgisi"
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-amber-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between pt-3 border-t border-slate-200 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setLocationModalOpen(false)}
+                className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs"
+              >
+                Vazgeç
+              </button>
+              <button
+                type="button"
+                disabled={isSaving}
+                onClick={() => handleSaveLocation(editingLocation)}
+                className="px-5 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white font-bold text-xs shadow-md shadow-amber-600/20 flex items-center gap-1.5 transition-all"
+              >
+                {isSaving ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Kaydediliyor...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Kesim Yerini Kaydet</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 7: SHIPMENTS (CANLI HAYVAN SEVK TIRI EKLE / DÜZENLE)                 */}
+      {/* ========================================================================= */}
+      {shipmentModalOpen && editingShipment && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 max-w-2xl w-full shadow-2xl my-8 space-y-5">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-cyan-100 dark:bg-cyan-950 text-cyan-700 dark:text-cyan-400 flex items-center justify-center font-bold">
+                  <Truck className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-slate-900 dark:text-slate-100">
+                    {editingShipment.id && shipments.some((s) => s.id === editingShipment.id)
+                      ? "Sevk Tırı Düzenle"
+                      : "Yeni Canlı Hayvan Sevk Tırı Ekle"}
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Kurbanlıkların çiftlikten kesimhaneye sevkiyat ve TIR bilgileri
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShipmentModalOpen(false)}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[60vh] overflow-y-auto p-1 text-xs">
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  TIR / Kamyon Plakası <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={editingShipment.vehiclePlate || ""}
+                  onChange={(e) =>
+                    setEditingShipment((prev) => ({ ...prev, vehiclePlate: e.target.value.toUpperCase() }))
+                  }
+                  placeholder="Örn: 06 TR 1010"
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-mono font-bold focus:outline-hidden focus:ring-2 focus:ring-cyan-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Sevk Numarası
+                </label>
+                <input
+                  type="text"
+                  value={editingShipment.shipmentNo || ""}
+                  onChange={(e) =>
+                    setEditingShipment((prev) => ({ ...prev, shipmentNo: e.target.value }))
+                  }
+                  placeholder="Örn: TR-SEVK-2026-001"
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-mono font-bold focus:outline-hidden focus:ring-2 focus:ring-cyan-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Sevk Tarihi
+                </label>
+                <input
+                  type="date"
+                  value={editingShipment.shipmentDate || ""}
+                  onChange={(e) =>
+                    setEditingShipment((prev) => ({ ...prev, shipmentDate: e.target.value }))
+                  }
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-cyan-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Varış Kesimhanesi <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={editingShipment.destinationLocationId || ""}
+                  onChange={(e) =>
+                    setEditingShipment((prev) => ({
+                      ...prev,
+                      destinationLocationId: e.target.value,
+                    }))
+                  }
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-cyan-500"
+                >
+                  <option value="">Kesim Yeri Seçiniz</option>
+                  {cuttingLocations.map((loc) => (
+                    <option key={loc.id} value={loc.id}>
+                      {loc.name} ({loc.locationCode || loc.city})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Çıkış Noktası / Çiftlik
+                </label>
+                <input
+                  type="text"
+                  value={editingShipment.originAddress || ""}
+                  onChange={(e) =>
+                    setEditingShipment((prev) => ({ ...prev, originAddress: e.target.value }))
+                  }
+                  placeholder="Örn: Erzurum Besi Çiftliği"
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-cyan-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Taşıyıcı / Lojistik Firma
+                </label>
+                <input
+                  type="text"
+                  value={editingShipment.carrierCompany || ""}
+                  onChange={(e) =>
+                    setEditingShipment((prev) => ({ ...prev, carrierCompany: e.target.value }))
+                  }
+                  placeholder="Örn: Anadolu Canlı Hayvan Nakliyat"
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-cyan-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Şoför Adı Soyadı
+                </label>
+                <input
+                  type="text"
+                  value={editingShipment.driverName || ""}
+                  onChange={(e) =>
+                    setEditingShipment((prev) => ({ ...prev, driverName: e.target.value }))
+                  }
+                  placeholder="Örn: Hüseyin Kaya"
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-cyan-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Şoför Telefonu
+                </label>
+                <input
+                  type="text"
+                  value={editingShipment.driverPhone || ""}
+                  onChange={(e) =>
+                    setEditingShipment((prev) => ({ ...prev, driverPhone: e.target.value }))
+                  }
+                  placeholder="0535 000 00 00"
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-cyan-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Taşınan Hayvan Sayısı (Adet)
+                </label>
+                <input
+                  type="number"
+                  value={editingShipment.animalCount || 0}
+                  onChange={(e) =>
+                    setEditingShipment((prev) => ({ ...prev, animalCount: Number(e.target.value) }))
+                  }
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-cyan-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Nakliye Bedeli (₺)
+                </label>
+                <input
+                  type="number"
+                  value={editingShipment.shippingCost || 0}
+                  onChange={(e) =>
+                    setEditingShipment((prev) => ({
+                      ...prev,
+                      shippingCost: Number(e.target.value),
+                    }))
+                  }
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-cyan-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Sevk İrsaliye No
+                </label>
+                <input
+                  type="text"
+                  value={editingShipment.dispatchNoteNo || ""}
+                  onChange={(e) =>
+                    setEditingShipment((prev) => ({ ...prev, dispatchNoteNo: e.target.value }))
+                  }
+                  placeholder="Örn: IRS-2026-4401"
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-cyan-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Veteriner Sağlık Rapor No (Yurtiçi Hayvan Sevk)
+                </label>
+                <input
+                  type="text"
+                  value={editingShipment.vetHealthReportNo || ""}
+                  onChange={(e) =>
+                    setEditingShipment((prev) => ({ ...prev, vetHealthReportNo: e.target.value }))
+                  }
+                  placeholder="Örn: TR-25-VET-8832"
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-cyan-500"
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Sevkiyat Durumu
+                </label>
+                <select
+                  value={editingShipment.status || "delivered_to_slaughterhouse"}
+                  onChange={(e) =>
+                    setEditingShipment((prev) => ({
+                      ...prev,
+                      status: e.target.value as ShipmentStatus,
+                    }))
+                  }
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-cyan-500"
+                >
+                  <option value="delivered_to_slaughterhouse">✓ Tesis Kesimhanesine Ulaştı / Teslim Edildi</option>
+                  <option value="in_transit">🚚 Yolda / Sevkiyatta</option>
+                  <option value="planned">📅 Planlandı / Yükleme Bekliyor</option>
+                </select>
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Açıklama & Sevkiyat Notları
+                </label>
+                <textarea
+                  rows={2}
+                  value={editingShipment.notes || ""}
+                  onChange={(e) =>
+                    setEditingShipment((prev) => ({ ...prev, notes: e.target.value }))
+                  }
+                  placeholder="Yolculuk süresi, mola yerleri, kantar tartım fişi bilgileri vb."
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-cyan-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between pt-3 border-t border-slate-200 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setShipmentModalOpen(false)}
+                className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs"
+              >
+                Vazgeç
+              </button>
+              <button
+                type="button"
+                disabled={isSaving}
+                onClick={() => handleSaveShipment(editingShipment)}
+                className="px-5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white font-bold text-xs shadow-md shadow-cyan-600/20 flex items-center gap-1.5 transition-all"
+              >
+                {isSaving ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Kaydediliyor...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Sevk Tırını Kaydet</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 8: STORAGE (SOĞUK HAVA DEPO KAYDI EKLE / DÜZENLE)                    */}
+      {/* ========================================================================= */}
+      {storageModalOpen && editingStorage && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 max-w-2xl w-full shadow-2xl my-8 space-y-5">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-sky-100 dark:bg-sky-950 text-sky-700 dark:text-sky-400 flex items-center justify-center font-bold">
+                  <Warehouse className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-slate-900 dark:text-slate-100">
+                    {editingStorage.id && storageRecords.some((s) => s.id === editingStorage.id)
+                      ? "Soğuk Depo Kaydı Düzenle"
+                      : "Yeni Soğuk Hava Depo Kaydı Ekle"}
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Kesim sonrası karkas ve parça etlerin soğuk hava tesisinde muhafazası
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setStorageModalOpen(false)}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[60vh] overflow-y-auto p-1 text-xs">
+              <div className="md:col-span-2">
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Soğuk Hava Deposu / Tesis Adı <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={editingStorage.warehouseName || ""}
+                  onChange={(e) =>
+                    setEditingStorage((prev) => ({ ...prev, warehouseName: e.target.value }))
+                  }
+                  placeholder="Örn: Marmara Frigo Lojistik & Soğuk Hava Deposu"
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-sky-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  İşletmeci / Depolama Firması
+                </label>
+                <input
+                  type="text"
+                  value={editingStorage.storageCompany || ""}
+                  onChange={(e) =>
+                    setEditingStorage((prev) => ({ ...prev, storageCompany: e.target.value }))
+                  }
+                  placeholder="Örn: Marmara Frigo A.Ş."
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-sky-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  İlişkili Kesimhane
+                </label>
+                <select
+                  value={editingStorage.cuttingLocationId || ""}
+                  onChange={(e) =>
+                    setEditingStorage((prev) => ({ ...prev, cuttingLocationId: e.target.value }))
+                  }
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-sky-500"
+                >
+                  <option value="">Kesimhane Seçiniz</option>
+                  {cuttingLocations.map((loc) => (
+                    <option key={loc.id} value={loc.id}>
+                      {loc.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Depolanan Ürün Tipi
+                </label>
+                <input
+                  type="text"
+                  value={editingStorage.productType || ""}
+                  onChange={(e) =>
+                    setEditingStorage((prev) => ({ ...prev, productType: e.target.value }))
+                  }
+                  placeholder="Örn: Karkas Et (Dörde Bölünmüş), Hisse Kolileri"
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-sky-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Muhafaza Sıcaklığı (°C)
+                </label>
+                <input
+                  type="number"
+                  step="0.5"
+                  value={editingStorage.temperatureCelsius || 0}
+                  onChange={(e) =>
+                    setEditingStorage((prev) => ({
+                      ...prev,
+                      temperatureCelsius: Number(e.target.value),
+                    }))
+                  }
+                  placeholder="Örn: 2 veya 4"
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-sky-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Depolanan Miktar (Kg)
+                </label>
+                <input
+                  type="number"
+                  value={editingStorage.storedQuantityKg || 0}
+                  onChange={(e) =>
+                    setEditingStorage((prev) => ({
+                      ...prev,
+                      storedQuantityKg: Number(e.target.value),
+                    }))
+                  }
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-sky-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Depoya Giriş Tarihi
+                </label>
+                <input
+                  type="date"
+                  value={editingStorage.entryDate || ""}
+                  onChange={(e) =>
+                    setEditingStorage((prev) => ({ ...prev, entryDate: e.target.value }))
+                  }
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-sky-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Depodan Çıkış / Sevk Tarihi (Opsiyonel)
+                </label>
+                <input
+                  type="date"
+                  value={editingStorage.exitDate || ""}
+                  onChange={(e) =>
+                    setEditingStorage((prev) => ({ ...prev, exitDate: e.target.value }))
+                  }
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-sky-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Depolama Fatura Tutarı (₺)
+                </label>
+                <input
+                  type="number"
+                  value={editingStorage.invoiceAmount || 0}
+                  onChange={(e) =>
+                    setEditingStorage((prev) => ({
+                      ...prev,
+                      invoiceAmount: Number(e.target.value),
+                    }))
+                  }
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-sky-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Depolama Fatura No
+                </label>
+                <input
+                  type="text"
+                  value={editingStorage.invoiceNo || ""}
+                  onChange={(e) =>
+                    setEditingStorage((prev) => ({ ...prev, invoiceNo: e.target.value }))
+                  }
+                  placeholder="Örn: DEP-2026-0044"
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-sky-500"
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Açıklama & İklimlendirme Koşulları
+                </label>
+                <textarea
+                  rows={2}
+                  value={editingStorage.notes || ""}
+                  onChange={(e) =>
+                    setEditingStorage((prev) => ({ ...prev, notes: e.target.value }))
+                  }
+                  placeholder="HACCP hijyen standartları, bağıl nem %85, hava sirkülasyonu sağlandı."
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-sky-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between pt-3 border-t border-slate-200 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setStorageModalOpen(false)}
+                className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs"
+              >
+                Vazgeç
+              </button>
+              <button
+                type="button"
+                disabled={isSaving}
+                onClick={() => handleSaveStorage(editingStorage)}
+                className="px-5 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white font-bold text-xs shadow-md shadow-sky-600/20 flex items-center gap-1.5 transition-all"
+              >
+                {isSaving ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Kaydediliyor...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Soğuk Depo Kaydet</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 9: DELIVERIES (TAŞIMA ARACI EKLE - PLAKA ZORUNLU DEĞİL)             */}
+      {/* ========================================================================= */}
+      {deliveryModalOpen && editingDelivery && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 max-w-2xl w-full shadow-2xl my-8 space-y-5">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 flex items-center justify-center font-bold">
+                  <FileCheck2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base font-extrabold text-slate-900 dark:text-slate-100">
+                      {editingDelivery.id && deliveries.some((d) => d.id === editingDelivery.id)
+                        ? "Taşıma Aracı / Teslimat Düzenle"
+                        : "Yeni Taşıma Aracı / Teslimat Ekle"}
+                    </h3>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                      Plaka Zorunlu Değil
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    Müşteriye soğuk zincir teslimatı - Plaka bilgisi opsiyoneldir.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setDeliveryModalOpen(false)}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[60vh] overflow-y-auto p-1 text-xs">
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Araç Türü / Filo Mülkiyeti
+                </label>
+                <select
+                  value={editingDelivery.transportType || "company_vehicle"}
+                  onChange={(e) =>
+                    setEditingDelivery((prev) => ({
+                      ...prev,
+                      transportType: e.target.value as DeliveryTransportType,
+                    }))
+                  }
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+                >
+                  <option value="company_vehicle">★ Şirket Özmal Aracı</option>
+                  <option value="logistics_third_party">🚚 Dış Lojistik / Anlaşmalı Nakliye</option>
+                </select>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block font-bold text-slate-700 dark:text-slate-300">
+                    Taşıma Aracı Plakası
+                  </label>
+                  <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950 px-1.5 py-0.2 rounded">
+                    Opsiyonel (Zorunlu Değil)
+                  </span>
+                </div>
+                <input
+                  type="text"
+                  value={editingDelivery.vehiclePlate || ""}
+                  onChange={(e) =>
+                    setEditingDelivery((prev) => ({
+                      ...prev,
+                      vehiclePlate: e.target.value.toUpperCase(),
+                    }))
+                  }
+                  placeholder="Örn: 34 VR 4410 (Boş bırakabilirsiniz)"
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-mono font-bold focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Şoför / Teslim Eden Sürücü <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={editingDelivery.driverName || ""}
+                  onChange={(e) =>
+                    setEditingDelivery((prev) => ({ ...prev, driverName: e.target.value }))
+                  }
+                  placeholder="Örn: Serdar Koç"
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Şirket Teslim Eden Yetkilisi
+                </label>
+                <input
+                  type="text"
+                  value={editingDelivery.deliveredByPerson || ""}
+                  onChange={(e) =>
+                    setEditingDelivery((prev) => ({
+                      ...prev,
+                      deliveredByPerson: e.target.value,
+                    }))
+                  }
+                  placeholder="Örn: Enes Kurtul (Sevkiyat Sorumlusu)"
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Alıcı Müşteri / Firma Adı
+                </label>
+                <input
+                  type="text"
+                  value={editingDelivery.recipientCompany || ""}
+                  onChange={(e) =>
+                    setEditingDelivery((prev) => ({
+                      ...prev,
+                      recipientCompany: e.target.value,
+                    }))
+                  }
+                  placeholder="Örn: Anadolu Perakende Gıda A.Ş."
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Teslim Alan Yetkili Kişi
+                </label>
+                <input
+                  type="text"
+                  value={editingDelivery.recipientPerson || ""}
+                  onChange={(e) =>
+                    setEditingDelivery((prev) => ({
+                      ...prev,
+                      recipientPerson: e.target.value,
+                    }))
+                  }
+                  placeholder="Örn: Murat Göktaş (Depo Müdürü)"
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Teslimat Tarihi
+                </label>
+                <input
+                  type="date"
+                  value={editingDelivery.deliveryDate || ""}
+                  onChange={(e) =>
+                    setEditingDelivery((prev) => ({ ...prev, deliveryDate: e.target.value }))
+                  }
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Teslim Edilen Miktar (Kg)
+                </label>
+                <input
+                  type="number"
+                  value={editingDelivery.deliveredQuantityKg || 0}
+                  onChange={(e) =>
+                    setEditingDelivery((prev) => ({
+                      ...prev,
+                      deliveredQuantityKg: Number(e.target.value),
+                    }))
+                  }
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Teslim Edilen Hayvan / Karkas Karşılığı (Adet)
+                </label>
+                <input
+                  type="number"
+                  value={editingDelivery.deliveredAnimalCount || 0}
+                  onChange={(e) =>
+                    setEditingDelivery((prev) => ({
+                      ...prev,
+                      deliveredAnimalCount: Number(e.target.value),
+                    }))
+                  }
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Taşıma Masrafı / Navlun (₺) (Opsiyonel)
+                </label>
+                <input
+                  type="number"
+                  value={editingDelivery.transportCost || 0}
+                  onChange={(e) =>
+                    setEditingDelivery((prev) => ({
+                      ...prev,
+                      transportCost: Number(e.target.value),
+                    }))
+                  }
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Sevk İrsaliye Numarası
+                </label>
+                <input
+                  type="text"
+                  value={editingDelivery.dispatchNoteNo || ""}
+                  onChange={(e) =>
+                    setEditingDelivery((prev) => ({ ...prev, dispatchNoteNo: e.target.value }))
+                  }
+                  placeholder="Örn: IRS-2026-901"
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Satış Faturası No
+                </label>
+                <input
+                  type="text"
+                  value={editingDelivery.outgoingInvoiceNo || ""}
+                  onChange={(e) =>
+                    setEditingDelivery((prev) => ({
+                      ...prev,
+                      outgoingInvoiceNo: e.target.value,
+                    }))
+                  }
+                  placeholder="Örn: GIB2026000000301"
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Teslimat Adresi / Mağaza / Şube
+                </label>
+                <textarea
+                  rows={2}
+                  value={editingDelivery.deliveryAddress || ""}
+                  onChange={(e) =>
+                    setEditingDelivery((prev) => ({ ...prev, deliveryAddress: e.target.value }))
+                  }
+                  placeholder="Örn: Anadolu Gıda Merkez Soğuk Hava Deposu / Pendik İstanbul"
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Teslimat Notları
+                </label>
+                <textarea
+                  rows={2}
+                  value={editingDelivery.notes || ""}
+                  onChange={(e) =>
+                    setEditingDelivery((prev) => ({ ...prev, notes: e.target.value }))
+                  }
+                  placeholder="Isı kayıt cihazı (datalogger) kontrol edildi, et derecesi +2°C ölçüldü."
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between pt-3 border-t border-slate-200 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setDeliveryModalOpen(false)}
+                className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs"
+              >
+                Vazgeç
+              </button>
+              <button
+                type="button"
+                disabled={isSaving}
+                onClick={() => handleSaveDelivery(editingDelivery)}
+                className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs shadow-md shadow-emerald-600/20 flex items-center gap-1.5 transition-all"
+              >
+                {isSaving ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Kaydediliyor...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Taşıma Aracı ve Teslimatı Kaydet</span>
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>

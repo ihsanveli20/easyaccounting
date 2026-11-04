@@ -392,3 +392,40 @@ export function downloadAnimalImportTemplate(): void {
   XLSX.utils.book_append_sheet(workbook, worksheet, "Hayvan_Sablon");
   XLSX.writeFile(workbook, "Toplu_Hayvan_Yukleme_Sablonu.xlsx");
 }
+
+/**
+ * Generic Entity Save API (Party, Location, Shipment, Storage, Delivery)
+ */
+export async function saveEntityApi<T = any>(
+  entityType: "party" | "location" | "shipment" | "storage" | "delivery",
+  data: Partial<T>
+): Promise<{ success: boolean; data?: T; [key: string]: any; error?: string }> {
+  try {
+    const res = await fetch("/api/kurban-process", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ entityType, data }),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err?.message || "Kayıt hatası." };
+  }
+}
+
+/**
+ * Generic Entity Delete API
+ */
+export async function deleteEntityApi(
+  entityType: "party" | "location" | "shipment" | "storage" | "delivery",
+  id: string
+): Promise<{ success: boolean; message?: string; error?: string }> {
+  try {
+    const res = await fetch(
+      `/api/kurban-process?entityType=${encodeURIComponent(entityType)}&id=${encodeURIComponent(id)}`,
+      { method: "DELETE" }
+    );
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err?.message || "Silme hatası." };
+  }
+}

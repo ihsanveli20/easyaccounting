@@ -360,6 +360,261 @@ export async function POST(request: Request) {
       });
     }
 
+    // 6. Generic Entity CRUD (Party, Location, Shipment, Storage, Delivery)
+    if (body.entityType && body.data) {
+      const { entityType, data } = body;
+      const supabase = getSupabaseServerClient();
+      const orgId = data.organizationId || SEED_ORGANIZATION.id;
+
+      if (entityType === "party") {
+        const item: any = {
+          id: data.id || `pty-${Date.now()}`,
+          organizationId: orgId,
+          partyType: data.partyType || "supplier_seller",
+          name: data.name,
+          taxId: data.taxId || null,
+          taxOffice: data.taxOffice || null,
+          phone: data.phone || null,
+          email: data.email || null,
+          city: data.city || null,
+          address: data.address || null,
+          authorizedPerson: data.authorizedPerson || null,
+          notes: data.notes || null,
+          createdAt: data.createdAt || new Date().toISOString(),
+        };
+
+        if (supabase) {
+          await supabase.from("kurban_parties").upsert({
+            id: item.id,
+            organization_id: item.organizationId,
+            party_type: item.partyType,
+            name: item.name,
+            tax_id: item.taxId,
+            tax_office: item.taxOffice,
+            phone: item.phone,
+            email: item.email,
+            city: item.city,
+            address: item.address,
+            authorized_person: item.authorizedPerson,
+            notes: item.notes,
+          });
+        }
+
+        const idx = inMemoryStore.parties.findIndex((p) => p.id === item.id);
+        if (idx >= 0) inMemoryStore.parties[idx] = item;
+        else inMemoryStore.parties.unshift(item);
+
+        return NextResponse.json({ success: true, party: item, message: "Paydaş / Firma başarıyla kaydedildi." });
+      }
+
+      if (entityType === "location") {
+        const item: any = {
+          id: data.id || `ksm-loc-${Date.now()}`,
+          organizationId: orgId,
+          name: data.name,
+          locationCode: data.locationCode || `KSM-0${inMemoryStore.locations.length + 1}`,
+          city: data.city || "İstanbul",
+          address: data.address || null,
+          responsiblePerson: data.responsiblePerson || null,
+          responsiblePhone: data.responsiblePhone || null,
+          officialApprovalNo: data.officialApprovalNo || null,
+          veterinaryName: data.veterinaryName || null,
+          dailyCapacity: Number(data.dailyCapacity) || 150,
+          allocatedAnimalCount: Number(data.allocatedAnimalCount) || 0,
+          notes: data.notes || null,
+          createdAt: data.createdAt || new Date().toISOString(),
+        };
+
+        if (supabase) {
+          await supabase.from("kurban_cutting_locations").upsert({
+            id: item.id,
+            organization_id: item.organizationId,
+            name: item.name,
+            location_code: item.locationCode,
+            city: item.city,
+            address: item.address,
+            responsible_person: item.responsiblePerson,
+            responsible_phone: item.responsiblePhone,
+            official_approval_no: item.officialApprovalNo,
+            veterinary_name: item.veterinaryName,
+            daily_capacity: item.dailyCapacity,
+            allocated_animal_count: item.allocatedAnimalCount,
+            notes: item.notes,
+          });
+        }
+
+        const idx = inMemoryStore.locations.findIndex((l) => l.id === item.id);
+        if (idx >= 0) inMemoryStore.locations[idx] = item;
+        else inMemoryStore.locations.push(item);
+
+        return NextResponse.json({ success: true, location: item, message: "Kesim yeri başarıyla kaydedildi." });
+      }
+
+      if (entityType === "shipment") {
+        const matchedLoc = inMemoryStore.locations.find((l) => l.id === data.destinationLocationId);
+        const item: any = {
+          id: data.id || `shp-${Date.now()}`,
+          organizationId: orgId,
+          destinationLocationId: data.destinationLocationId || inMemoryStore.locations[0]?.id,
+          destinationLocationName: matchedLoc?.name || data.destinationLocationName || "Kesimhane",
+          shipmentNo: data.shipmentNo || `SVK-2026-00${inMemoryStore.shipments.length + 1}`,
+          shipmentDate: data.shipmentDate || new Date().toISOString().split("T")[0],
+          originAddress: data.originAddress || "Besi İşletmesi",
+          carrierCompany: data.carrierCompany || null,
+          vehiclePlate: data.vehiclePlate?.trim() || "Plaka Belirtilmedi",
+          driverName: data.driverName || "Şoför",
+          driverPhone: data.driverPhone || null,
+          animalCount: Number(data.animalCount) || 0,
+          shippingCost: Number(data.shippingCost) || 0,
+          shippingInvoiceNo: data.shippingInvoiceNo || null,
+          dispatchNoteNo: data.dispatchNoteNo || null,
+          vetHealthReportNo: data.vetHealthReportNo || null,
+          status: data.status || "delivered_to_slaughterhouse",
+          notes: data.notes || null,
+          createdAt: data.createdAt || new Date().toISOString(),
+        };
+
+        if (supabase) {
+          await supabase.from("kurban_shipments").upsert({
+            id: item.id,
+            organization_id: item.organizationId,
+            destination_location_id: item.destinationLocationId,
+            shipment_no: item.shipmentNo,
+            shipment_date: item.shipmentDate,
+            origin_address: item.originAddress,
+            carrier_company: item.carrierCompany,
+            vehicle_plate: item.vehiclePlate,
+            driver_name: item.driverName,
+            driver_phone: item.driverPhone,
+            animal_count: item.animalCount,
+            shipping_cost: item.shippingCost,
+            shipping_invoice_no: item.shippingInvoiceNo,
+            dispatch_note_no: item.dispatchNoteNo,
+            vet_health_report_no: item.vetHealthReportNo,
+            status: item.status,
+            notes: item.notes,
+          });
+        }
+
+        const idx = inMemoryStore.shipments.findIndex((s) => s.id === item.id);
+        if (idx >= 0) inMemoryStore.shipments[idx] = item;
+        else inMemoryStore.shipments.unshift(item);
+
+        return NextResponse.json({ success: true, shipment: item, message: "Sevk tırı başarıyla kaydedildi." });
+      }
+
+      if (entityType === "storage") {
+        const item: any = {
+          id: data.id || `str-${Date.now()}`,
+          organizationId: orgId,
+          cuttingLocationId: data.cuttingLocationId || inMemoryStore.locations[0]?.id,
+          storageCompany: data.storageCompany || "Soğuk Depo Firması",
+          warehouseName: data.warehouseName || "Soğuk Hava Antreposu",
+          warehouseAddress: data.warehouseAddress || null,
+          entryDate: data.entryDate || new Date().toISOString().split("T")[0],
+          exitDate: data.exitDate || null,
+          productType: data.productType || "Karkas / Parçalanmış Soğuk Sığır Eti",
+          storedQuantityKg: Number(data.storedQuantityKg) || 0,
+          remainingQuantityKg: Number(data.remainingQuantityKg ?? data.storedQuantityKg) || 0,
+          entryDispatchNo: data.entryDispatchNo || null,
+          exitDispatchNo: data.exitDispatchNo || null,
+          invoiceNo: data.invoiceNo || null,
+          invoiceDate: data.invoiceDate || null,
+          invoiceAmount: Number(data.invoiceAmount) || 0,
+          temperatureCelsius: Number(data.temperatureCelsius) || 4.0,
+          status: data.status || "in_storage",
+          notes: data.notes || null,
+          createdAt: data.createdAt || new Date().toISOString(),
+        };
+
+        if (supabase) {
+          await supabase.from("kurban_storage_records").upsert({
+            id: item.id,
+            organization_id: item.organizationId,
+            cutting_location_id: item.cuttingLocationId,
+            storage_company: item.storageCompany,
+            warehouse_name: item.warehouseName,
+            warehouse_address: item.warehouseAddress,
+            entry_date: item.entryDate,
+            exit_date: item.exitDate,
+            product_type: item.productType,
+            stored_quantity_kg: item.storedQuantityKg,
+            remaining_quantity_kg: item.remainingQuantityKg,
+            entry_dispatch_no: item.entryDispatchNo,
+            exit_dispatch_no: item.exitDispatchNo,
+            invoice_no: item.invoiceNo,
+            invoice_date: item.invoiceDate,
+            invoice_amount: item.invoiceAmount,
+            temperature_celsius: item.temperatureCelsius,
+            status: item.status,
+            notes: item.notes,
+          });
+        }
+
+        const idx = inMemoryStore.storageRecords.findIndex((st) => st.id === item.id);
+        if (idx >= 0) inMemoryStore.storageRecords[idx] = item;
+        else inMemoryStore.storageRecords.unshift(item);
+
+        return NextResponse.json({ success: true, storage: item, message: "Soğuk depo kaydı başarıyla kaydedildi." });
+      }
+
+      if (entityType === "delivery") {
+        const item: any = {
+          id: data.id || `del-${Date.now()}`,
+          organizationId: orgId,
+          cuttingLocationId: data.cuttingLocationId || inMemoryStore.locations[0]?.id,
+          deliveryNo: data.deliveryNo || `TSL-2026-00${inMemoryStore.deliveries.length + 1}`,
+          recipientCompany: data.recipientCompany || "Alıcı Firma",
+          deliveryDate: data.deliveryDate || new Date().toISOString().split("T")[0],
+          deliveredQuantityKg: Number(data.deliveredQuantityKg) || 0,
+          deliveredAnimalCount: Number(data.deliveredAnimalCount) || 0,
+          outgoingInvoiceNo: data.outgoingInvoiceNo || null,
+          dispatchNoteNo: data.dispatchNoteNo || `IRS-${Date.now().toString().slice(-6)}`,
+          deliveryAddress: data.deliveryAddress || "Müşteri Teslim Adresi",
+          recipientPerson: data.recipientPerson || "Yetkili",
+          deliveredByPerson: data.deliveredByPerson || "Sevkiyat Sorumlusu",
+          transportType: data.transportType || "company_vehicle",
+          // Araç plakası ZORUNLU DEĞİL: Boş ise undefined veya "Plaka Belirtilmedi"
+          vehiclePlate: data.vehiclePlate?.trim() || "Plakasız / Belirtilmedi",
+          driverName: data.driverName || "Şoför",
+          transportCost: Number(data.transportCost) || 0,
+          status: data.status || "completed",
+          notes: data.notes || null,
+          createdAt: data.createdAt || new Date().toISOString(),
+        };
+
+        if (supabase) {
+          await supabase.from("kurban_deliveries").upsert({
+            id: item.id,
+            organization_id: item.organizationId,
+            cutting_location_id: item.cuttingLocationId,
+            delivery_no: item.deliveryNo,
+            recipient_company: item.recipientCompany,
+            delivery_date: item.deliveryDate,
+            delivered_quantity_kg: item.deliveredQuantityKg,
+            delivered_animal_count: item.deliveredAnimalCount,
+            outgoing_invoice_no: item.outgoingInvoiceNo,
+            dispatch_note_no: item.dispatchNoteNo,
+            delivery_address: item.deliveryAddress,
+            recipient_person: item.recipientPerson,
+            delivered_by_person: item.deliveredByPerson,
+            transport_type: item.transportType,
+            vehicle_plate: item.vehiclePlate,
+            driver_name: item.driverName,
+            transport_cost: item.transportCost,
+            status: item.status,
+            notes: item.notes,
+          });
+        }
+
+        const idx = inMemoryStore.deliveries.findIndex((d) => d.id === item.id);
+        if (idx >= 0) inMemoryStore.deliveries[idx] = item;
+        else inMemoryStore.deliveries.unshift(item);
+
+        return NextResponse.json({ success: true, delivery: item, message: "Taşıma / Teslimat aracı başarıyla kaydedildi." });
+      }
+    }
+
     // Default: Return success for in-memory or new organization creation
     return NextResponse.json({
       success: true,
@@ -370,5 +625,56 @@ export async function POST(request: Request) {
       { success: false, error: err?.message || "Sunucu hatası" },
       { status: 500 }
     );
+  }
+}
+
+/**
+ * DELETE: Delete a party, location, shipment, storage record, or delivery
+ */
+export async function DELETE(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const entityType = searchParams.get("entityType");
+    const id = searchParams.get("id");
+
+    if (!entityType || !id) {
+      return NextResponse.json({ success: false, error: "entityType ve id zorunludur." }, { status: 400 });
+    }
+
+    const supabase = getSupabaseServerClient();
+
+    if (entityType === "party") {
+      if (supabase) await supabase.from("kurban_parties").delete().eq("id", id);
+      inMemoryStore.parties = inMemoryStore.parties.filter((p) => p.id !== id);
+      return NextResponse.json({ success: true, message: "Paydaş firma silindi." });
+    }
+
+    if (entityType === "location") {
+      if (supabase) await supabase.from("kurban_cutting_locations").delete().eq("id", id);
+      inMemoryStore.locations = inMemoryStore.locations.filter((l) => l.id !== id);
+      return NextResponse.json({ success: true, message: "Kesim yeri silindi." });
+    }
+
+    if (entityType === "shipment") {
+      if (supabase) await supabase.from("kurban_shipments").delete().eq("id", id);
+      inMemoryStore.shipments = inMemoryStore.shipments.filter((s) => s.id !== id);
+      return NextResponse.json({ success: true, message: "Sevk tırı silindi." });
+    }
+
+    if (entityType === "storage") {
+      if (supabase) await supabase.from("kurban_storage_records").delete().eq("id", id);
+      inMemoryStore.storageRecords = inMemoryStore.storageRecords.filter((st) => st.id !== id);
+      return NextResponse.json({ success: true, message: "Soğuk depo kaydı silindi." });
+    }
+
+    if (entityType === "delivery") {
+      if (supabase) await supabase.from("kurban_deliveries").delete().eq("id", id);
+      inMemoryStore.deliveries = inMemoryStore.deliveries.filter((d) => d.id !== id);
+      return NextResponse.json({ success: true, message: "Taşıma aracı kaydı silindi." });
+    }
+
+    return NextResponse.json({ success: false, error: "Geçersiz entityType." }, { status: 400 });
+  } catch (err: any) {
+    return NextResponse.json({ success: false, error: err?.message || "Silme hatası" }, { status: 500 });
   }
 }

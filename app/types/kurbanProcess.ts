@@ -177,7 +177,7 @@ export interface KurbanShipment {
   shipmentDate: string;
   originAddress: string;
   carrierCompany?: string;
-  vehiclePlate: string;
+  vehiclePlate?: string;
   driverName: string;
   driverPhone?: string;
   animalCount: number;
@@ -273,7 +273,7 @@ export interface KurbanDelivery {
   recipientPerson: string;
   deliveredByPerson: string;
   transportType: DeliveryTransportType;
-  vehiclePlate: string;
+  vehiclePlate?: string;
   driverName: string;
   transportCost: number;
   status: "completed" | "in_transit" | "cancelled";

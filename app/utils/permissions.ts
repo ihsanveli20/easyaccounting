@@ -66,9 +66,9 @@ export const SYSTEM_MENUS: MenuItemDefinition[] = [
   },
   {
     id: "kurban-reporting",
-    name: "Kurban Raporlama & Takip",
-    shortName: "Kurban Raporlama",
-    description: "400-500 kurbanlık sevkiyat, kesimhane, hisse dağıtımı ve fotoğraflı dijital raporlama",
+    name: "Kurban Raporları",
+    shortName: "Kurban Raporları",
+    description: "Canlı hayvan alımı, 2 kesimhane, sevk, soğuk depolama, teslimat ve resmî süreç raporları",
     category: "sales",
   },
   {

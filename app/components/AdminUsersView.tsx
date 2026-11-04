@@ -36,6 +36,7 @@ import {
   Info,
   ArrowLeftRight,
   Truck,
+  ScrollText,
 } from "lucide-react";
 import { getSupabaseClient } from "../utils/supabase";
 import {
@@ -61,7 +62,7 @@ const MENU_ICONS: Record<AppMenuId, React.ComponentType<{ className?: string }>>
   "proposal-history": History,
   "proposal-comparison": ArrowLeftRight,
   "stock-tracking": Package,
-  "kurban-reporting": Truck,
+  "kurban-reporting": ScrollText,
   "admin-users": UserCheck,
 };
 

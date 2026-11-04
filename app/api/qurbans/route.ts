@@ -53,6 +53,7 @@ async function processMediaUpload(
             .from("qurban-media")
             .upload(fileName, buffer, {
               contentType: mimeType,
+              cacheControl: "31536000, public",
               upsert: true,
             });
 

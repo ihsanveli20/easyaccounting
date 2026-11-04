@@ -38,6 +38,7 @@ import {
   Lock,
   ArrowLeftRight,
   Truck,
+  ScrollText,
 } from "lucide-react";
 import {
   AccountRecord,
@@ -64,6 +65,7 @@ import ProposalHistoryView from "./components/ProposalHistoryView";
 import ProposalComparisonView from "./components/ProposalComparisonView";
 import ProductManagementView, { DEFAULT_SAMPLE_PRODUCTS } from "./components/ProductManagementView";
 import KurbanReportingView from "./components/KurbanReportingView";
+import KurbanProcessModuleView from "./components/KurbanProcessModuleView";
 import LoginView from "./components/LoginView";
 import AdminUsersView from "./components/AdminUsersView";
 import { useAuth } from "./context/AuthContext";
@@ -703,14 +705,14 @@ export default function Home() {
     },
     {
       id: "kurban-reporting" as const,
-      name: "Kurban Raporlama & Takip",
-      shortName: "Kurban Raporlama",
-      description: "Sevkiyat, Kesimhane & Hissedar Takibi",
-      icon: Truck,
-      activeBg: "bg-amber-600 text-white shadow-md shadow-amber-600/25",
-      badge: null,
-      badgeStyle: "bg-white/20 text-white",
-      tag: "YENİ",
+      name: "Kurban Raporları",
+      shortName: "Kurban Raporları",
+      description: "Kesim, Sevk & Resmî Süreç Raporları",
+      icon: ScrollText,
+      activeBg: "bg-emerald-600 text-white shadow-md shadow-emerald-600/25",
+      badge: "2 Rapor",
+      badgeStyle: "bg-white/20 text-white font-bold",
+      tag: "RESMÎ",
     },
     ...(isAdmin
       ? [
@@ -1007,7 +1009,7 @@ export default function Home() {
                     />
                     {item.badge !== null && (
                       <span className="absolute top-1.5 right-1.5 min-w-[16px] h-4 px-1 rounded-full text-[9px] font-bold bg-emerald-500 text-white flex items-center justify-center ring-2 ring-white">
-                        {item.badge > 99 ? "99+" : item.badge}
+                        {typeof item.badge === "number" && item.badge > 99 ? "99+" : item.badge}
                       </span>
                     )}
                     {item.tag && (
@@ -1228,7 +1230,7 @@ export default function Home() {
                 ) : activeTab === "stock-tracking" ? (
                   <Package className="w-4 h-4 sm:w-5 sm:h-5" />
                 ) : activeTab === "kurban-reporting" ? (
-                  <Truck className="w-4 h-4 sm:w-5 sm:h-5 text-amber-100" />
+                  <ScrollText className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-100" />
                 ) : (
                   <UserCheck className="w-4 h-4 sm:w-5 sm:h-5" />
                 )}
@@ -1254,7 +1256,7 @@ export default function Home() {
                                   : activeTab === "stock-tracking"
                                     ? "Ürün Stok Takibi"
                                     : activeTab === "kurban-reporting"
-                                      ? "Kurban Raporlama & Takip"
+                                      ? "Kurban Kesim ve Süreç Takip Raporu"
                                       : "Kullanıcı & Yetki Yönetimi"}
                   </span>
                   <span
@@ -1296,7 +1298,7 @@ export default function Home() {
                                   : activeTab === "stock-tracking"
                                     ? "Ürün Kataloğu"
                                     : activeTab === "kurban-reporting"
-                                      ? "Dijital Rapor & Karne"
+                                      ? "Resmî Denetim Raporu"
                                       : "Admin Paneli"}
                   </span>
                 </h1>
@@ -1318,7 +1320,7 @@ export default function Home() {
                                 : activeTab === "stock-tracking"
                                   ? "Excel ile ürün listenizi içe aktarın, kaydedin ve teklif hazırlarken anında çekin"
                                   : activeTab === "kurban-reporting"
-                                    ? "400-500 kurbanlık için sevkiyat tırı, çiftlik menşei, faturası, kesimhane, 7 hisse dağıtımı, fotoğraflar ve dijital karne"
+                                    ? "350 canlı hayvan alımı, 8 tır sevkiyatı, 2 kesimhanede kesim, soğuk depolama ve iki ayrı resmî denetim raporu"
                                     : "Kullanıcıları görüntüleyin, rolleri güncelleyin ve yetki matrisini yönetin"}
                 </p>
               </div>
@@ -2147,10 +2149,10 @@ export default function Home() {
           )}
 
           {/* ========================================================================= */}
-          {/* TAB 6.5: KURBAN REPORTING (KURBAN RAPORLAMA & DİJİTAL KARNE)             */}
+          {/* TAB 6.5: KURBAN PROCESS & OFFICIAL REPORTING (KURBAN RAPORLARI MODÜLÜ)     */}
           {/* ========================================================================= */}
           {activeTab === "kurban-reporting" && hasMenuAccess("kurban-reporting") && (
-            <KurbanReportingView />
+            <KurbanProcessModuleView />
           )}
 
           {/* ========================================================================= */}

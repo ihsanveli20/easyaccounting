@@ -44,6 +44,18 @@ export async function GET(request: Request) {
           source: "supabase",
           reports: mappedReports,
         });
+      } else {
+        // If filtered query returned 0, return all reports from Supabase so reports never disappear
+        const { data: allData } = await supabase
+          .from("kurban_reports")
+          .select("*, kurban_report_sections(*)");
+        if (allData && allData.length > 0) {
+          return NextResponse.json({
+            success: true,
+            source: "supabase_all",
+            reports: allData.map((r: any) => mapReportFromDb(r)),
+          });
+        }
       }
     } catch (e) {
       console.warn("Supabase report fetch fallback:", e);
@@ -55,7 +67,8 @@ export async function GET(request: Request) {
   if (reportId) {
     result = result.filter((r) => r.id === reportId);
   } else if (locationId && locationId !== "all") {
-    result = result.filter((r) => r.cuttingLocationId === locationId);
+    const matched = result.filter((r) => r.cuttingLocationId === locationId);
+    if (matched.length > 0) result = matched;
   }
 
   return NextResponse.json({
@@ -148,12 +161,28 @@ export async function PUT(request: Request) {
           }
         }
       }
+
+      // Fetch fresh updated report from Supabase
+      const { data: updatedDbReport } = await supabase
+        .from("kurban_reports")
+        .select("*, kurban_report_sections(*)")
+        .eq("id", body.id)
+        .single();
+
+      if (updatedDbReport) {
+        const mapped = mapReportFromDb(updatedDbReport);
+        return NextResponse.json({
+          success: true,
+          message: "Resmi rapor ve bölümleri başarıyla kaydedildi.",
+          report: mapped,
+        });
+      }
     }
 
     return NextResponse.json({
       success: true,
       message: "Resmi rapor ve bölümleri başarıyla kaydedildi.",
-      report: memoryReports.find((r) => r.id === body.id),
+      report: memoryReports.find((r) => r.id === body.id) || body,
     });
   } catch (err: any) {
     return NextResponse.json(

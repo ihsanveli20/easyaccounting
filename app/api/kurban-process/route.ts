@@ -127,9 +127,10 @@ export async function GET(request: Request) {
           mapInvoiceFromDb(r, locationsMap)
         );
         const documents: KurbanDocument[] = (docsRes.data || []).map(mapDocumentFromDb);
-        const reports: KurbanReport[] = (reportsRes.data || []).map((r: any) =>
-          mapReportFromDb(r, locationsMap)
-        );
+        const reports: KurbanReport[] =
+          reportsRes.data && reportsRes.data.length > 0
+            ? reportsRes.data.map((r: any) => mapReportFromDb(r, locationsMap))
+            : SEED_REPORTS;
 
         // Filter by location if specified
         let filteredShipments = shipments;
@@ -147,7 +148,10 @@ export async function GET(request: Request) {
           filteredInvoices = invoices.filter(
             (inv) => !inv.cuttingLocationId || inv.cuttingLocationId === locationId
           );
-          filteredReports = reports.filter((rep) => rep.cuttingLocationId === locationId);
+          const matched = reports.filter((rep) => rep.cuttingLocationId === locationId);
+          if (matched.length > 0) {
+            filteredReports = matched;
+          }
         }
 
         const totalShipped = filteredShipments.reduce((acc, s) => acc + s.animalCount, 0);
@@ -190,7 +194,8 @@ export async function GET(request: Request) {
           deliveries: filteredDeliveries,
           invoices: filteredInvoices,
           documents,
-          reports: filteredReports,
+          reports: reports,
+          allReports: reports,
           totalAnimalCount,
           stats: {
             totalTargetAnimals: targetCount,

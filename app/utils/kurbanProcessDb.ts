@@ -154,31 +154,23 @@ export async function ensureDatabaseReady(supabase: any): Promise<string> {
       activeOrgId = orgData[0].id;
     }
 
-    // 2. Check cutting locations
-    const { data: locData } = await supabase
-      .from("kurban_cutting_locations")
-      .select("id")
-      .limit(1);
-
-    if (!locData || locData.length === 0) {
-      console.log("Seeding cutting locations to Supabase...");
-      for (const loc of SEED_CUTTING_LOCATIONS) {
-        await supabase.from("kurban_cutting_locations").upsert({
-          id: loc.id,
-          organization_id: activeOrgId,
-          name: loc.name,
-          location_code: loc.locationCode,
-          city: loc.city,
-          address: loc.address,
-          responsible_person: loc.responsiblePerson,
-          responsible_phone: loc.responsiblePhone,
-          official_approval_no: loc.officialApprovalNo,
-          veterinary_name: loc.veterinaryName,
-          daily_capacity: loc.dailyCapacity,
-          allocated_animal_count: loc.allocatedAnimalCount,
-          notes: loc.notes,
-        });
-      }
+    // 2. Ensure default cutting locations always exist (Tuzla and Kartepe)
+    for (const loc of SEED_CUTTING_LOCATIONS) {
+      await supabase.from("kurban_cutting_locations").upsert({
+        id: loc.id,
+        organization_id: activeOrgId,
+        name: loc.name,
+        location_code: loc.locationCode,
+        city: loc.city,
+        address: loc.address,
+        responsible_person: loc.responsiblePerson,
+        responsible_phone: loc.responsiblePhone,
+        official_approval_no: loc.officialApprovalNo,
+        veterinary_name: loc.veterinaryName,
+        daily_capacity: loc.dailyCapacity,
+        allocated_animal_count: loc.allocatedAnimalCount,
+        notes: loc.notes,
+      });
     }
 
     // 3. Check parties
@@ -204,6 +196,50 @@ export async function ensureDatabaseReady(supabase: any): Promise<string> {
           authorized_person: p.authorizedPerson,
           notes: p.notes,
         });
+      }
+    }
+
+    // 4. Ensure Reports & Sections exist
+    const { data: repData } = await supabase
+      .from("kurban_reports")
+      .select("id");
+
+    if (!repData || repData.length < 2) {
+      console.log("Seeding official reports and sections to Supabase...");
+      for (const rep of SEED_REPORTS) {
+        await supabase.from("kurban_reports").upsert({
+          id: rep.id,
+          organization_id: activeOrgId,
+          cutting_location_id: rep.cuttingLocationId,
+          report_no: rep.reportNo,
+          title: rep.title,
+          report_date: rep.reportDate,
+          report_period: rep.reportPeriod,
+          prepared_by: rep.preparedBy,
+          status: rep.status,
+          client_company_name: rep.clientCompanyName,
+          executive_summary: rep.executiveSummary,
+          evaluation_notes: rep.evaluationNotes,
+          final_result_summary: rep.finalResultSummary,
+          metadata: rep.metadata || {},
+        });
+
+        if (rep.sections && rep.sections.length > 0) {
+          for (const sec of rep.sections) {
+            await supabase.from("kurban_report_sections").upsert({
+              id: sec.id,
+              report_id: rep.id,
+              section_key: sec.sectionKey,
+              section_title: sec.sectionTitle,
+              order_index: sec.orderIndex,
+              is_enabled: sec.isEnabled,
+              content_html: sec.contentHtml,
+              custom_notes: sec.customNotes,
+              include_tables: sec.includeTables,
+              page_break_after: sec.pageBreakAfter,
+            });
+          }
+        }
       }
     }
 

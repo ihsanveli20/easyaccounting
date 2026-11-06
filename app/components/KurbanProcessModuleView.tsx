@@ -97,6 +97,13 @@ import {
   formatBytes,
   uploadImageToOptimizedStorage,
 } from "../utils/imageCompressor";
+import {
+  SEED_ORGANIZATION_ID,
+  SEED_LOC_TUZLA_ID,
+  SEED_LOC_KOCAELI_ID,
+  SEED_REP_TUZLA_ID,
+  SEED_REP_KOCAELI_ID,
+} from "../utils/kurbanProcessSeed";
 
 type ProcessTab =
   | "overview" // 1. Kurban İşlemleri / Genel Bakış
@@ -138,7 +145,7 @@ export default function KurbanProcessModuleView() {
   const [animalsLoading, setAnimalsLoading] = useState<boolean>(false);
 
   // Active Report State (For Official Report Tab)
-  const [selectedReportId, setSelectedReportId] = useState<string>("rep-tuzla-ksm01");
+  const [selectedReportId, setSelectedReportId] = useState<string>(SEED_REP_TUZLA_ID);
   const [activeReport, setActiveReport] = useState<KurbanReport | null>(null);
   const [isEditingReport, setIsEditingReport] = useState<boolean>(false);
   const [editingSectionId, setEditingSectionId] = useState<string | null>(null);
@@ -685,8 +692,8 @@ export default function KurbanProcessModuleView() {
           const locCode = String(row["Kesim Yeri Kodu"] || row["Kesim Yeri"] || "").trim();
           const locId =
             locCode.includes("KSM-02") || locCode.includes("Kartepe")
-              ? "loc-kocaeli-ksm02"
-              : "loc-tuzla-ksm01";
+              ? SEED_LOC_KOCAELI_ID
+              : SEED_LOC_TUZLA_ID;
 
           return {
             earTagNo: earTag,
@@ -1544,7 +1551,7 @@ export default function KurbanProcessModuleView() {
                 onClick={() => {
                   setEditingAnimal({
                     earTagNo: `TR34-${String(Date.now()).slice(-5)}`,
-                    cuttingLocationId: "loc-tuzla-ksm01",
+                    cuttingLocationId: SEED_LOC_TUZLA_ID,
                     animalType: "buyukbas_tosun",
                     animalTypeLabel: "Büyükbaş Tosun",
                     breed: "Simental",
@@ -1683,12 +1690,12 @@ export default function KurbanProcessModuleView() {
                         <td className="py-2.5 px-3">
                           <span
                             className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-bold ${
-                              a.cuttingLocationId === "loc-tuzla-ksm01"
+                              a.cuttingLocationId === SEED_LOC_TUZLA_ID
                                 ? "bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300"
                                 : "bg-purple-50 text-purple-700 dark:bg-purple-950 dark:text-purple-300"
                             }`}
                           >
-                            {a.cuttingLocationId === "loc-tuzla-ksm01" ? "1. Tuzla" : "2. Kartepe"}
+                            {a.cuttingLocationId === SEED_LOC_TUZLA_ID ? "1. Tuzla" : "2. Kartepe"}
                           </span>
                         </td>
                         <td className="py-2.5 px-3 text-slate-700 dark:text-slate-300 font-medium">
@@ -2221,8 +2228,7 @@ export default function KurbanProcessModuleView() {
             <button
               onClick={() => {
                 setEditingDelivery({
-                  id: `del-custom-${Date.now()}`,
-                  organizationId: activeReport?.organizationId || "org-001",
+                  organizationId: activeReport?.organizationId || SEED_ORGANIZATION_ID,
                   deliveryNo: `TES-${new Date().getFullYear()}-${String(deliveries.length + 1).padStart(3, "0")}`,
                   deliveryDate: new Date().toISOString().split("T")[0],
                   recipientCompany: parties.find((p) => p.partyType === "client_buyer")?.name || "Alıcı Firma",
@@ -2387,7 +2393,7 @@ export default function KurbanProcessModuleView() {
                         : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
                     }`}
                   >
-                    {rep.cuttingLocationId === "loc-tuzla-ksm01" ? "1. Kesimhane Raporu" : "2. Kesimhane Raporu"}
+                    {rep.cuttingLocationId === SEED_LOC_TUZLA_ID ? "1. Kesimhane Raporu" : "2. Kesimhane Raporu"}
                   </button>
                 ))}
               </div>
@@ -2693,8 +2699,8 @@ export default function KurbanProcessModuleView() {
                     onChange={(e) => setEditingAnimal({ ...editingAnimal, cuttingLocationId: e.target.value })}
                     className="w-full text-xs p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-medium"
                   >
-                    <option value="loc-tuzla-ksm01">1. Kesimhane (Tuzla)</option>
-                    <option value="loc-kocaeli-ksm02">2. Kesimhane (Kartepe)</option>
+                    <option value={SEED_LOC_TUZLA_ID}>1. Kesimhane (Tuzla)</option>
+                    <option value={SEED_LOC_KOCAELI_ID}>2. Kesimhane (Kartepe)</option>
                   </select>
                 </div>
               </div>

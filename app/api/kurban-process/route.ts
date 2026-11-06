@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
 import {
   SEED_ORGANIZATION,
   SEED_PARTIES,
@@ -14,29 +13,36 @@ import {
   SEED_DOCUMENTS,
   SEED_REPORTS,
 } from "../../utils/kurbanProcessSeed";
+import {
+  getSupabaseServerClient,
+  isUUID,
+  ensureUUID,
+  getActiveOrganizationId,
+  getActiveLocationId,
+  ensureDatabaseReady,
+  mapLocationFromDb,
+  mapPartyFromDb,
+  mapShipmentFromDb,
+  mapSlaughterBatchFromDb,
+  mapStorageRecordFromDb,
+  mapDeliveryFromDb,
+  mapInvoiceFromDb,
+  mapDocumentFromDb,
+  mapReportFromDb,
+} from "../../utils/kurbanProcessDb";
+import {
+  KurbanCuttingLocation,
+  KurbanParty,
+  KurbanShipment,
+  KurbanSlaughterBatch,
+  KurbanStorageRecord,
+  KurbanDelivery,
+  KurbanInvoice,
+  KurbanDocument,
+  KurbanReport,
+} from "../../types/kurbanProcess";
 
-function getSupabaseServerClient() {
-  const url =
-    process.env.SUPABASE_URL ||
-    process.env.NEXT_PUBLIC_SUPABASE_URL ||
-    "https://qcndlfastbrezugknkho.supabase.co";
-
-  const key =
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.SUPABASE_PUBLISHABLE_KEY ||
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
-    process.env.SUPABASE_ANON_KEY ||
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-    "sb_publishable_v4dm0IbGdRMmClfmWWm-Rg_tVsDZwSJ";
-
-  if (!url || !key) return null;
-
-  return createClient(url, key, {
-    auth: { persistSession: false },
-  });
-}
-
-// In-memory fallback cache if Supabase is offline or tables are being migrated
+// In-memory fallback cache if Supabase is offline
 let inMemoryStore = {
   organizations: [SEED_ORGANIZATION],
   parties: [...SEED_PARTIES],
@@ -58,74 +64,165 @@ let inMemoryStore = {
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const locationId = searchParams.get("locationId");
-  const action = searchParams.get("action");
 
   const supabase = getSupabaseServerClient();
 
-  // If Supabase is available, try fetching organizations from table
   if (supabase) {
     try {
+      await ensureDatabaseReady(supabase);
+
       const { data: orgData, error: orgErr } = await supabase
         .from("kurban_process_organizations")
         .select("*")
         .order("created_at", { ascending: false });
 
       if (!orgErr && orgData && orgData.length > 0) {
-        // Supabase has active organizations!
-        const { data: locs } = await supabase
-          .from("kurban_cutting_locations")
-          .select("*");
-        const { data: parties } = await supabase.from("kurban_parties").select("*");
-        const { data: shipments } = await supabase
-          .from("kurban_shipments")
-          .select("*");
-        const { data: slaughters } = await supabase
-          .from("kurban_slaughter_batches")
-          .select("*");
-        const { data: storages } = await supabase
-          .from("kurban_storage_records")
-          .select("*");
-        const { data: deliveries } = await supabase
-          .from("kurban_deliveries")
-          .select("*");
-        const { data: invoices } = await supabase
-          .from("kurban_invoices")
-          .select("*");
-        const { data: docs } = await supabase
-          .from("kurban_documents")
-          .select("*");
-        const { data: reports } = await supabase
-          .from("kurban_reports")
-          .select("*, kurban_report_sections(*)");
+        // Fetch all tables in parallel
+        const [
+          locsRes,
+          partiesRes,
+          shipmentsRes,
+          slaughtersRes,
+          storagesRes,
+          deliveriesRes,
+          invoicesRes,
+          docsRes,
+          reportsRes,
+          animalsCountRes,
+        ] = await Promise.all([
+          supabase.from("kurban_cutting_locations").select("*").order("location_code", { ascending: true }),
+          supabase.from("kurban_parties").select("*").order("name", { ascending: true }),
+          supabase.from("kurban_shipments").select("*").order("shipment_date", { ascending: false }),
+          supabase.from("kurban_slaughter_batches").select("*").order("slaughter_date", { ascending: false }),
+          supabase.from("kurban_storage_records").select("*").order("entry_date", { ascending: false }),
+          supabase.from("kurban_deliveries").select("*").order("delivery_date", { ascending: false }),
+          supabase.from("kurban_invoices").select("*").order("invoice_date", { ascending: false }),
+          supabase.from("kurban_documents").select("*").order("uploaded_at", { ascending: false }),
+          supabase.from("kurban_reports").select("*, kurban_report_sections(*)").order("report_no", { ascending: true }),
+          supabase.from("kurban_animals").select("id", { count: "exact", head: true }),
+        ]);
 
-        // Animals count
-        const { count: animalCount } = await supabase
-          .from("kurban_animals")
-          .select("id", { count: "exact", head: true });
+        // Map locations first for lookup
+        const locationsMap = new Map<string, string>();
+        const cuttingLocations: KurbanCuttingLocation[] = (locsRes.data || []).map((row: any) => {
+          const loc = mapLocationFromDb(row);
+          locationsMap.set(loc.id, loc.name);
+          return loc;
+        });
+
+        const parties: KurbanParty[] = (partiesRes.data || []).map(mapPartyFromDb);
+        const shipments: KurbanShipment[] = (shipmentsRes.data || []).map((r: any) =>
+          mapShipmentFromDb(r, locationsMap)
+        );
+        const slaughterBatches: KurbanSlaughterBatch[] = (slaughtersRes.data || []).map((r: any) =>
+          mapSlaughterBatchFromDb(r, locationsMap)
+        );
+        const storageRecords: KurbanStorageRecord[] = (storagesRes.data || []).map((r: any) =>
+          mapStorageRecordFromDb(r, locationsMap)
+        );
+        const deliveries: KurbanDelivery[] = (deliveriesRes.data || []).map((r: any) =>
+          mapDeliveryFromDb(r, locationsMap)
+        );
+        const invoices: KurbanInvoice[] = (invoicesRes.data || []).map((r: any) =>
+          mapInvoiceFromDb(r, locationsMap)
+        );
+        const documents: KurbanDocument[] = (docsRes.data || []).map(mapDocumentFromDb);
+        const reports: KurbanReport[] = (reportsRes.data || []).map((r: any) =>
+          mapReportFromDb(r, locationsMap)
+        );
+
+        // Filter by location if specified
+        let filteredShipments = shipments;
+        let filteredSlaughters = slaughterBatches;
+        let filteredStorage = storageRecords;
+        let filteredDeliveries = deliveries;
+        let filteredInvoices = invoices;
+        let filteredReports = reports;
+
+        if (locationId && locationId !== "all") {
+          filteredShipments = shipments.filter((s) => s.destinationLocationId === locationId);
+          filteredSlaughters = slaughterBatches.filter((b) => b.cuttingLocationId === locationId);
+          filteredStorage = storageRecords.filter((st) => st.cuttingLocationId === locationId);
+          filteredDeliveries = deliveries.filter((d) => d.cuttingLocationId === locationId);
+          filteredInvoices = invoices.filter(
+            (inv) => !inv.cuttingLocationId || inv.cuttingLocationId === locationId
+          );
+          filteredReports = reports.filter((rep) => rep.cuttingLocationId === locationId);
+        }
+
+        const totalShipped = filteredShipments.reduce((acc, s) => acc + s.animalCount, 0);
+        const totalSlaughtered = filteredSlaughters.reduce((acc, b) => acc + b.animalCount, 0);
+        const totalCarcass = filteredSlaughters.reduce((acc, b) => acc + b.totalCarcassWeightKg, 0);
+        const totalStoredKg = filteredStorage.reduce((acc, st) => acc + st.storedQuantityKg, 0);
+        const totalDeliveredKg = filteredDeliveries.reduce((acc, d) => acc + d.deliveredQuantityKg, 0);
+        const totalInvoiceAmount = filteredInvoices.reduce((acc, inv) => acc + inv.totalAmount, 0);
+        const totalAnimalCount = animalsCountRes.count || inMemoryStore.animals.length;
+
+        const activeOrg = orgData[0];
+        const targetCount = activeOrg.target_animal_count || 350;
 
         return NextResponse.json({
           success: true,
           source: "supabase",
-          organization: orgData[0],
+          organization: {
+            id: activeOrg.id,
+            name: activeOrg.name,
+            clientCompanyName: activeOrg.client_company_name,
+            clientTaxNo: activeOrg.client_tax_no,
+            clientTaxOffice: activeOrg.client_tax_office,
+            clientAddress: activeOrg.client_address,
+            clientContact: activeOrg.client_contact,
+            startDate: activeOrg.start_date,
+            endDate: activeOrg.end_date,
+            targetAnimalCount: activeOrg.target_animal_count,
+            status: activeOrg.status,
+            description: activeOrg.description,
+            generalNotes: activeOrg.general_notes,
+            createdAt: activeOrg.created_at,
+            updatedAt: activeOrg.updated_at,
+          },
           organizations: orgData,
-          cuttingLocations: locs || [],
-          parties: parties || [],
-          shipments: shipments || [],
-          slaughterBatches: slaughters || [],
-          storageRecords: storages || [],
-          deliveries: deliveries || [],
-          invoices: invoices || [],
-          documents: docs || [],
-          reports: reports || [],
-          totalAnimalCount: animalCount || 0,
+          cuttingLocations,
+          parties,
+          shipments: filteredShipments,
+          slaughterBatches: filteredSlaughters,
+          storageRecords: filteredStorage,
+          deliveries: filteredDeliveries,
+          invoices: filteredInvoices,
+          documents,
+          reports: filteredReports,
+          totalAnimalCount,
+          stats: {
+            totalTargetAnimals: targetCount,
+            totalPurchasedAnimals: totalAnimalCount,
+            totalShipments: filteredShipments.length,
+            totalShippedAnimals: totalShipped,
+            totalSlaughterBatches: filteredSlaughters.length,
+            totalSlaughteredAnimals: totalSlaughtered,
+            totalCarcassWeightKg: totalCarcass,
+            totalStorageRecords: filteredStorage.length,
+            totalStoredQuantityKg: totalStoredKg,
+            totalDeliveries: filteredDeliveries.length,
+            totalDeliveredQuantityKg: totalDeliveredKg,
+            totalDeliveredAnimals: totalSlaughtered,
+            totalInvoicesCount: filteredInvoices.length,
+            totalInvoiceAmount,
+            totalDocumentsCount: documents.length,
+            missingDocumentsCount: 0,
+            discrepancies: {
+              unshippedAnimals: Math.max(0, totalAnimalCount - totalShipped),
+              unslaughteredShippedAnimals: Math.max(0, totalShipped - totalSlaughtered),
+              unstoredOrUndeliveredKg: Math.max(0, totalCarcass - totalDeliveredKg),
+            },
+          },
         });
       }
     } catch (err) {
-      console.warn("Supabase fetch warning, using in-memory process store:", err);
+      console.warn("Supabase fetch warning, falling back to in-memory store:", err);
     }
   }
 
-  // Return inMemoryStore
+  // Fallback to inMemoryStore
   let filteredShipments = inMemoryStore.shipments;
   let filteredSlaughters = inMemoryStore.slaughterBatches;
   let filteredStorage = inMemoryStore.storageRecords;
@@ -134,48 +231,22 @@ export async function GET(request: Request) {
   let filteredReports = inMemoryStore.reports;
 
   if (locationId && locationId !== "all") {
-    filteredShipments = filteredShipments.filter(
-      (s) => s.destinationLocationId === locationId
-    );
-    filteredSlaughters = filteredSlaughters.filter(
-      (b) => b.cuttingLocationId === locationId
-    );
-    filteredStorage = filteredStorage.filter(
-      (st) => st.cuttingLocationId === locationId
-    );
-    filteredDeliveries = filteredDeliveries.filter(
-      (d) => d.cuttingLocationId === locationId
-    );
+    filteredShipments = filteredShipments.filter((s) => s.destinationLocationId === locationId);
+    filteredSlaughters = filteredSlaughters.filter((b) => b.cuttingLocationId === locationId);
+    filteredStorage = filteredStorage.filter((st) => st.cuttingLocationId === locationId);
+    filteredDeliveries = filteredDeliveries.filter((d) => d.cuttingLocationId === locationId);
     filteredInvoices = filteredInvoices.filter(
       (inv) => !inv.cuttingLocationId || inv.cuttingLocationId === locationId
     );
-    filteredReports = filteredReports.filter(
-      (rep) => rep.cuttingLocationId === locationId
-    );
+    filteredReports = filteredReports.filter((rep) => rep.cuttingLocationId === locationId);
   }
 
-  // Calculate comprehensive stats
   const totalShipped = filteredShipments.reduce((acc, s) => acc + s.animalCount, 0);
-  const totalSlaughtered = filteredSlaughters.reduce(
-    (acc, b) => acc + b.animalCount,
-    0
-  );
-  const totalCarcass = filteredSlaughters.reduce(
-    (acc, b) => acc + b.totalCarcassWeightKg,
-    0
-  );
-  const totalStoredKg = filteredStorage.reduce(
-    (acc, st) => acc + st.storedQuantityKg,
-    0
-  );
-  const totalDeliveredKg = filteredDeliveries.reduce(
-    (acc, d) => acc + d.deliveredQuantityKg,
-    0
-  );
-  const totalInvoiceAmount = filteredInvoices.reduce(
-    (acc, inv) => acc + inv.totalAmount,
-    0
-  );
+  const totalSlaughtered = filteredSlaughters.reduce((acc, b) => acc + b.animalCount, 0);
+  const totalCarcass = filteredSlaughters.reduce((acc, b) => acc + b.totalCarcassWeightKg, 0);
+  const totalStoredKg = filteredStorage.reduce((acc, st) => acc + st.storedQuantityKg, 0);
+  const totalDeliveredKg = filteredDeliveries.reduce((acc, d) => acc + d.deliveredQuantityKg, 0);
+  const totalInvoiceAmount = filteredInvoices.reduce((acc, inv) => acc + inv.totalAmount, 0);
 
   return NextResponse.json({
     success: true,
@@ -220,25 +291,27 @@ export async function GET(request: Request) {
 }
 
 /**
- * POST: Create organization or seed entire 350-animal demo into Supabase
+ * POST: Create organization, seed full demo, or save individual entity (party, location, shipment, storage, delivery)
  */
 export async function POST(request: Request) {
   try {
     const body = await request.json();
     const { action } = body;
+    const supabase = getSupabaseServerClient();
 
-    // Seed Demo Action
+    // ------------------------------------------------------------------------
+    // Action: Seed Full Demo to Supabase
+    // ------------------------------------------------------------------------
     if (action === "seed_demo_to_supabase") {
-      const supabase = getSupabaseServerClient();
       if (!supabase) {
         return NextResponse.json(
-          { success: false, message: "Supabase istemcisi yapılandırılamadı." },
+          { success: false, error: "Supabase istemcisi yapılandırılamadı." },
           { status: 500 }
         );
       }
 
       // 1. Insert organization
-      await supabase.from("kurban_process_organizations").upsert({
+      const { error: orgErr } = await supabase.from("kurban_process_organizations").upsert({
         id: SEED_ORGANIZATION.id,
         name: SEED_ORGANIZATION.name,
         client_company_name: SEED_ORGANIZATION.clientCompanyName,
@@ -254,9 +327,16 @@ export async function POST(request: Request) {
         general_notes: SEED_ORGANIZATION.generalNotes,
       });
 
+      if (orgErr) {
+        return NextResponse.json(
+          { success: false, error: `Organizasyon kayıt hatası: ${orgErr.message}` },
+          { status: 500 }
+        );
+      }
+
       // 2. Insert Cutting Locations
       for (const loc of SEED_CUTTING_LOCATIONS) {
-        await supabase.from("kurban_cutting_locations").upsert({
+        const { error: locErr } = await supabase.from("kurban_cutting_locations").upsert({
           id: loc.id,
           organization_id: loc.organizationId,
           name: loc.name,
@@ -271,11 +351,17 @@ export async function POST(request: Request) {
           allocated_animal_count: loc.allocatedAnimalCount,
           notes: loc.notes,
         });
+        if (locErr) {
+          return NextResponse.json(
+            { success: false, error: `Kesim yeri kayıt hatası: ${locErr.message}` },
+            { status: 500 }
+          );
+        }
       }
 
       // 3. Insert Parties
       for (const p of SEED_PARTIES) {
-        await supabase.from("kurban_parties").upsert({
+        const { error: partyErr } = await supabase.from("kurban_parties").upsert({
           id: p.id,
           organization_id: p.organizationId,
           party_type: p.partyType,
@@ -289,11 +375,17 @@ export async function POST(request: Request) {
           authorized_person: p.authorizedPerson,
           notes: p.notes,
         });
+        if (partyErr) {
+          return NextResponse.json(
+            { success: false, error: `Paydaş firma kayıt hatası: ${partyErr.message}` },
+            { status: 500 }
+          );
+        }
       }
 
       // 4. Insert Reports & Sections
       for (const rep of SEED_REPORTS) {
-        await supabase.from("kurban_reports").upsert({
+        const { error: repErr } = await supabase.from("kurban_reports").upsert({
           id: rep.id,
           organization_id: rep.organizationId,
           cutting_location_id: rep.cuttingLocationId,
@@ -307,12 +399,19 @@ export async function POST(request: Request) {
           executive_summary: rep.executiveSummary,
           evaluation_notes: rep.evaluationNotes,
           final_result_summary: rep.finalResultSummary,
-          metadata: rep.metadata,
+          metadata: rep.metadata || {},
         });
+
+        if (repErr) {
+          return NextResponse.json(
+            { success: false, error: `Rapor kayıt hatası: ${repErr.message}` },
+            { status: 500 }
+          );
+        }
 
         if (rep.sections && rep.sections.length > 0) {
           for (const sec of rep.sections) {
-            await supabase.from("kurban_report_sections").upsert({
+            const { error: secErr } = await supabase.from("kurban_report_sections").upsert({
               id: sec.id,
               report_id: rep.id,
               section_key: sec.sectionKey,
@@ -324,6 +423,12 @@ export async function POST(request: Request) {
               include_tables: sec.includeTables,
               page_break_after: sec.pageBreakAfter,
             });
+            if (secErr) {
+              return NextResponse.json(
+                { success: false, error: `Rapor bölüm kayıt hatası: ${secErr.message}` },
+                { status: 500 }
+              );
+            }
           }
         }
       }
@@ -351,7 +456,13 @@ export async function POST(request: Request) {
           status: a.status,
           notes: a.notes,
         }));
-        await supabase.from("kurban_animals").upsert(batch);
+        const { error: animalBatchErr } = await supabase.from("kurban_animals").upsert(batch);
+        if (animalBatchErr) {
+          return NextResponse.json(
+            { success: false, error: `Hayvan grubu kayıt hatası: ${animalBatchErr.message}` },
+            { status: 500 }
+          );
+        }
       }
 
       return NextResponse.json({
@@ -360,231 +471,295 @@ export async function POST(request: Request) {
       });
     }
 
-    // 6. Generic Entity CRUD (Party, Location, Shipment, Storage, Delivery)
+    // ------------------------------------------------------------------------
+    // Entity CRUD: Party, Location, Shipment, Storage, Delivery
+    // ------------------------------------------------------------------------
     if (body.entityType && body.data) {
       const { entityType, data } = body;
-      const supabase = getSupabaseServerClient();
-      const orgId = data.organizationId || SEED_ORGANIZATION.id;
+      const orgId = await getActiveOrganizationId(supabase, data.organizationId);
+      const entityId = ensureUUID(data.id);
 
+      // --- 1. PARTY ---
       if (entityType === "party") {
-        const item: any = {
-          id: data.id || `pty-${Date.now()}`,
+        const item: KurbanParty = {
+          id: entityId,
           organizationId: orgId,
           partyType: data.partyType || "supplier_seller",
           name: data.name,
-          taxId: data.taxId || null,
-          taxOffice: data.taxOffice || null,
-          phone: data.phone || null,
-          email: data.email || null,
-          city: data.city || null,
-          address: data.address || null,
-          authorizedPerson: data.authorizedPerson || null,
-          notes: data.notes || null,
+          taxId: data.taxId || "",
+          taxOffice: data.taxOffice || "",
+          phone: data.phone || "",
+          email: data.email || "",
+          city: data.city || "",
+          address: data.address || "",
+          authorizedPerson: data.authorizedPerson || "",
+          notes: data.notes || "",
           createdAt: data.createdAt || new Date().toISOString(),
         };
 
         if (supabase) {
-          await supabase.from("kurban_parties").upsert({
+          const { error: dbErr } = await supabase.from("kurban_parties").upsert({
             id: item.id,
             organization_id: item.organizationId,
             party_type: item.partyType,
             name: item.name,
-            tax_id: item.taxId,
-            tax_office: item.taxOffice,
-            phone: item.phone,
-            email: item.email,
-            city: item.city,
-            address: item.address,
-            authorized_person: item.authorizedPerson,
-            notes: item.notes,
+            tax_id: item.taxId || null,
+            tax_office: item.taxOffice || null,
+            phone: item.phone || null,
+            email: item.email || null,
+            city: item.city || null,
+            address: item.address || null,
+            authorized_person: item.authorizedPerson || null,
+            notes: item.notes || null,
           });
+
+          if (dbErr) {
+            console.error("Supabase party upsert error:", dbErr);
+            return NextResponse.json(
+              { success: false, error: `Paydaş Supabase'e kaydedilemedi: ${dbErr.message}` },
+              { status: 500 }
+            );
+          }
         }
 
         const idx = inMemoryStore.parties.findIndex((p) => p.id === item.id);
         if (idx >= 0) inMemoryStore.parties[idx] = item;
         else inMemoryStore.parties.unshift(item);
 
-        return NextResponse.json({ success: true, party: item, message: "Paydaş / Firma başarıyla kaydedildi." });
+        return NextResponse.json({
+          success: true,
+          party: item,
+          message: "Paydaş / Firma başarıyla kaydedildi.",
+        });
       }
 
+      // --- 2. LOCATION ---
       if (entityType === "location") {
-        const item: any = {
-          id: data.id || `ksm-loc-${Date.now()}`,
+        const item: KurbanCuttingLocation = {
+          id: entityId,
           organizationId: orgId,
           name: data.name,
           locationCode: data.locationCode || `KSM-0${inMemoryStore.locations.length + 1}`,
           city: data.city || "İstanbul",
-          address: data.address || null,
-          responsiblePerson: data.responsiblePerson || null,
-          responsiblePhone: data.responsiblePhone || null,
-          officialApprovalNo: data.officialApprovalNo || null,
-          veterinaryName: data.veterinaryName || null,
+          address: data.address || "",
+          responsiblePerson: data.responsiblePerson || "",
+          responsiblePhone: data.responsiblePhone || "",
+          officialApprovalNo: data.officialApprovalNo || "",
+          veterinaryName: data.veterinaryName || "",
           dailyCapacity: Number(data.dailyCapacity) || 150,
           allocatedAnimalCount: Number(data.allocatedAnimalCount) || 0,
-          notes: data.notes || null,
+          notes: data.notes || "",
           createdAt: data.createdAt || new Date().toISOString(),
         };
 
         if (supabase) {
-          await supabase.from("kurban_cutting_locations").upsert({
+          const { error: dbErr } = await supabase.from("kurban_cutting_locations").upsert({
             id: item.id,
             organization_id: item.organizationId,
             name: item.name,
             location_code: item.locationCode,
             city: item.city,
-            address: item.address,
-            responsible_person: item.responsiblePerson,
-            responsible_phone: item.responsiblePhone,
-            official_approval_no: item.officialApprovalNo,
-            veterinary_name: item.veterinaryName,
+            address: item.address || null,
+            responsible_person: item.responsiblePerson || null,
+            responsible_phone: item.responsiblePhone || null,
+            official_approval_no: item.officialApprovalNo || null,
+            veterinary_name: item.veterinaryName || null,
             daily_capacity: item.dailyCapacity,
             allocated_animal_count: item.allocatedAnimalCount,
-            notes: item.notes,
+            notes: item.notes || null,
           });
+
+          if (dbErr) {
+            console.error("Supabase location upsert error:", dbErr);
+            return NextResponse.json(
+              { success: false, error: `Kesim yeri Supabase'e kaydedilemedi: ${dbErr.message}` },
+              { status: 500 }
+            );
+          }
         }
 
         const idx = inMemoryStore.locations.findIndex((l) => l.id === item.id);
         if (idx >= 0) inMemoryStore.locations[idx] = item;
         else inMemoryStore.locations.push(item);
 
-        return NextResponse.json({ success: true, location: item, message: "Kesim yeri başarıyla kaydedildi." });
+        return NextResponse.json({
+          success: true,
+          location: item,
+          message: "Kesim yeri başarıyla kaydedildi.",
+        });
       }
 
+      // --- 3. SHIPMENT ---
       if (entityType === "shipment") {
-        const matchedLoc = inMemoryStore.locations.find((l) => l.id === data.destinationLocationId);
-        const item: any = {
-          id: data.id || `shp-${Date.now()}`,
+        const destLocId = await getActiveLocationId(supabase, data.destinationLocationId);
+
+        const item: KurbanShipment = {
+          id: entityId,
           organizationId: orgId,
-          destinationLocationId: data.destinationLocationId || inMemoryStore.locations[0]?.id,
-          destinationLocationName: matchedLoc?.name || data.destinationLocationName || "Kesimhane",
+          destinationLocationId: destLocId,
+          destinationLocationName: data.destinationLocationName || "Kesimhane",
           shipmentNo: data.shipmentNo || `SVK-2026-00${inMemoryStore.shipments.length + 1}`,
           shipmentDate: data.shipmentDate || new Date().toISOString().split("T")[0],
           originAddress: data.originAddress || "Besi İşletmesi",
-          carrierCompany: data.carrierCompany || null,
-          vehiclePlate: data.vehiclePlate?.trim() || "Plaka Belirtilmedi",
+          carrierCompany: data.carrierCompany || "",
+          vehiclePlate: data.vehiclePlate?.trim() || "Plakasız / Belirtilmedi",
           driverName: data.driverName || "Şoför",
-          driverPhone: data.driverPhone || null,
+          driverPhone: data.driverPhone || "",
           animalCount: Number(data.animalCount) || 0,
           shippingCost: Number(data.shippingCost) || 0,
-          shippingInvoiceNo: data.shippingInvoiceNo || null,
-          dispatchNoteNo: data.dispatchNoteNo || null,
-          vetHealthReportNo: data.vetHealthReportNo || null,
+          shippingInvoiceNo: data.shippingInvoiceNo || "",
+          dispatchNoteNo: data.dispatchNoteNo || "",
+          vetHealthReportNo: data.vetHealthReportNo || "",
           status: data.status || "delivered_to_slaughterhouse",
-          notes: data.notes || null,
+          notes: data.notes || "",
           createdAt: data.createdAt || new Date().toISOString(),
         };
 
         if (supabase) {
-          await supabase.from("kurban_shipments").upsert({
+          const { error: dbErr } = await supabase.from("kurban_shipments").upsert({
             id: item.id,
             organization_id: item.organizationId,
             destination_location_id: item.destinationLocationId,
             shipment_no: item.shipmentNo,
             shipment_date: item.shipmentDate,
             origin_address: item.originAddress,
-            carrier_company: item.carrierCompany,
-            vehicle_plate: item.vehiclePlate,
+            carrier_company: item.carrierCompany || null,
+            vehicle_plate: item.vehiclePlate, // NOT NULL satisfies postgres constraint
             driver_name: item.driverName,
-            driver_phone: item.driverPhone,
+            driver_phone: item.driverPhone || null,
             animal_count: item.animalCount,
             shipping_cost: item.shippingCost,
-            shipping_invoice_no: item.shippingInvoiceNo,
-            dispatch_note_no: item.dispatchNoteNo,
-            vet_health_report_no: item.vetHealthReportNo,
+            shipping_invoice_no: item.shippingInvoiceNo || null,
+            dispatch_note_no: item.dispatchNoteNo || null,
+            vet_health_report_no: item.vetHealthReportNo || null,
             status: item.status,
-            notes: item.notes,
+            notes: item.notes || null,
           });
+
+          if (dbErr) {
+            console.error("Supabase shipment upsert error:", dbErr);
+            return NextResponse.json(
+              { success: false, error: `Sevk tırı Supabase'e kaydedilemedi: ${dbErr.message}` },
+              { status: 500 }
+            );
+          }
         }
 
         const idx = inMemoryStore.shipments.findIndex((s) => s.id === item.id);
         if (idx >= 0) inMemoryStore.shipments[idx] = item;
         else inMemoryStore.shipments.unshift(item);
 
-        return NextResponse.json({ success: true, shipment: item, message: "Sevk tırı başarıyla kaydedildi." });
+        return NextResponse.json({
+          success: true,
+          shipment: item,
+          message: "Sevk tırı başarıyla kaydedildi.",
+        });
       }
 
+      // --- 4. STORAGE ---
       if (entityType === "storage") {
-        const item: any = {
-          id: data.id || `str-${Date.now()}`,
+        const cutLocId = isUUID(data.cuttingLocationId)
+          ? data.cuttingLocationId
+          : await getActiveLocationId(supabase, data.cuttingLocationId);
+
+        const item: KurbanStorageRecord = {
+          id: entityId,
           organizationId: orgId,
-          cuttingLocationId: data.cuttingLocationId || inMemoryStore.locations[0]?.id,
+          cuttingLocationId: cutLocId,
           storageCompany: data.storageCompany || "Soğuk Depo Firması",
           warehouseName: data.warehouseName || "Soğuk Hava Antreposu",
-          warehouseAddress: data.warehouseAddress || null,
+          warehouseAddress: data.warehouseAddress || "",
           entryDate: data.entryDate || new Date().toISOString().split("T")[0],
-          exitDate: data.exitDate || null,
+          exitDate: data.exitDate || undefined,
           productType: data.productType || "Karkas / Parçalanmış Soğuk Sığır Eti",
           storedQuantityKg: Number(data.storedQuantityKg) || 0,
           remainingQuantityKg: Number(data.remainingQuantityKg ?? data.storedQuantityKg) || 0,
-          entryDispatchNo: data.entryDispatchNo || null,
-          exitDispatchNo: data.exitDispatchNo || null,
-          invoiceNo: data.invoiceNo || null,
-          invoiceDate: data.invoiceDate || null,
+          entryDispatchNo: data.entryDispatchNo || "",
+          exitDispatchNo: data.exitDispatchNo || "",
+          invoiceNo: data.invoiceNo || "",
+          invoiceDate: data.invoiceDate || undefined,
           invoiceAmount: Number(data.invoiceAmount) || 0,
           temperatureCelsius: Number(data.temperatureCelsius) || 4.0,
           status: data.status || "in_storage",
-          notes: data.notes || null,
+          notes: data.notes || "",
           createdAt: data.createdAt || new Date().toISOString(),
         };
 
         if (supabase) {
-          await supabase.from("kurban_storage_records").upsert({
+          const { error: dbErr } = await supabase.from("kurban_storage_records").upsert({
             id: item.id,
             organization_id: item.organizationId,
             cutting_location_id: item.cuttingLocationId,
             storage_company: item.storageCompany,
             warehouse_name: item.warehouseName,
-            warehouse_address: item.warehouseAddress,
+            warehouse_address: item.warehouseAddress || null,
             entry_date: item.entryDate,
-            exit_date: item.exitDate,
+            exit_date: item.exitDate || null,
             product_type: item.productType,
             stored_quantity_kg: item.storedQuantityKg,
             remaining_quantity_kg: item.remainingQuantityKg,
-            entry_dispatch_no: item.entryDispatchNo,
-            exit_dispatch_no: item.exitDispatchNo,
-            invoice_no: item.invoiceNo,
-            invoice_date: item.invoiceDate,
+            entry_dispatch_no: item.entryDispatchNo || null,
+            exit_dispatch_no: item.exitDispatchNo || null,
+            invoice_no: item.invoiceNo || null,
+            invoice_date: item.invoiceDate || null,
             invoice_amount: item.invoiceAmount,
             temperature_celsius: item.temperatureCelsius,
             status: item.status,
-            notes: item.notes,
+            notes: item.notes || null,
           });
+
+          if (dbErr) {
+            console.error("Supabase storage upsert error:", dbErr);
+            return NextResponse.json(
+              { success: false, error: `Soğuk depo kaydı Supabase'e kaydedilemedi: ${dbErr.message}` },
+              { status: 500 }
+            );
+          }
         }
 
         const idx = inMemoryStore.storageRecords.findIndex((st) => st.id === item.id);
         if (idx >= 0) inMemoryStore.storageRecords[idx] = item;
         else inMemoryStore.storageRecords.unshift(item);
 
-        return NextResponse.json({ success: true, storage: item, message: "Soğuk depo kaydı başarıyla kaydedildi." });
+        return NextResponse.json({
+          success: true,
+          storage: item,
+          message: "Soğuk depo kaydı başarıyla kaydedildi.",
+        });
       }
 
+      // --- 5. DELIVERY ---
       if (entityType === "delivery") {
-        const item: any = {
-          id: data.id || `del-${Date.now()}`,
+        const cutLocId = isUUID(data.cuttingLocationId)
+          ? data.cuttingLocationId
+          : await getActiveLocationId(supabase, data.cuttingLocationId);
+
+        const item: KurbanDelivery = {
+          id: entityId,
           organizationId: orgId,
-          cuttingLocationId: data.cuttingLocationId || inMemoryStore.locations[0]?.id,
+          cuttingLocationId: cutLocId,
           deliveryNo: data.deliveryNo || `TSL-2026-00${inMemoryStore.deliveries.length + 1}`,
           recipientCompany: data.recipientCompany || "Alıcı Firma",
           deliveryDate: data.deliveryDate || new Date().toISOString().split("T")[0],
           deliveredQuantityKg: Number(data.deliveredQuantityKg) || 0,
           deliveredAnimalCount: Number(data.deliveredAnimalCount) || 0,
-          outgoingInvoiceNo: data.outgoingInvoiceNo || null,
+          outgoingInvoiceNo: data.outgoingInvoiceNo || "",
           dispatchNoteNo: data.dispatchNoteNo || `IRS-${Date.now().toString().slice(-6)}`,
           deliveryAddress: data.deliveryAddress || "Müşteri Teslim Adresi",
           recipientPerson: data.recipientPerson || "Yetkili",
           deliveredByPerson: data.deliveredByPerson || "Sevkiyat Sorumlusu",
           transportType: data.transportType || "company_vehicle",
-          // Araç plakası ZORUNLU DEĞİL: Boş ise undefined veya "Plaka Belirtilmedi"
+          // Araç plakası kullanıcı için opsiyoneldir. Boş ise Postgres NOT NULL hatasını önlemek için varsayılan değer gönderilir.
           vehiclePlate: data.vehiclePlate?.trim() || "Plakasız / Belirtilmedi",
           driverName: data.driverName || "Şoför",
           transportCost: Number(data.transportCost) || 0,
           status: data.status || "completed",
-          notes: data.notes || null,
+          notes: data.notes || "",
           createdAt: data.createdAt || new Date().toISOString(),
         };
 
         if (supabase) {
-          await supabase.from("kurban_deliveries").upsert({
+          const { error: dbErr } = await supabase.from("kurban_deliveries").upsert({
             id: item.id,
             organization_id: item.organizationId,
             cutting_location_id: item.cuttingLocationId,
@@ -593,7 +768,7 @@ export async function POST(request: Request) {
             delivery_date: item.deliveryDate,
             delivered_quantity_kg: item.deliveredQuantityKg,
             delivered_animal_count: item.deliveredAnimalCount,
-            outgoing_invoice_no: item.outgoingInvoiceNo,
+            outgoing_invoice_no: item.outgoingInvoiceNo || null,
             dispatch_note_no: item.dispatchNoteNo,
             delivery_address: item.deliveryAddress,
             recipient_person: item.recipientPerson,
@@ -603,24 +778,39 @@ export async function POST(request: Request) {
             driver_name: item.driverName,
             transport_cost: item.transportCost,
             status: item.status,
-            notes: item.notes,
+            notes: item.notes || null,
           });
+
+          if (dbErr) {
+            console.error("Supabase delivery upsert error:", dbErr);
+            return NextResponse.json(
+              {
+                success: false,
+                error: `Taşıma / Teslimat aracı Supabase'e kaydedilemedi: ${dbErr.message}`,
+              },
+              { status: 500 }
+            );
+          }
         }
 
         const idx = inMemoryStore.deliveries.findIndex((d) => d.id === item.id);
         if (idx >= 0) inMemoryStore.deliveries[idx] = item;
         else inMemoryStore.deliveries.unshift(item);
 
-        return NextResponse.json({ success: true, delivery: item, message: "Taşıma / Teslimat aracı başarıyla kaydedildi." });
+        return NextResponse.json({
+          success: true,
+          delivery: item,
+          message: "Taşıma / Teslimat aracı başarıyla kaydedildi.",
+        });
       }
     }
 
-    // Default: Return success for in-memory or new organization creation
     return NextResponse.json({
       success: true,
       message: "İşlem başarılı.",
     });
   } catch (err: any) {
+    console.error("Kurban process API POST error:", err);
     return NextResponse.json(
       { success: false, error: err?.message || "Sunucu hatası" },
       { status: 500 }
@@ -638,43 +828,89 @@ export async function DELETE(request: Request) {
     const id = searchParams.get("id");
 
     if (!entityType || !id) {
-      return NextResponse.json({ success: false, error: "entityType ve id zorunludur." }, { status: 400 });
+      return NextResponse.json(
+        { success: false, error: "entityType ve id zorunludur." },
+        { status: 400 }
+      );
     }
 
     const supabase = getSupabaseServerClient();
 
     if (entityType === "party") {
-      if (supabase) await supabase.from("kurban_parties").delete().eq("id", id);
+      if (supabase && isUUID(id)) {
+        const { error } = await supabase.from("kurban_parties").delete().eq("id", id);
+        if (error) {
+          return NextResponse.json(
+            { success: false, error: `Paydaş silinemedi: ${error.message}` },
+            { status: 500 }
+          );
+        }
+      }
       inMemoryStore.parties = inMemoryStore.parties.filter((p) => p.id !== id);
       return NextResponse.json({ success: true, message: "Paydaş firma silindi." });
     }
 
     if (entityType === "location") {
-      if (supabase) await supabase.from("kurban_cutting_locations").delete().eq("id", id);
+      if (supabase && isUUID(id)) {
+        const { error } = await supabase.from("kurban_cutting_locations").delete().eq("id", id);
+        if (error) {
+          return NextResponse.json(
+            { success: false, error: `Kesim yeri silinemedi: ${error.message}` },
+            { status: 500 }
+          );
+        }
+      }
       inMemoryStore.locations = inMemoryStore.locations.filter((l) => l.id !== id);
       return NextResponse.json({ success: true, message: "Kesim yeri silindi." });
     }
 
     if (entityType === "shipment") {
-      if (supabase) await supabase.from("kurban_shipments").delete().eq("id", id);
+      if (supabase && isUUID(id)) {
+        const { error } = await supabase.from("kurban_shipments").delete().eq("id", id);
+        if (error) {
+          return NextResponse.json(
+            { success: false, error: `Sevk tırı silinemedi: ${error.message}` },
+            { status: 500 }
+          );
+        }
+      }
       inMemoryStore.shipments = inMemoryStore.shipments.filter((s) => s.id !== id);
       return NextResponse.json({ success: true, message: "Sevk tırı silindi." });
     }
 
     if (entityType === "storage") {
-      if (supabase) await supabase.from("kurban_storage_records").delete().eq("id", id);
+      if (supabase && isUUID(id)) {
+        const { error } = await supabase.from("kurban_storage_records").delete().eq("id", id);
+        if (error) {
+          return NextResponse.json(
+            { success: false, error: `Soğuk depo kaydı silinemedi: ${error.message}` },
+            { status: 500 }
+          );
+        }
+      }
       inMemoryStore.storageRecords = inMemoryStore.storageRecords.filter((st) => st.id !== id);
       return NextResponse.json({ success: true, message: "Soğuk depo kaydı silindi." });
     }
 
     if (entityType === "delivery") {
-      if (supabase) await supabase.from("kurban_deliveries").delete().eq("id", id);
+      if (supabase && isUUID(id)) {
+        const { error } = await supabase.from("kurban_deliveries").delete().eq("id", id);
+        if (error) {
+          return NextResponse.json(
+            { success: false, error: `Taşıma aracı silinemedi: ${error.message}` },
+            { status: 500 }
+          );
+        }
+      }
       inMemoryStore.deliveries = inMemoryStore.deliveries.filter((d) => d.id !== id);
       return NextResponse.json({ success: true, message: "Taşıma aracı kaydı silindi." });
     }
 
     return NextResponse.json({ success: false, error: "Geçersiz entityType." }, { status: 400 });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err?.message || "Silme hatası" }, { status: 500 });
+    return NextResponse.json(
+      { success: false, error: err?.message || "Silme hatası" },
+      { status: 500 }
+    );
   }
 }

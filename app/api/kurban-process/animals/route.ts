@@ -1,30 +1,15 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
 import { SEED_ANIMALS, SEED_ORGANIZATION_ID } from "../../../utils/kurbanProcessSeed";
+import {
+  getSupabaseServerClient,
+  isUUID,
+  ensureUUID,
+  getActiveOrganizationId,
+  mapAnimalFromDb,
+} from "../../../utils/kurbanProcessDb";
 import { KurbanAnimal } from "../../../types/kurbanProcess";
 
-function getSupabaseServerClient() {
-  const url =
-    process.env.SUPABASE_URL ||
-    process.env.NEXT_PUBLIC_SUPABASE_URL ||
-    "https://qcndlfastbrezugknkho.supabase.co";
-
-  const key =
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.SUPABASE_PUBLISHABLE_KEY ||
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
-    process.env.SUPABASE_ANON_KEY ||
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-    "sb_publishable_v4dm0IbGdRMmClfmWWm-Rg_tVsDZwSJ";
-
-  if (!url || !key) return null;
-
-  return createClient(url, key, {
-    auth: { persistSession: false },
-  });
-}
-
-// In-memory animals store initialized with 350 seed animals
+// In-memory animals store initialized with seed animals
 let memoryAnimals: KurbanAnimal[] = [...SEED_ANIMALS];
 
 /**
@@ -44,7 +29,7 @@ export async function GET(request: Request) {
     try {
       let query = supabase.from("kurban_animals").select("*", { count: "exact" });
 
-      if (locationId && locationId !== "all") {
+      if (locationId && locationId !== "all" && isUUID(locationId)) {
         query = query.eq("cutting_location_id", locationId);
       }
       if (status && status !== "all") {
@@ -64,30 +49,7 @@ export async function GET(request: Request) {
         .range(from, to);
 
       if (!error && data && data.length > 0) {
-        const mappedAnimals: KurbanAnimal[] = data.map((a: any) => ({
-          id: a.id,
-          organizationId: a.organization_id,
-          cuttingLocationId: a.cutting_location_id,
-          earTagNo: a.ear_tag_no,
-          animalType: a.animal_type,
-          animalTypeLabel: a.animal_type_label,
-          breed: a.breed,
-          gender: a.gender,
-          birthDate: a.birth_date,
-          ageMonths: a.age_months,
-          passportNo: a.passport_no,
-          farmRegNo: a.farm_reg_no,
-          farmName: a.farm_name,
-          healthDocNo: a.health_doc_no,
-          passportFileUrl: a.passport_file_url,
-          healthDocFileUrl: a.health_doc_file_url,
-          liveWeightKg: Number(a.live_weight_kg) || 0,
-          carcassWeightKg: Number(a.carcass_weight_kg) || 0,
-          status: a.status,
-          notes: a.notes,
-          createdAt: a.created_at,
-          updatedAt: a.updated_at,
-        }));
+        const mappedAnimals: KurbanAnimal[] = data.map(mapAnimalFromDb);
 
         return NextResponse.json({
           success: true,
@@ -144,63 +106,80 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
+    const supabase = getSupabaseServerClient();
+    const activeOrgId = await getActiveOrganizationId(supabase, body.organizationId);
 
     // Bulk creation
     if (body.bulk && Array.isArray(body.animals)) {
-      const incoming: KurbanAnimal[] = body.animals.map((a: any, idx: number) => ({
-        id: a.id || `animal-imp-${Date.now()}-${idx}`,
-        organizationId: a.organizationId || SEED_ORGANIZATION_ID,
-        cuttingLocationId: a.cuttingLocationId || undefined,
-        earTagNo: a.earTagNo || `TR34-${Date.now()}-${idx}`,
-        animalType: a.animalType || "buyukbas_tosun",
-        animalTypeLabel: a.animalTypeLabel || "Büyükbaş Tosun",
-        breed: a.breed || "Simental",
-        gender: a.gender || "male",
-        birthDate: a.birthDate || "2024-04-15",
-        ageMonths: Number(a.ageMonths) || 24,
-        passportNo: a.passportNo || `PAS-${a.earTagNo}`,
-        farmRegNo: a.farmRegNo || "TR-36-004128",
-        farmName: a.farmName || "Besi İşletmesi",
-        healthDocNo: a.healthDocNo || `VET-${Date.now()}`,
-        liveWeightKg: Number(a.liveWeightKg) || 650,
-        carcassWeightKg: Number(a.carcassWeightKg) || 365,
-        status: a.status || "purchased",
-        notes: a.notes || "",
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      }));
+      const incoming: KurbanAnimal[] = body.animals.map((a: any, idx: number) => {
+        const animalId = ensureUUID(a.id);
+        const cutLocId = isUUID(a.cuttingLocationId) ? a.cuttingLocationId : undefined;
+
+        return {
+          id: animalId,
+          organizationId: activeOrgId,
+          cuttingLocationId: cutLocId,
+          earTagNo: a.earTagNo || `TR34-${Date.now().toString().slice(-5)}-${idx + 1}`,
+          animalType: a.animalType || "buyukbas_tosun",
+          animalTypeLabel: a.animalTypeLabel || "Büyükbaş Tosun",
+          breed: a.breed || "Simental",
+          gender: a.gender || "male",
+          birthDate: a.birthDate || "2024-04-15",
+          ageMonths: Number(a.ageMonths) || 24,
+          passportNo: a.passportNo || `PAS-${a.earTagNo || idx}`,
+          farmRegNo: a.farmRegNo || "TR-36-004128",
+          farmName: a.farmName || "Besi İşletmesi",
+          healthDocNo: a.healthDocNo || `VET-${Date.now().toString().slice(-6)}`,
+          liveWeightKg: Number(a.liveWeightKg) || 650,
+          carcassWeightKg: Number(a.carcassWeightKg) || 365,
+          status: a.status || "purchased",
+          notes: a.notes || "",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+      });
 
       // Update memory store
       memoryAnimals = [...incoming, ...memoryAnimals];
 
-      // Also try to bulk insert to Supabase
-      const supabase = getSupabaseServerClient();
+      // Bulk insert to Supabase
       if (supabase) {
-        try {
-          const dbRows = incoming.map((a) => ({
-            id: a.id,
-            organization_id: a.organizationId,
-            cutting_location_id: a.cuttingLocationId,
-            ear_tag_no: a.earTagNo,
-            animal_type: a.animalType,
-            animal_type_label: a.animalTypeLabel,
-            breed: a.breed,
-            gender: a.gender,
-            birth_date: a.birthDate,
-            age_months: a.ageMonths,
-            passport_no: a.passportNo,
-            farm_reg_no: a.farmRegNo,
-            farm_name: a.farmName,
-            health_doc_no: a.healthDocNo,
-            live_weight_kg: a.liveWeightKg,
-            carcass_weight_kg: a.carcassWeightKg,
-            status: a.status,
-            notes: a.notes,
-          }));
+        const dbRows = incoming.map((a) => ({
+          id: a.id,
+          organization_id: a.organizationId,
+          cutting_location_id: a.cuttingLocationId || null,
+          ear_tag_no: a.earTagNo,
+          animal_type: a.animalType,
+          animal_type_label: a.animalTypeLabel,
+          breed: a.breed,
+          gender: a.gender,
+          birth_date: a.birthDate || null,
+          age_months: a.ageMonths,
+          passport_no: a.passportNo || null,
+          farm_reg_no: a.farmRegNo || null,
+          farm_name: a.farmName || null,
+          health_doc_no: a.healthDocNo || null,
+          live_weight_kg: a.liveWeightKg,
+          carcass_weight_kg: a.carcassWeightKg,
+          status: a.status,
+          notes: a.notes || null,
+        }));
 
-          await supabase.from("kurban_animals").upsert(dbRows);
-        } catch (dbErr) {
-          console.warn("Supabase bulk animals insert warning:", dbErr);
+        // Insert in batches of 50
+        const batchSize = 50;
+        for (let i = 0; i < dbRows.length; i += batchSize) {
+          const slice = dbRows.slice(i, i + batchSize);
+          const { error: dbErr } = await supabase.from("kurban_animals").upsert(slice);
+          if (dbErr) {
+            console.error("Supabase bulk animals insert error:", dbErr);
+            return NextResponse.json(
+              {
+                success: false,
+                error: `Supabase toplu hayvan ekleme hatası: ${dbErr.message}`,
+              },
+              { status: 500 }
+            );
+          }
         }
       }
 
@@ -212,10 +191,13 @@ export async function POST(request: Request) {
     }
 
     // Single animal creation
+    const animalId = ensureUUID(body.id);
+    const cutLocId = isUUID(body.cuttingLocationId) ? body.cuttingLocationId : undefined;
+
     const newAnimal: KurbanAnimal = {
-      id: body.id || `animal-${Date.now()}`,
-      organizationId: body.organizationId || SEED_ORGANIZATION_ID,
-      cuttingLocationId: body.cuttingLocationId,
+      id: animalId,
+      organizationId: activeOrgId,
+      cuttingLocationId: cutLocId,
       earTagNo: body.earTagNo,
       animalType: body.animalType || "buyukbas_tosun",
       animalTypeLabel: body.animalTypeLabel || "Büyükbaş Tosun",
@@ -237,32 +219,37 @@ export async function POST(request: Request) {
 
     memoryAnimals = [newAnimal, ...memoryAnimals];
 
-    // Try Supabase insert
-    const supabase = getSupabaseServerClient();
     if (supabase) {
-      try {
-        await supabase.from("kurban_animals").insert({
-          id: newAnimal.id,
-          organization_id: newAnimal.organizationId,
-          cutting_location_id: newAnimal.cuttingLocationId,
-          ear_tag_no: newAnimal.earTagNo,
-          animal_type: newAnimal.animalType,
-          animal_type_label: newAnimal.animalTypeLabel,
-          breed: newAnimal.breed,
-          gender: newAnimal.gender,
-          birth_date: newAnimal.birthDate,
-          age_months: newAnimal.ageMonths,
-          passport_no: newAnimal.passportNo,
-          farm_reg_no: newAnimal.farmRegNo,
-          farm_name: newAnimal.farmName,
-          health_doc_no: newAnimal.healthDocNo,
-          live_weight_kg: newAnimal.liveWeightKg,
-          carcass_weight_kg: newAnimal.carcassWeightKg,
-          status: newAnimal.status,
-          notes: newAnimal.notes,
-        });
-      } catch (e) {
-        console.warn("Single animal Supabase insert fallback:", e);
+      const { error: insertErr } = await supabase.from("kurban_animals").upsert({
+        id: newAnimal.id,
+        organization_id: newAnimal.organizationId,
+        cutting_location_id: newAnimal.cuttingLocationId || null,
+        ear_tag_no: newAnimal.earTagNo,
+        animal_type: newAnimal.animalType,
+        animal_type_label: newAnimal.animalTypeLabel,
+        breed: newAnimal.breed,
+        gender: newAnimal.gender,
+        birth_date: newAnimal.birthDate || null,
+        age_months: newAnimal.ageMonths,
+        passport_no: newAnimal.passportNo || null,
+        farm_reg_no: newAnimal.farmRegNo || null,
+        farm_name: newAnimal.farmName || null,
+        health_doc_no: newAnimal.healthDocNo || null,
+        live_weight_kg: newAnimal.liveWeightKg,
+        carcass_weight_kg: newAnimal.carcassWeightKg,
+        status: newAnimal.status,
+        notes: newAnimal.notes || null,
+      });
+
+      if (insertErr) {
+        console.error("Single animal Supabase insert error:", insertErr);
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Hayvan Supabase'e kaydedilemedi: ${insertErr.message}`,
+          },
+          { status: 500 }
+        );
       }
     }
 
@@ -299,31 +286,40 @@ export async function PUT(request: Request) {
 
     // Update in Supabase
     const supabase = getSupabaseServerClient();
-    if (supabase) {
-      try {
-        await supabase
-          .from("kurban_animals")
-          .update({
-            cutting_location_id: body.cuttingLocationId,
-            ear_tag_no: body.earTagNo,
-            animal_type: body.animalType,
-            breed: body.breed,
-            gender: body.gender,
-            birth_date: body.birthDate,
-            age_months: body.ageMonths,
-            passport_no: body.passportNo,
-            farm_reg_no: body.farmRegNo,
-            farm_name: body.farmName,
-            health_doc_no: body.healthDocNo,
-            live_weight_kg: body.liveWeightKg,
-            carcass_weight_kg: body.carcassWeightKg,
-            status: body.status,
-            notes: body.notes,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", body.id);
-      } catch (e) {
-        console.warn("Animal update Supabase fallback:", e);
+    if (supabase && isUUID(body.id)) {
+      const cutLocId = isUUID(body.cuttingLocationId) ? body.cuttingLocationId : null;
+
+      const { error: updateErr } = await supabase
+        .from("kurban_animals")
+        .update({
+          cutting_location_id: cutLocId,
+          ear_tag_no: body.earTagNo,
+          animal_type: body.animalType,
+          breed: body.breed,
+          gender: body.gender,
+          birth_date: body.birthDate || null,
+          age_months: body.ageMonths,
+          passport_no: body.passportNo || null,
+          farm_reg_no: body.farmRegNo || null,
+          farm_name: body.farmName || null,
+          health_doc_no: body.healthDocNo || null,
+          live_weight_kg: body.liveWeightKg,
+          carcass_weight_kg: body.carcassWeightKg,
+          status: body.status,
+          notes: body.notes || null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", body.id);
+
+      if (updateErr) {
+        console.error("Animal update Supabase error:", updateErr);
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Hayvan Supabase güncelleme hatası: ${updateErr.message}`,
+          },
+          { status: 500 }
+        );
       }
     }
 
@@ -358,11 +354,13 @@ export async function DELETE(request: Request) {
     memoryAnimals = memoryAnimals.filter((a) => a.id !== id);
 
     const supabase = getSupabaseServerClient();
-    if (supabase) {
-      try {
-        await supabase.from("kurban_animals").delete().eq("id", id);
-      } catch (e) {
-        console.warn("Animal delete Supabase fallback:", e);
+    if (supabase && isUUID(id)) {
+      const { error: delErr } = await supabase.from("kurban_animals").delete().eq("id", id);
+      if (delErr) {
+        return NextResponse.json(
+          { success: false, error: `Hayvan silme hatası: ${delErr.message}` },
+          { status: 500 }
+        );
       }
     }
 

@@ -14,9 +14,11 @@ import {
   KurbanReportSection,
 } from "../types/kurbanProcess";
 
-export const SEED_ORGANIZATION_ID = "org-2026-anadolu-gida";
-export const SEED_LOC_TUZLA_ID = "loc-tuzla-ksm01";
-export const SEED_LOC_KOCAELI_ID = "loc-kocaeli-ksm02";
+export const SEED_ORGANIZATION_ID = "595829cd-39ce-4334-9fca-559954a5b810";
+export const SEED_LOC_TUZLA_ID = "f4779128-11e4-4593-93de-ff811c1bbfc9";
+export const SEED_LOC_KOCAELI_ID = "e289c564-901a-4d76-b631-0e4c6b8f3a21";
+export const SEED_REP_TUZLA_ID = "80000000-0000-4000-a000-000000000001";
+export const SEED_REP_KOCAELI_ID = "80000000-0000-4000-a000-000000000002";
 
 // Demo Base64 SVG Visual Assets for Report & Photo Gallery
 export const PROCESS_DEMO_IMAGES = {
@@ -52,7 +54,7 @@ export const SEED_ORGANIZATION: KurbanProcessOrganization = {
 // 2. Taraflar
 export const SEED_PARTIES: KurbanParty[] = [
   {
-    id: "party-buyer-anadolu",
+    id: "30000000-0000-4000-a000-000000000001",
     organizationId: SEED_ORGANIZATION_ID,
     partyType: "client_buyer",
     name: "Anadolu Gıda & Perakende A.Ş.",
@@ -67,7 +69,7 @@ export const SEED_PARTIES: KurbanParty[] = [
     createdAt: "2026-05-10T09:30:00Z",
   },
   {
-    id: "party-seller-kars",
+    id: "30000000-0000-4000-a000-000000000002",
     organizationId: SEED_ORGANIZATION_ID,
     partyType: "supplier_seller",
     name: "Serhat Tarım & Hayvancılık Besi Ltd. Şti.",
@@ -82,7 +84,7 @@ export const SEED_PARTIES: KurbanParty[] = [
     createdAt: "2026-05-10T10:00:00Z",
   },
   {
-    id: "party-slaughter-tuzla",
+    id: "30000000-0000-4000-a000-000000000004",
     organizationId: SEED_ORGANIZATION_ID,
     partyType: "slaughterhouse",
     name: "1. Kesimhane - Tuzla Modern Entegre Et Kombinası A.Ş.",
@@ -97,7 +99,7 @@ export const SEED_PARTIES: KurbanParty[] = [
     createdAt: "2026-05-10T11:00:00Z",
   },
   {
-    id: "party-slaughter-kocaeli",
+    id: "30000000-0000-4000-a000-000000000005",
     organizationId: SEED_ORGANIZATION_ID,
     partyType: "slaughterhouse",
     name: "2. Kesimhane - Kocaeli Kartepe Entegre Kesim Tesisi Ltd.",
@@ -112,7 +114,7 @@ export const SEED_PARTIES: KurbanParty[] = [
     createdAt: "2026-05-10T11:30:00Z",
   },
   {
-    id: "party-logistics-aras",
+    id: "30000000-0000-4000-a000-000000000006",
     organizationId: SEED_ORGANIZATION_ID,
     partyType: "logistics_transporter",
     name: "Özaras Canlı Hayvan & Soğuk Zincir Lojistik Ltd. Şti.",
@@ -127,7 +129,7 @@ export const SEED_PARTIES: KurbanParty[] = [
     createdAt: "2026-05-10T12:00:00Z",
   },
   {
-    id: "party-storage-marmara",
+    id: "30000000-0000-4000-a000-000000000007",
     organizationId: SEED_ORGANIZATION_ID,
     partyType: "cold_storage",
     name: "Marmara Frigo Soğuk Hava Depolama & Antrepo A.Ş.",
@@ -145,12 +147,12 @@ export const SEED_PARTIES: KurbanParty[] = [
 
 // 3. Alım Sözleşmesi
 export const SEED_CONTRACT: KurbanContract = {
-  id: "contract-2026-001",
+  id: "a0000000-0000-4000-a000-000000000001",
   organizationId: SEED_ORGANIZATION_ID,
   contractNo: "SOZ-2026-KRB-0089",
   contractDate: "2026-05-12",
-  sellerPartyId: "party-seller-kars",
-  buyerPartyId: "party-buyer-anadolu",
+  sellerPartyId: "30000000-0000-4000-a000-000000000002",
+  buyerPartyId: "30000000-0000-4000-a000-000000000001",
   sellerName: "Serhat Tarım & Hayvancılık Besi Ltd. Şti.",
   buyerName: "Anadolu Gıda & Perakende A.Ş.",
   animalType: "Büyükbaş Tosun (1. Sınıf Simental / Şarole)",
@@ -214,7 +216,7 @@ function generateSeedAnimals(): KurbanAnimal[] {
     const carcassWeight = Math.round(liveWeight * 0.565 * 10) / 10;
 
     animals.push({
-      id: `animal-tzl-${i}`,
+      id: `10000000-0000-4000-a000-${String(i).padStart(12, "0")}`,
       organizationId: SEED_ORGANIZATION_ID,
       cuttingLocationId: SEED_LOC_TUZLA_ID,
       earTagNo: `TR34-${seq}`,
@@ -247,7 +249,7 @@ function generateSeedAnimals(): KurbanAnimal[] {
     const carcassWeight = Math.round(liveWeight * 0.562 * 10) / 10;
 
     animals.push({
-      id: `animal-kcl-${i}`,
+      id: `20000000-0000-4000-a000-${String(i).padStart(12, "0")}`,
       organizationId: SEED_ORGANIZATION_ID,
       cuttingLocationId: SEED_LOC_KOCAELI_ID,
       earTagNo: `TR41-${seq}`,
@@ -281,7 +283,7 @@ export const SEED_ANIMALS: KurbanAnimal[] = generateSeedAnimals();
 export const SEED_SHIPMENTS: KurbanShipment[] = [
   // Tuzla Sevkleri (180 hayvan)
   {
-    id: "shipment-tzl-01",
+    id: "40000000-0000-4000-a000-000000000001",
     organizationId: SEED_ORGANIZATION_ID,
     destinationLocationId: SEED_LOC_TUZLA_ID,
     destinationLocationName: "1. Kesimhane - Tuzla Modern Entegre Et Kombinası",
@@ -302,7 +304,7 @@ export const SEED_SHIPMENTS: KurbanShipment[] = [
     createdAt: "2026-06-08T06:00:00Z",
   },
   {
-    id: "shipment-tzl-02",
+    id: "40000000-0000-4000-a000-000000000002",
     organizationId: SEED_ORGANIZATION_ID,
     destinationLocationId: SEED_LOC_TUZLA_ID,
     destinationLocationName: "1. Kesimhane - Tuzla Modern Entegre Et Kombinası",
@@ -323,7 +325,7 @@ export const SEED_SHIPMENTS: KurbanShipment[] = [
     createdAt: "2026-06-08T07:30:00Z",
   },
   {
-    id: "shipment-tzl-03",
+    id: "40000000-0000-4000-a000-000000000003",
     organizationId: SEED_ORGANIZATION_ID,
     destinationLocationId: SEED_LOC_TUZLA_ID,
     destinationLocationName: "1. Kesimhane - Tuzla Modern Entegre Et Kombinası",
@@ -344,7 +346,7 @@ export const SEED_SHIPMENTS: KurbanShipment[] = [
     createdAt: "2026-06-09T06:00:00Z",
   },
   {
-    id: "shipment-tzl-04",
+    id: "40000000-0000-4000-a000-000000000004",
     organizationId: SEED_ORGANIZATION_ID,
     destinationLocationId: SEED_LOC_TUZLA_ID,
     destinationLocationName: "1. Kesimhane - Tuzla Modern Entegre Et Kombinası",
@@ -367,7 +369,7 @@ export const SEED_SHIPMENTS: KurbanShipment[] = [
 
   // Kocaeli Sevkleri (170 hayvan)
   {
-    id: "shipment-kcl-01",
+    id: "40000000-0000-4000-a000-000000000005",
     organizationId: SEED_ORGANIZATION_ID,
     destinationLocationId: SEED_LOC_KOCAELI_ID,
     destinationLocationName: "2. Kesimhane - Kocaeli Kartepe Entegre Kesim Tesisi",
@@ -388,7 +390,7 @@ export const SEED_SHIPMENTS: KurbanShipment[] = [
     createdAt: "2026-06-08T09:00:00Z",
   },
   {
-    id: "shipment-kcl-02",
+    id: "40000000-0000-4000-a000-000000000006",
     organizationId: SEED_ORGANIZATION_ID,
     destinationLocationId: SEED_LOC_KOCAELI_ID,
     destinationLocationName: "2. Kesimhane - Kocaeli Kartepe Entegre Kesim Tesisi",
@@ -409,7 +411,7 @@ export const SEED_SHIPMENTS: KurbanShipment[] = [
     createdAt: "2026-06-08T10:30:00Z",
   },
   {
-    id: "shipment-kcl-03",
+    id: "40000000-0000-4000-a000-000000000007",
     organizationId: SEED_ORGANIZATION_ID,
     destinationLocationId: SEED_LOC_KOCAELI_ID,
     destinationLocationName: "2. Kesimhane - Kocaeli Kartepe Entegre Kesim Tesisi",
@@ -430,7 +432,7 @@ export const SEED_SHIPMENTS: KurbanShipment[] = [
     createdAt: "2026-06-09T07:00:00Z",
   },
   {
-    id: "shipment-kcl-04",
+    id: "40000000-0000-4000-a000-000000000008",
     organizationId: SEED_ORGANIZATION_ID,
     destinationLocationId: SEED_LOC_KOCAELI_ID,
     destinationLocationName: "2. Kesimhane - Kocaeli Kartepe Entegre Kesim Tesisi",
@@ -456,7 +458,7 @@ export const SEED_SHIPMENTS: KurbanShipment[] = [
 export const SEED_SLAUGHTER_BATCHES: KurbanSlaughterBatch[] = [
   // Tuzla Kesimleri (180 hayvan - 2 gün)
   {
-    id: "batch-tzl-01",
+    id: "70000000-0000-4000-a000-000000000001",
     organizationId: SEED_ORGANIZATION_ID,
     cuttingLocationId: SEED_LOC_TUZLA_ID,
     cuttingLocationName: "1. Kesimhane - Tuzla Modern Entegre Et Kombinası",
@@ -474,7 +476,7 @@ export const SEED_SLAUGHTER_BATCHES: KurbanSlaughterBatch[] = [
     createdAt: "2026-06-11T16:30:00Z",
   },
   {
-    id: "batch-tzl-02",
+    id: "70000000-0000-4000-a000-000000000002",
     organizationId: SEED_ORGANIZATION_ID,
     cuttingLocationId: SEED_LOC_TUZLA_ID,
     cuttingLocationName: "1. Kesimhane - Tuzla Modern Entegre Et Kombinası",
@@ -494,7 +496,7 @@ export const SEED_SLAUGHTER_BATCHES: KurbanSlaughterBatch[] = [
 
   // Kocaeli Kesimleri (170 hayvan - 2 gün)
   {
-    id: "batch-kcl-01",
+    id: "70000000-0000-4000-a000-000000000003",
     organizationId: SEED_ORGANIZATION_ID,
     cuttingLocationId: SEED_LOC_KOCAELI_ID,
     cuttingLocationName: "2. Kesimhane - Kocaeli Kartepe Entegre Kesim Tesisi",
@@ -511,7 +513,7 @@ export const SEED_SLAUGHTER_BATCHES: KurbanSlaughterBatch[] = [
     createdAt: "2026-06-11T17:00:00Z",
   },
   {
-    id: "batch-kcl-02",
+    id: "70000000-0000-4000-a000-000000000004",
     organizationId: SEED_ORGANIZATION_ID,
     cuttingLocationId: SEED_LOC_KOCAELI_ID,
     cuttingLocationName: "2. Kesimhane - Kocaeli Kartepe Entegre Kesim Tesisi",
@@ -533,7 +535,7 @@ export const SEED_SLAUGHTER_BATCHES: KurbanSlaughterBatch[] = [
 // 7. Depolama İşlemleri (2 Kesimhane İçin 2 Ayrı Soğuk Hava Süreci)
 export const SEED_STORAGE_RECORDS: KurbanStorageRecord[] = [
   {
-    id: "storage-tzl-01",
+    id: "50000000-0000-4000-a000-000000000001",
     organizationId: SEED_ORGANIZATION_ID,
     cuttingLocationId: SEED_LOC_TUZLA_ID,
     cuttingLocationName: "1. Kesimhane - Tuzla Modern Entegre Et Kombinası",
@@ -557,7 +559,7 @@ export const SEED_STORAGE_RECORDS: KurbanStorageRecord[] = [
     createdAt: "2026-06-11T18:00:00Z",
   },
   {
-    id: "storage-kcl-01",
+    id: "50000000-0000-4000-a000-000000000002",
     organizationId: SEED_ORGANIZATION_ID,
     cuttingLocationId: SEED_LOC_KOCAELI_ID,
     cuttingLocationName: "2. Kesimhane - Kocaeli Kartepe Entegre Kesim Tesisi",
@@ -586,7 +588,7 @@ export const SEED_STORAGE_RECORDS: KurbanStorageRecord[] = [
 export const SEED_INVOICES: KurbanInvoice[] = [
   // Alım Faturası
   {
-    id: "inv-01",
+    id: "90000000-0000-4000-a000-000000000001",
     organizationId: SEED_ORGANIZATION_ID,
     invoiceType: "animal_purchase",
     invoiceNo: "FTR2026000000412",
@@ -603,7 +605,7 @@ export const SEED_INVOICES: KurbanInvoice[] = [
   },
   // Tuzla Nakliye Faturaları
   {
-    id: "inv-02",
+    id: "90000000-0000-4000-a000-000000000002",
     organizationId: SEED_ORGANIZATION_ID,
     cuttingLocationId: SEED_LOC_TUZLA_ID,
     cuttingLocationName: "1. Kesimhane - Tuzla Modern Entegre Et Kombinası",
@@ -622,7 +624,7 @@ export const SEED_INVOICES: KurbanInvoice[] = [
   },
   // Kocaeli Nakliye Faturaları
   {
-    id: "inv-03",
+    id: "90000000-0000-4000-a000-000000000003",
     organizationId: SEED_ORGANIZATION_ID,
     cuttingLocationId: SEED_LOC_KOCAELI_ID,
     cuttingLocationName: "2. Kesimhane - Kocaeli Kartepe Entegre Kesim Tesisi",
@@ -641,7 +643,7 @@ export const SEED_INVOICES: KurbanInvoice[] = [
   },
   // Tuzla Kesim Hizmet Faturası
   {
-    id: "inv-04",
+    id: "90000000-0000-4000-a000-000000000004",
     organizationId: SEED_ORGANIZATION_ID,
     cuttingLocationId: SEED_LOC_TUZLA_ID,
     cuttingLocationName: "1. Kesimhane - Tuzla Modern Entegre Et Kombinası",
@@ -660,7 +662,7 @@ export const SEED_INVOICES: KurbanInvoice[] = [
   },
   // Kocaeli Kesim Hizmet Faturası
   {
-    id: "inv-05",
+    id: "90000000-0000-4000-a000-000000000005",
     organizationId: SEED_ORGANIZATION_ID,
     cuttingLocationId: SEED_LOC_KOCAELI_ID,
     cuttingLocationName: "2. Kesimhane - Kocaeli Kartepe Entegre Kesim Tesisi",
@@ -679,7 +681,7 @@ export const SEED_INVOICES: KurbanInvoice[] = [
   },
   // Depolama Faturaları
   {
-    id: "inv-06",
+    id: "90000000-0000-4000-a000-000000000006",
     organizationId: SEED_ORGANIZATION_ID,
     cuttingLocationId: SEED_LOC_TUZLA_ID,
     cuttingLocationName: "1. Kesimhane - Tuzla Modern Entegre Et Kombinası",
@@ -697,7 +699,7 @@ export const SEED_INVOICES: KurbanInvoice[] = [
     createdAt: "2026-06-17T10:00:00Z",
   },
   {
-    id: "inv-07",
+    id: "90000000-0000-4000-a000-000000000007",
     organizationId: SEED_ORGANIZATION_ID,
     cuttingLocationId: SEED_LOC_KOCAELI_ID,
     cuttingLocationName: "2. Kesimhane - Kocaeli Kartepe Entegre Kesim Tesisi",
@@ -716,7 +718,7 @@ export const SEED_INVOICES: KurbanInvoice[] = [
   },
   // Çıkış ve Satış Faturaları (Müşteriye)
   {
-    id: "inv-08",
+    id: "90000000-0000-4000-a000-000000000008",
     organizationId: SEED_ORGANIZATION_ID,
     cuttingLocationId: SEED_LOC_TUZLA_ID,
     cuttingLocationName: "1. Kesimhane - Tuzla Modern Entegre Et Kombinası",
@@ -734,7 +736,7 @@ export const SEED_INVOICES: KurbanInvoice[] = [
     createdAt: "2026-06-18T14:00:00Z",
   },
   {
-    id: "inv-09",
+    id: "90000000-0000-4000-a000-000000000009",
     organizationId: SEED_ORGANIZATION_ID,
     cuttingLocationId: SEED_LOC_KOCAELI_ID,
     cuttingLocationName: "2. Kesimhane - Kocaeli Kartepe Entegre Kesim Tesisi",
@@ -757,7 +759,7 @@ export const SEED_INVOICES: KurbanInvoice[] = [
 export const SEED_DELIVERIES: KurbanDelivery[] = [
   // 1. Kesimhane (Tuzla) Teslimatları - Kendi şirket araçlarımızla
   {
-    id: "deliv-tzl-01",
+    id: "60000000-0000-4000-a000-000000000001",
     organizationId: SEED_ORGANIZATION_ID,
     cuttingLocationId: SEED_LOC_TUZLA_ID,
     cuttingLocationName: "1. Kesimhane - Tuzla Modern Entegre Et Kombinası",
@@ -780,7 +782,7 @@ export const SEED_DELIVERIES: KurbanDelivery[] = [
     createdAt: "2026-06-16T10:00:00Z",
   },
   {
-    id: "deliv-tzl-02",
+    id: "60000000-0000-4000-a000-000000000002",
     organizationId: SEED_ORGANIZATION_ID,
     cuttingLocationId: SEED_LOC_TUZLA_ID,
     cuttingLocationName: "1. Kesimhane - Tuzla Modern Entegre Et Kombinası",
@@ -805,7 +807,7 @@ export const SEED_DELIVERIES: KurbanDelivery[] = [
 
   // 2. Kesimhane (Kartepe) Teslimatları - Kendi şirket aracı + Lojistik
   {
-    id: "deliv-kcl-01",
+    id: "60000000-0000-4000-a000-000000000003",
     organizationId: SEED_ORGANIZATION_ID,
     cuttingLocationId: SEED_LOC_KOCAELI_ID,
     cuttingLocationName: "2. Kesimhane - Kocaeli Kartepe Entegre Kesim Tesisi",
@@ -828,7 +830,7 @@ export const SEED_DELIVERIES: KurbanDelivery[] = [
     createdAt: "2026-06-16T11:00:00Z",
   },
   {
-    id: "deliv-kcl-02",
+    id: "60000000-0000-4000-a000-000000000004",
     organizationId: SEED_ORGANIZATION_ID,
     cuttingLocationId: SEED_LOC_KOCAELI_ID,
     cuttingLocationName: "2. Kesimhane - Kocaeli Kartepe Entegre Kesim Tesisi",
@@ -855,7 +857,7 @@ export const SEED_DELIVERIES: KurbanDelivery[] = [
 // 10. Süreç Belge ve Fotoğrafları
 export const SEED_DOCUMENTS: KurbanDocument[] = [
   {
-    id: "doc-01",
+    id: "b0000000-0000-4000-a000-000000000001",
     organizationId: SEED_ORGANIZATION_ID,
     cuttingLocationId: SEED_LOC_TUZLA_ID,
     category: "shipment_photo",
@@ -865,11 +867,11 @@ export const SEED_DOCUMENTS: KurbanDocument[] = [
     fileName: "34_KBR_82_sevk.jpg",
     mimeType: "image/jpeg",
     relatedEntityType: "shipment",
-    relatedEntityId: "shipment-tzl-01",
+    relatedEntityId: "40000000-0000-4000-a000-000000000001",
     uploadedAt: "2026-06-08T06:15:00Z",
   },
   {
-    id: "doc-02",
+    id: "b0000000-0000-4000-a000-000000000002",
     organizationId: SEED_ORGANIZATION_ID,
     cuttingLocationId: SEED_LOC_KOCAELI_ID,
     category: "shipment_photo",
@@ -879,11 +881,11 @@ export const SEED_DOCUMENTS: KurbanDocument[] = [
     fileName: "41_KSM_71_sevk.jpg",
     mimeType: "image/jpeg",
     relatedEntityType: "shipment",
-    relatedEntityId: "shipment-kcl-01",
+    relatedEntityId: "40000000-0000-4000-a000-000000000005",
     uploadedAt: "2026-06-08T09:15:00Z",
   },
   {
-    id: "doc-03",
+    id: "b0000000-0000-4000-a000-000000000003",
     organizationId: SEED_ORGANIZATION_ID,
     cuttingLocationId: SEED_LOC_TUZLA_ID,
     category: "slaughter_photo",
@@ -893,11 +895,11 @@ export const SEED_DOCUMENTS: KurbanDocument[] = [
     fileName: "tuzla_kesimhane_hat.jpg",
     mimeType: "image/jpeg",
     relatedEntityType: "slaughter",
-    relatedEntityId: "batch-tzl-01",
+    relatedEntityId: "70000000-0000-4000-a000-000000000001",
     uploadedAt: "2026-06-11T12:00:00Z",
   },
   {
-    id: "doc-04",
+    id: "b0000000-0000-4000-a000-000000000004",
     organizationId: SEED_ORGANIZATION_ID,
     cuttingLocationId: SEED_LOC_KOCAELI_ID,
     category: "slaughter_photo",
@@ -907,11 +909,11 @@ export const SEED_DOCUMENTS: KurbanDocument[] = [
     fileName: "kartepe_kesimhane_hat.jpg",
     mimeType: "image/jpeg",
     relatedEntityType: "slaughter",
-    relatedEntityId: "batch-kcl-01",
+    relatedEntityId: "70000000-0000-4000-a000-000000000003",
     uploadedAt: "2026-06-11T12:30:00Z",
   },
   {
-    id: "doc-05",
+    id: "b0000000-0000-4000-a000-000000000005",
     organizationId: SEED_ORGANIZATION_ID,
     category: "storage_photo",
     title: "+4°C Soğuk Hava Depolama, Şoklama ve Et Dinlendirme Odası",
@@ -920,11 +922,11 @@ export const SEED_DOCUMENTS: KurbanDocument[] = [
     fileName: "soguk_hava_depo.jpg",
     mimeType: "image/jpeg",
     relatedEntityType: "storage",
-    relatedEntityId: "storage-tzl-01",
+    relatedEntityId: "50000000-0000-4000-a000-000000000001",
     uploadedAt: "2026-06-12T18:00:00Z",
   },
   {
-    id: "doc-06",
+    id: "b0000000-0000-4000-a000-000000000006",
     organizationId: SEED_ORGANIZATION_ID,
     category: "delivery_photo",
     title: "Şirket Özmal Frigorifik Araçları ile Müşteriye Teslimat",
@@ -933,7 +935,7 @@ export const SEED_DOCUMENTS: KurbanDocument[] = [
     fileName: "teslimat_filosu.jpg",
     mimeType: "image/jpeg",
     relatedEntityType: "delivery",
-    relatedEntityId: "deliv-tzl-01",
+    relatedEntityId: "60000000-0000-4000-a000-000000000001",
     uploadedAt: "2026-06-16T12:00:00Z",
   },
 ];
@@ -949,7 +951,7 @@ function generateSectionsForReport(
 ): KurbanReportSection[] {
   return [
     {
-      id: `sec-${reportId}-01`,
+      id: `80000000-0000-4000-${reportId === SEED_REP_TUZLA_ID ? "b001" : "b002"}-000000000001`,
       reportId,
       sectionKey: "cover",
       sectionTitle: "A. Resmî Rapor Kapak Sayfası",
@@ -967,7 +969,7 @@ function generateSectionsForReport(
       createdAt: "2026-06-25T10:00:00Z",
     },
     {
-      id: `sec-${reportId}-02`,
+      id: `80000000-0000-4000-${reportId === SEED_REP_TUZLA_ID ? "b001" : "b002"}-000000000002`,
       reportId,
       sectionKey: "general_info",
       sectionTitle: "B. Genel Bilgiler ve Organizasyon Kapsamı",
@@ -987,7 +989,7 @@ function generateSectionsForReport(
       createdAt: "2026-06-25T10:05:00Z",
     },
     {
-      id: `sec-${reportId}-03`,
+      id: `80000000-0000-4000-${reportId === SEED_REP_TUZLA_ID ? "b001" : "b002"}-000000000003`,
       reportId,
       sectionKey: "contract",
       sectionTitle: "C. Hayvan Alım ve Satın Alma Sözleşme Bilgileri",
@@ -1000,7 +1002,7 @@ function generateSectionsForReport(
       createdAt: "2026-06-25T10:10:00Z",
     },
     {
-      id: `sec-${reportId}-04`,
+      id: `80000000-0000-4000-${reportId === SEED_REP_TUZLA_ID ? "b001" : "b002"}-000000000004`,
       reportId,
       sectionKey: "shipment",
       sectionTitle: "D. Sevk ve Nakliye Süreci (Tır ve İrsaliyeler)",
@@ -1014,7 +1016,7 @@ function generateSectionsForReport(
       createdAt: "2026-06-25T10:15:00Z",
     },
     {
-      id: `sec-${reportId}-05`,
+      id: `80000000-0000-4000-${reportId === SEED_REP_TUZLA_ID ? "b001" : "b002"}-000000000005`,
       reportId,
       sectionKey: "animals",
       sectionTitle: "E. Hayvanların Resmî Kayıtları ve Küpe Listesi",
@@ -1027,7 +1029,7 @@ function generateSectionsForReport(
       createdAt: "2026-06-25T10:20:00Z",
     },
     {
-      id: `sec-${reportId}-06`,
+      id: `80000000-0000-4000-${reportId === SEED_REP_TUZLA_ID ? "b001" : "b002"}-000000000006`,
       reportId,
       sectionKey: "slaughter",
       sectionTitle: "F. Kesim Süreci ve Veterinerlik Muayenesi",
@@ -1041,7 +1043,7 @@ function generateSectionsForReport(
       createdAt: "2026-06-25T10:25:00Z",
     },
     {
-      id: `sec-${reportId}-07`,
+      id: `80000000-0000-4000-${reportId === SEED_REP_TUZLA_ID ? "b001" : "b002"}-000000000007`,
       reportId,
       sectionKey: "storage",
       sectionTitle: "G. Depolama, Şoklama ve Soğuk Zincir Süreci",
@@ -1054,7 +1056,7 @@ function generateSectionsForReport(
       createdAt: "2026-06-25T10:30:00Z",
     },
     {
-      id: `sec-${reportId}-08`,
+      id: `80000000-0000-4000-${reportId === SEED_REP_TUZLA_ID ? "b001" : "b002"}-000000000008`,
       reportId,
       sectionKey: "delivery",
       sectionTitle: "H. Satış, Faturalandırma ve Müşteriye Teslimat",
@@ -1068,7 +1070,7 @@ function generateSectionsForReport(
       createdAt: "2026-06-25T10:35:00Z",
     },
     {
-      id: `sec-${reportId}-09`,
+      id: `80000000-0000-4000-${reportId === SEED_REP_TUZLA_ID ? "b001" : "b002"}-000000000009`,
       reportId,
       sectionKey: "evaluation",
       sectionTitle: "I. Genel Değerlendirme, Sayısal Mutabakat ve Sonuç",
@@ -1090,7 +1092,7 @@ function generateSectionsForReport(
       createdAt: "2026-06-25T10:40:00Z",
     },
     {
-      id: `sec-${reportId}-10`,
+      id: `80000000-0000-4000-${reportId === SEED_REP_TUZLA_ID ? "b001" : "b002"}-000000000010`,
       reportId,
       sectionKey: "annexes",
       sectionTitle: "J. Resmî Ekler, Belgeler ve Fotoğraf Galerisi",
@@ -1109,7 +1111,7 @@ function generateSectionsForReport(
 export const SEED_REPORTS: KurbanReport[] = [
   // 1. Kesimhane Raporu (Tuzla - 180 Hayvan)
   {
-    id: "rep-tuzla-ksm01",
+    id: SEED_REP_TUZLA_ID,
     organizationId: SEED_ORGANIZATION_ID,
     cuttingLocationId: SEED_LOC_TUZLA_ID,
     cuttingLocationName: "1. Kesimhane - Tuzla Modern Entegre Et Kombinası",
@@ -1126,7 +1128,7 @@ export const SEED_REPORTS: KurbanReport[] = [
       "180 hayvanın tamamı eksiksiz sevk edilmiş, kesilmiş ve toplam 61.200,5 Kg net karkas et olarak müşteriye teslim edilmiştir. Fire oranı %0'dır.",
     finalResultSummary: "Süreç kusursuz tamamlanmış, tüm belgeler arşivlenmiştir.",
     sections: generateSectionsForReport(
-      "rep-tuzla-ksm01",
+      SEED_REP_TUZLA_ID,
       "1. Kesimhane - Tuzla Modern Entegre Et Kombinası",
       180,
       61200.5,
@@ -1146,7 +1148,7 @@ export const SEED_REPORTS: KurbanReport[] = [
 
   // 2. Kesimhane Raporu (Kartepe - 170 Hayvan)
   {
-    id: "rep-kocaeli-ksm02",
+    id: SEED_REP_KOCAELI_ID,
     organizationId: SEED_ORGANIZATION_ID,
     cuttingLocationId: SEED_LOC_KOCAELI_ID,
     cuttingLocationName: "2. Kesimhane - Kocaeli Kartepe Entegre Kesim Tesisi",
@@ -1163,7 +1165,7 @@ export const SEED_REPORTS: KurbanReport[] = [
       "170 hayvanın tamamı Kartepe mezbahasında kesilmiş, karkas tartımları yapılmış ve toplam 57.460,0 Kg net et olarak müşteriye teslim edilmiştir.",
     finalResultSummary: "Süreç kusursuz tamamlanmış, tüm belgeler arşivlenmiştir.",
     sections: generateSectionsForReport(
-      "rep-kocaeli-ksm02",
+      SEED_REP_KOCAELI_ID,
       "2. Kesimhane - Kocaeli Kartepe Entegre Kesim Tesisi",
       170,
       57460.0,

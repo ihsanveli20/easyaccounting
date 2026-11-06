@@ -1,28 +1,12 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
 import { SEED_REPORTS } from "../../../utils/kurbanProcessSeed";
+import {
+  getSupabaseServerClient,
+  isUUID,
+  ensureUUID,
+  mapReportFromDb,
+} from "../../../utils/kurbanProcessDb";
 import { KurbanReport, KurbanReportSection } from "../../../types/kurbanProcess";
-
-function getSupabaseServerClient() {
-  const url =
-    process.env.SUPABASE_URL ||
-    process.env.NEXT_PUBLIC_SUPABASE_URL ||
-    "https://qcndlfastbrezugknkho.supabase.co";
-
-  const key =
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.SUPABASE_PUBLISHABLE_KEY ||
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
-    process.env.SUPABASE_ANON_KEY ||
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-    "sb_publishable_v4dm0IbGdRMmClfmWWm-Rg_tVsDZwSJ";
-
-  if (!url || !key) return null;
-
-  return createClient(url, key, {
-    auth: { persistSession: false },
-  });
-}
 
 // In-memory reports store
 let memoryReports: KurbanReport[] = JSON.parse(JSON.stringify(SEED_REPORTS));
@@ -43,48 +27,17 @@ export async function GET(request: Request) {
         .from("kurban_reports")
         .select("*, kurban_report_sections(*)");
 
-      if (reportId) {
+      if (reportId && isUUID(reportId)) {
         query = query.eq("id", reportId);
-      } else if (locationId && locationId !== "all") {
+      } else if (locationId && locationId !== "all" && isUUID(locationId)) {
         query = query.eq("cutting_location_id", locationId);
       }
 
       const { data, error } = await query;
       if (!error && data && data.length > 0) {
-        const mappedReports: KurbanReport[] = data.map((r: any) => ({
-          id: r.id,
-          organizationId: r.organization_id,
-          cuttingLocationId: r.cutting_location_id,
-          cuttingLocationName: r.cutting_location_name,
-          reportNo: r.report_no,
-          title: r.title,
-          reportDate: r.report_date,
-          reportPeriod: r.report_period,
-          preparedBy: r.prepared_by,
-          status: r.status,
-          clientCompanyName: r.client_company_name,
-          executiveSummary: r.executive_summary,
-          evaluationNotes: r.evaluation_notes,
-          finalResultSummary: r.final_result_summary,
-          metadata: r.metadata,
-          sections: (r.kurban_report_sections || [])
-            .sort((a: any, b: any) => a.order_index - b.order_index)
-            .map((s: any) => ({
-              id: s.id,
-              reportId: s.report_id,
-              sectionKey: s.section_key,
-              sectionTitle: s.section_title,
-              orderIndex: s.order_index,
-              isEnabled: s.is_enabled,
-              contentHtml: s.content_html,
-              customNotes: s.custom_notes,
-              includeTables: s.include_tables,
-              pageBreakAfter: s.page_break_after,
-              createdAt: s.created_at,
-            })),
-          createdAt: r.created_at,
-          updatedAt: r.updated_at,
-        }));
+        const mappedReports: KurbanReport[] = data.map((r: any) =>
+          mapReportFromDb(r)
+        );
 
         return NextResponse.json({
           success: true,
@@ -139,42 +92,61 @@ export async function PUT(request: Request) {
 
     // Update in Supabase
     const supabase = getSupabaseServerClient();
-    if (supabase) {
-      try {
-        await supabase
-          .from("kurban_reports")
-          .update({
-            title: body.title,
-            report_date: body.reportDate,
-            report_period: body.reportPeriod,
-            prepared_by: body.preparedBy,
-            status: body.status,
-            executive_summary: body.executiveSummary,
-            evaluation_notes: body.evaluationNotes,
-            final_result_summary: body.finalResultSummary,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", body.id);
+    if (supabase && isUUID(body.id)) {
+      const { error: repErr } = await supabase
+        .from("kurban_reports")
+        .update({
+          title: body.title,
+          report_date: body.reportDate,
+          report_period: body.reportPeriod,
+          prepared_by: body.preparedBy,
+          status: body.status,
+          executive_summary: body.executiveSummary,
+          evaluation_notes: body.evaluationNotes,
+          final_result_summary: body.finalResultSummary,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", body.id);
 
-        // If sections provided, upsert them
-        if (body.sections && Array.isArray(body.sections)) {
-          for (const s of body.sections) {
-            await supabase.from("kurban_report_sections").upsert({
-              id: s.id,
-              report_id: body.id,
-              section_key: s.sectionKey,
-              section_title: s.sectionTitle,
-              order_index: s.orderIndex,
-              is_enabled: s.isEnabled,
-              content_html: s.contentHtml,
-              custom_notes: s.customNotes,
-              include_tables: s.includeTables,
-              page_break_after: s.pageBreakAfter,
-            });
+      if (repErr) {
+        console.error("Supabase report update error:", repErr);
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Rapor Supabase'e kaydedilemedi: ${repErr.message}`,
+          },
+          { status: 500 }
+        );
+      }
+
+      // If sections provided, upsert them
+      if (body.sections && Array.isArray(body.sections)) {
+        for (const s of body.sections) {
+          const sectionId = ensureUUID(s.id);
+          const { error: secErr } = await supabase.from("kurban_report_sections").upsert({
+            id: sectionId,
+            report_id: body.id,
+            section_key: s.sectionKey,
+            section_title: s.sectionTitle,
+            order_index: s.orderIndex,
+            is_enabled: Boolean(s.isEnabled ?? true),
+            content_html: s.contentHtml || "",
+            custom_notes: s.customNotes || "",
+            include_tables: Boolean(s.includeTables ?? true),
+            page_break_after: Boolean(s.pageBreakAfter ?? false),
+          });
+
+          if (secErr) {
+            console.error("Supabase section update error:", secErr);
+            return NextResponse.json(
+              {
+                success: false,
+                error: `Rapor bölümü kaydedilemedi: ${secErr.message}`,
+              },
+              { status: 500 }
+            );
           }
         }
-      } catch (e) {
-        console.warn("Supabase report update fallback:", e);
       }
     }
 
@@ -206,8 +178,9 @@ export async function POST(request: Request) {
       );
     }
 
+    const revisionId = ensureUUID(body.id);
     const revision = {
-      id: `rev-${Date.now()}`,
+      id: revisionId,
       report_id: reportId,
       title: title || `Revizyon ${new Date().toLocaleDateString("tr-TR")}`,
       snapshot_data: snapshotData || {},
@@ -216,11 +189,17 @@ export async function POST(request: Request) {
     };
 
     const supabase = getSupabaseServerClient();
-    if (supabase) {
-      try {
-        await supabase.from("kurban_report_revisions").insert(revision);
-      } catch (e) {
-        console.warn("Revision insert fallback:", e);
+    if (supabase && isUUID(reportId)) {
+      const { error: revErr } = await supabase.from("kurban_report_revisions").insert(revision);
+      if (revErr) {
+        console.error("Supabase revision insert error:", revErr);
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Revizyon Supabase'e kaydedilemedi: ${revErr.message}`,
+          },
+          { status: 500 }
+        );
       }
     }
 

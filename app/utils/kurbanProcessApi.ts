@@ -14,6 +14,7 @@ import {
   KurbanReport,
   KurbanProcessStats,
 } from "../types/kurbanProcess";
+import { SEED_LOC_TUZLA_ID, SEED_LOC_KOCAELI_ID } from "./kurbanProcessSeed";
 
 /**
  * Fetch general process overview (stats, locations, parties, reports, etc.)
@@ -290,9 +291,9 @@ export function exportAnimalsToExcel(animals: KurbanAnimal[], filename = "Kurban
     "Sıra No": idx + 1,
     "Küpe Numarası": a.earTagNo,
     "Kesim Yeri":
-      a.cuttingLocationId === "loc-tuzla-ksm01"
+      a.cuttingLocationId === SEED_LOC_TUZLA_ID
         ? "1. Kesimhane (Tuzla)"
-        : a.cuttingLocationId === "loc-kocaeli-ksm02"
+        : a.cuttingLocationId === SEED_LOC_KOCAELI_ID
         ? "2. Kesimhane (Kartepe)"
         : "Tahsis Edilmedi",
     "Hayvan Cinsi": a.animalTypeLabel || a.animalType,

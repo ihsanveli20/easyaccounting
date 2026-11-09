@@ -91,6 +91,7 @@ import {
   downloadAnimalImportTemplate,
   saveEntityApi,
   deleteEntityApi,
+  clearMockDataApi,
 } from "../utils/kurbanProcessApi";
 import {
   compressImageFile,
@@ -169,6 +170,11 @@ export default function KurbanProcessModuleView() {
   // MANUEL EKLEME & DÜZENLEME MODALLARI (PARTIES, LOCATIONS, SHIPMENTS, STORAGE, DELIVERIES)
   // =========================================================================
 
+  // 0. Organization (Ana Organizasyon & Alıcı Kurum Bilgileri)
+  const [organizationModalOpen, setOrganizationModalOpen] = useState<boolean>(false);
+  const [editingOrganization, setEditingOrganization] =
+    useState<Partial<KurbanProcessOrganization> | null>(null);
+
   // 1. Party (Müşteri / Kurbanı Aldığım Yer / Besici / Soğuk Depo Firması)
   const [partyModalOpen, setPartyModalOpen] = useState<boolean>(false);
   const [editingParty, setEditingParty] = useState<Partial<KurbanParty> | null>(null);
@@ -182,15 +188,82 @@ export default function KurbanProcessModuleView() {
   const [shipmentModalOpen, setShipmentModalOpen] = useState<boolean>(false);
   const [editingShipment, setEditingShipment] = useState<Partial<KurbanShipment> | null>(null);
 
+  // 3.5. Slaughter Batch (Kesimhane Oturumu & Karkas Tartım Tutanağı)
+  const [slaughterModalOpen, setSlaughterModalOpen] = useState<boolean>(false);
+  const [editingSlaughter, setEditingSlaughter] =
+    useState<Partial<KurbanSlaughterBatch> | null>(null);
+
   // 4. Cold Storage Record (Soğuk Hava Depolama Kaydı)
   const [storageModalOpen, setStorageModalOpen] = useState<boolean>(false);
   const [editingStorage, setEditingStorage] = useState<Partial<KurbanStorageRecord> | null>(null);
+
+  // 4.5. Invoice (Mali Fatura & İrsaliye)
+  const [invoiceModalOpen, setInvoiceModalOpen] = useState<boolean>(false);
+  const [editingInvoice, setEditingInvoice] = useState<Partial<KurbanInvoice> | null>(null);
 
   // 5. Delivery Transport (Taşıma Aracı - PLAKA ZORUNLU DEĞİL)
   const [deliveryModalOpen, setDeliveryModalOpen] = useState<boolean>(false);
   const [editingDelivery, setEditingDelivery] = useState<Partial<KurbanDelivery> | null>(null);
 
   // Handlers for Save and Delete
+  const handleSaveOrganization = async (orgData: Partial<KurbanProcessOrganization>) => {
+    if (!orgData.clientCompanyName?.trim() && !orgData.name?.trim()) {
+      showToast("Lütfen organizasyon veya alıcı kurum adını giriniz.");
+      return;
+    }
+    setIsSaving(true);
+    try {
+      const res = await saveEntityApi("organization", orgData);
+      if (res.success && res.organization) {
+        setOrganization(res.organization);
+        setOrganizationModalOpen(false);
+        showToast("Organizasyon ve alıcı kurum bilgileri güncellendi.");
+        await loadOverview(selectedLocationId);
+      } else {
+        showToast(res.error || "Bilgiler kaydedilemedi.");
+      }
+    } catch {
+      showToast("Bir hata oluştu.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleClearMockData = async () => {
+    if (
+      !confirm(
+        "Mevcut tüm örnek (mock) firma, kesim yeri, sevk, depo, fatura ve teslimat kayıtlarını kalıcı olarak temizlemek istediğinize emin misiniz?"
+      )
+    ) {
+      return;
+    }
+    setIsSaving(true);
+    try {
+      const res = await clearMockDataApi();
+      if (res.success) {
+        setParties([]);
+        setCuttingLocations([]);
+        setShipments([]);
+        setSlaughterBatches([]);
+        setStorageRecords([]);
+        setInvoices([]);
+        setDeliveries([]);
+        setDocuments([]);
+        setReports([]);
+        setActiveReport(null);
+        setSelectedLocationId("all");
+        showToast(res.message || "Örnek (mock) veriler kalıcı olarak temizlendi.");
+        await loadOverview("all");
+      } else {
+        showToast(res.error || "Temizleme işlemi başarısız.");
+      }
+    } catch {
+      showToast("Temizleme sırasında hata oluştu.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleSaveParty = async (partyData: Partial<KurbanParty>) => {
     if (!partyData.name?.trim()) {
       showToast("Lütfen firma veya kişi adını giriniz.");
@@ -209,6 +282,9 @@ export default function KurbanProcessModuleView() {
           }
           return [res.party, ...prev];
         });
+        if (res.organization) {
+          setOrganization(res.organization);
+        }
         setPartyModalOpen(false);
         showToast("Paydaş / Firma kaydı başarıyla kaydedildi.");
       } else {
@@ -227,7 +303,9 @@ export default function KurbanProcessModuleView() {
       const res = await deleteEntityApi("party", id);
       if (res.success) {
         setParties((prev) => prev.filter((p) => p.id !== id));
-        showToast("Firma kaydı silindi.");
+        showToast("Firma kaydı kalıcı olarak silindi.");
+      } else {
+        showToast(res.error || "Firma silinemedi.");
       }
     } catch {
       showToast("Silme işlemi başarısız.");
@@ -252,6 +330,9 @@ export default function KurbanProcessModuleView() {
           }
           return [...prev, res.location];
         });
+        if (res.reports && Array.isArray(res.reports)) {
+          setReports(res.reports);
+        }
         setLocationModalOpen(false);
         showToast("Kesim yeri tesisi başarıyla kaydedildi.");
       } else {
@@ -270,7 +351,15 @@ export default function KurbanProcessModuleView() {
       const res = await deleteEntityApi("location", id);
       if (res.success) {
         setCuttingLocations((prev) => prev.filter((l) => l.id !== id));
-        showToast("Kesim yeri silindi.");
+        if (selectedLocationId === id) {
+          setSelectedLocationId("all");
+        }
+        if (res.reports && Array.isArray(res.reports)) {
+          setReports(res.reports);
+        }
+        showToast("Kesim yeri kalıcı olarak silindi.");
+      } else {
+        showToast(res.error || "Kesim yeri silinemedi.");
       }
     } catch {
       showToast("Silme işlemi başarısız.");
@@ -314,6 +403,53 @@ export default function KurbanProcessModuleView() {
       if (res.success) {
         setShipments((prev) => prev.filter((s) => s.id !== id));
         showToast("Sevk tırı silindi.");
+      } else {
+        showToast(res.error || "Sevk tırı silinemedi.");
+      }
+    } catch {
+      showToast("Silme işlemi başarısız.");
+    }
+  };
+
+  const handleSaveSlaughter = async (slgData: Partial<KurbanSlaughterBatch>) => {
+    if (!slgData.batchNo?.trim() && !slgData.cuttingLocationId) {
+      showToast("Lütfen kesimhane oturum bilgilerini giriniz.");
+      return;
+    }
+    setIsSaving(true);
+    try {
+      const res = await saveEntityApi("slaughter", slgData);
+      if (res.success && res.slaughter) {
+        setSlaughterBatches((prev) => {
+          const idx = prev.findIndex((b) => b.id === res.slaughter.id);
+          if (idx >= 0) {
+            const updated = [...prev];
+            updated[idx] = res.slaughter;
+            return updated;
+          }
+          return [res.slaughter, ...prev];
+        });
+        setSlaughterModalOpen(false);
+        showToast("Kesimhane oturumu ve karkas tartım tutanağı kaydedildi.");
+      } else {
+        showToast(res.error || "Kesim oturumu kaydedilemedi.");
+      }
+    } catch {
+      showToast("Bir hata oluştu.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDeleteSlaughter = async (id: string) => {
+    if (!confirm("Bu kesimhane oturumu / tutanak kaydını silmek istediğinize emin misiniz?")) return;
+    try {
+      const res = await deleteEntityApi("slaughter", id);
+      if (res.success) {
+        setSlaughterBatches((prev) => prev.filter((b) => b.id !== id));
+        showToast("Kesimhane oturumu silindi.");
+      } else {
+        showToast(res.error || "Kesim oturumu silinemedi.");
       }
     } catch {
       showToast("Silme işlemi başarısız.");
@@ -357,6 +493,53 @@ export default function KurbanProcessModuleView() {
       if (res.success) {
         setStorageRecords((prev) => prev.filter((st) => st.id !== id));
         showToast("Depolama kaydı silindi.");
+      } else {
+        showToast(res.error || "Depolama kaydı silinemedi.");
+      }
+    } catch {
+      showToast("Silme işlemi başarısız.");
+    }
+  };
+
+  const handleSaveInvoice = async (invData: Partial<KurbanInvoice>) => {
+    if (!invData.invoiceNo?.trim() && !invData.issuerCompany?.trim()) {
+      showToast("Lütfen fatura numarası ve düzenleyen firma adını giriniz.");
+      return;
+    }
+    setIsSaving(true);
+    try {
+      const res = await saveEntityApi("invoice", invData);
+      if (res.success && res.invoice) {
+        setInvoices((prev) => {
+          const idx = prev.findIndex((inv) => inv.id === res.invoice.id);
+          if (idx >= 0) {
+            const updated = [...prev];
+            updated[idx] = res.invoice;
+            return updated;
+          }
+          return [res.invoice, ...prev];
+        });
+        setInvoiceModalOpen(false);
+        showToast("Fatura kaydı başarıyla kaydedildi.");
+      } else {
+        showToast(res.error || "Fatura kaydedilemedi.");
+      }
+    } catch {
+      showToast("Bir hata oluştu.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDeleteInvoice = async (id: string) => {
+    if (!confirm("Bu fatura kaydını silmek istediğinize emin misiniz?")) return;
+    try {
+      const res = await deleteEntityApi("invoice", id);
+      if (res.success) {
+        setInvoices((prev) => prev.filter((inv) => inv.id !== id));
+        showToast("Fatura kaydı silindi.");
+      } else {
+        showToast(res.error || "Fatura silinemedi.");
       }
     } catch {
       showToast("Silme işlemi başarısız.");
@@ -401,6 +584,8 @@ export default function KurbanProcessModuleView() {
       if (res.success) {
         setDeliveries((prev) => prev.filter((d) => d.id !== id));
         showToast("Taşıma aracı kaydı silindi.");
+      } else {
+        showToast(res.error || "Teslimat kaydı silinemedi.");
       }
     } catch {
       showToast("Silme işlemi başarısız.");
@@ -508,7 +693,10 @@ export default function KurbanProcessModuleView() {
         uploadedAt: new Date().toISOString(),
       };
 
-      setDocuments((prev) => [newDoc, ...prev]);
+      const savedRes = await saveEntityApi("document", newDoc);
+      const finalDoc = savedRes.document || newDoc;
+
+      setDocuments((prev) => [finalDoc, ...prev]);
       setPhotoUploadModalOpen(false);
       showToast(
         `✅ Fotoğraf başarıyla yüklendi (${formatBytes(
@@ -550,24 +738,30 @@ export default function KurbanProcessModuleView() {
         if (data.invoices) setInvoices(data.invoices);
         if (data.deliveries) setDeliveries(data.deliveries);
         if (data.documents) setDocuments(data.documents);
-        if (data.reports && data.reports.length > 0) {
+        if (Array.isArray(data.reports)) {
           const fetchedReports = data.reports;
           setReports(fetchedReports);
-          setActiveReport((prev) => {
-            if (prev) {
-              const matched = fetchedReports.find((r: KurbanReport) => r.id === prev.id);
-              if (matched) return matched;
-            }
-            if (selectedReportId) {
-              const matchedById = fetchedReports.find((r: KurbanReport) => r.id === selectedReportId);
-              if (matchedById) return matchedById;
-            }
-            return fetchedReports[0];
-          });
-          setSelectedReportId((prev) => {
-            if (prev && fetchedReports.some((r: KurbanReport) => r.id === prev)) return prev;
-            return fetchedReports[0].id;
-          });
+          if (fetchedReports.length > 0) {
+            setActiveReport((prev) => {
+              if (prev) {
+                const matched = fetchedReports.find((r: KurbanReport) => r.id === prev.id);
+                if (matched) return matched;
+              }
+              if (selectedReportId) {
+                const matchedById = fetchedReports.find(
+                  (r: KurbanReport) => r.id === selectedReportId
+                );
+                if (matchedById) return matchedById;
+              }
+              return fetchedReports[0];
+            });
+            setSelectedReportId((prev) => {
+              if (prev && fetchedReports.some((r: KurbanReport) => r.id === prev)) return prev;
+              return fetchedReports[0].id;
+            });
+          } else {
+            setActiveReport(null);
+          }
         }
         if (data.stats) setStats(data.stats);
       }
@@ -904,36 +1098,81 @@ export default function KurbanProcessModuleView() {
                 Resmî Kurban Süreç & Denetim Takip Modülü
               </span>
 
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 text-xs font-semibold">
-                <Building2 className="w-3.5 h-3.5 text-indigo-400" />
-                {organization?.clientCompanyName || "Anadolu Gıda & Perakende A.Ş."}
-              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingOrganization(
+                    organization || {
+                      name: "2026 Kurban Organizasyonu",
+                      clientCompanyName: "",
+                      targetAnimalCount: 350,
+                    }
+                  );
+                  setOrganizationModalOpen(true);
+                }}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-indigo-500/20 hover:bg-indigo-500/35 border border-indigo-400/40 text-indigo-200 text-xs font-semibold transition-all cursor-pointer"
+                title="Alıcı Kurum / Müşteri ve Organizasyon Bilgilerini Düzenle"
+              >
+                <Building2 className="w-3.5 h-3.5 text-indigo-300" />
+                <span>{organization?.clientCompanyName || "Alıcı Kurum Seç / Düzenle"}</span>
+                <Edit3 className="w-3 h-3 text-indigo-300 ml-0.5" />
+              </button>
 
               <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-bold font-mono">
-                350 Hayvan • 2 Kesimhane
+                {organization?.targetAnimalCount || totalAnimalCount || 350} Hayvan •{" "}
+                {cuttingLocations.length} Kesimhane
               </span>
             </div>
 
             <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight leading-tight">
-              Canlı Hayvan Alımı, Sevkiyat, Kesim ve Resmî Raporlama
+              {organization?.name || "Canlı Hayvan Alımı, Sevkiyat, Kesim ve Resmî Raporlama"}
             </h1>
             <p className="text-xs sm:text-sm text-slate-300/90 mt-2 leading-relaxed">
-              350 adet canlı hayvanın satın alınması, Kars ve Erzurum'dan iki bağımsız kesimhaneye (Tuzla ve Kartepe) sevki,
-              veteriner kontrollü kesimi, karkas soğuk depolaması, müşteriye teslimatı ve <strong>her kesim yeri için ayrı resmî denetim raporu</strong> oluşturulması.
+              {organization?.description ||
+                "Canlı hayvan satın alımı, kesimhanelere sevkiyat, veteriner kontrollü kesim, soğuk hava depolama, müşteriye teslimat ve her kesim yeri için ayrı resmî denetim raporu yönetimi."}
             </p>
           </div>
 
           {/* Quick Header Actions */}
-          <div className="flex flex-wrap items-center gap-2.5 self-start lg:self-center">
+          <div className="flex flex-wrap items-center gap-2 self-start lg:self-center">
+            <button
+              type="button"
+              onClick={() => {
+                setEditingOrganization(
+                  organization || {
+                    name: "2026 Kurban Organizasyonu",
+                    clientCompanyName: "",
+                    targetAnimalCount: 350,
+                  }
+                );
+                setOrganizationModalOpen(true);
+              }}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-600/80 hover:bg-indigo-600 text-white font-bold text-xs border border-indigo-400/30 transition-all shadow-sm"
+            >
+              <Edit3 className="w-3.5 h-3.5" />
+              <span>Alıcı Kurum Düzenle</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleClearMockData}
+              disabled={isSaving}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-600/80 hover:bg-rose-600 text-white font-bold text-xs border border-rose-400/30 transition-all shadow-sm"
+              title="Örnek / Mock verileri kalıcı olarak temizle"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Örnek Verileri Temizle</span>
+            </button>
+
             {/* Supabase Seed Button */}
             <button
               onClick={handleSeedToSupabase}
               disabled={isSaving}
-              className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs sm:text-sm transition-all shadow-lg shadow-emerald-900/30 hover:scale-102"
-              title="350 hayvan, 2 kesimhane ve tüm süreç verilerini Supabase'e yaz"
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-emerald-200 font-bold text-xs border border-white/15 transition-all"
+              title="350 hayvan, 2 kesimhane ve örnek süreç verilerini yükle"
             >
-              <Database className="w-4 h-4 text-emerald-200" />
-              <span>Verileri Supabase'e Aktar</span>
+              <Database className="w-3.5 h-3.5 text-emerald-300" />
+              <span>Örnek Veri Yükle</span>
             </button>
 
             {/* Filter by Cutting Location */}
@@ -947,7 +1186,9 @@ export default function KurbanProcessModuleView() {
                 onChange={(e) => setSelectedLocationId(e.target.value)}
                 className="bg-slate-900/90 text-white text-xs font-bold py-1.5 px-3 rounded-lg border border-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400"
               >
-                <option value="all">Tüm Kesimhaneler (350 Hayvan)</option>
+                <option value="all">
+                  Tüm Kesimhaneler ({cuttingLocations.length} Tesis)
+                </option>
                 {cuttingLocations.map((loc) => (
                   <option key={loc.id} value={loc.id}>
                     {loc.name} ({loc.allocatedAnimalCount} Hayvan)
@@ -1072,7 +1313,7 @@ export default function KurbanProcessModuleView() {
           }`}
         >
           <MapPin className="w-4 h-4 text-rose-500" />
-          <span>Kesim Yerleri (2 Tesis)</span>
+          <span>Kesim Yerleri ({cuttingLocations.length} Tesis)</span>
         </button>
 
         <button
@@ -1146,7 +1387,7 @@ export default function KurbanProcessModuleView() {
           <ScrollText className="w-4 h-4 text-emerald-500 dark:text-emerald-300" />
           <span>Resmî Raporlar & Editör</span>
           <span className="px-1.5 py-0.5 rounded-md bg-emerald-700/80 text-[10px] text-white">
-            2 Rapor
+            {reports.length} Rapor
           </span>
         </button>
       </div>
@@ -1376,19 +1617,48 @@ export default function KurbanProcessModuleView() {
               </p>
             </div>
 
-            <button
-              onClick={() => {
-                setEditingParty({
-                  partyType: "supplier_seller",
-                  city: "İstanbul",
-                });
-                setPartyModalOpen(true);
-              }}
-              className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-md shadow-indigo-600/20 flex items-center gap-1.5 transition-all self-start sm:self-auto active:scale-95"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Yeni Firma / Paydaş Ekle</span>
-            </button>
+            <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+              <button
+                onClick={() => {
+                  setEditingOrganization({
+                    ...organization,
+                  });
+                  setOrganizationModalOpen(true);
+                }}
+                className="px-3.5 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs shadow-md shadow-amber-600/20 flex items-center gap-1.5 transition-all active:scale-95"
+              >
+                <Edit3 className="w-4 h-4" />
+                <span>Ana Alıcı Kurum & Sözleşme Düzenle</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setEditingParty({
+                    partyType: "client_buyer",
+                    city: "İstanbul",
+                  });
+                  setPartyModalOpen(true);
+                }}
+                className="px-3.5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md shadow-emerald-600/20 flex items-center gap-1.5 transition-all active:scale-95"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Yeni Alıcı Müşteri Ekle</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setEditingParty({
+                    partyType: "supplier_seller",
+                    city: "İstanbul",
+                  });
+                  setPartyModalOpen(true);
+                }}
+                className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-md shadow-indigo-600/20 flex items-center gap-1.5 transition-all active:scale-95"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Yeni Firma / Paydaş Ekle</span>
+              </button>
+            </div>
           </div>
 
           {/* Filter Chips */}
@@ -1504,6 +1774,11 @@ export default function KurbanProcessModuleView() {
                   </div>
                 </div>
               ))}
+            {parties.filter((p) => partyTypeFilter === "all" || p.partyType === partyTypeFilter).length === 0 && (
+              <div className="col-span-full py-12 text-center text-slate-400 text-xs bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700">
+                Bu kategoride kayıtlı firma veya müşteri bulunamadı. Yukarıdaki butonlardan yeni kayıt ekleyebilirsiniz.
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1625,6 +1900,11 @@ export default function KurbanProcessModuleView() {
                 </div>
               </div>
             ))}
+            {cuttingLocations.length === 0 && (
+              <div className="col-span-full py-12 text-center text-slate-400 text-xs bg-white dark:bg-slate-900 rounded-3xl border border-dashed border-slate-200 dark:border-slate-800">
+                Henüz kesim yeri eklenmemiş. &quot;Yeni Kesim Yeri Ekle&quot; butonuna tıklayarak ilk kesimhanenizi oluşturabilirsiniz.
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1650,14 +1930,14 @@ export default function KurbanProcessModuleView() {
                 onClick={() => {
                   setEditingAnimal({
                     earTagNo: `TR34-${String(Date.now()).slice(-5)}`,
-                    cuttingLocationId: SEED_LOC_TUZLA_ID,
+                    cuttingLocationId: cuttingLocations[0]?.id || "",
                     animalType: "buyukbas_tosun",
                     animalTypeLabel: "Büyükbaş Tosun",
                     breed: "Simental",
                     gender: "male",
                     ageMonths: 24,
                     farmRegNo: "TR-36-004128",
-                    farmName: "Serhat Besi Çiftliği",
+                    farmName: parties.find((p) => p.partyType === "supplier_seller")?.name || "",
                     liveWeightKg: 650,
                     carcassWeightKg: 368,
                     status: "delivered",
@@ -1789,12 +2069,12 @@ export default function KurbanProcessModuleView() {
                         <td className="py-2.5 px-3">
                           <span
                             className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-bold ${
-                              a.cuttingLocationId === SEED_LOC_TUZLA_ID
+                              cuttingLocations.findIndex((l) => l.id === a.cuttingLocationId) % 2 === 0
                                 ? "bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300"
                                 : "bg-purple-50 text-purple-700 dark:bg-purple-950 dark:text-purple-300"
                             }`}
                           >
-                            {a.cuttingLocationId === SEED_LOC_TUZLA_ID ? "1. Tuzla" : "2. Kartepe"}
+                            {cuttingLocations.find((l) => l.id === a.cuttingLocationId)?.name || "Atanmadı"}
                           </span>
                         </td>
                         <td className="py-2.5 px-3 text-slate-700 dark:text-slate-300 font-medium">
@@ -2053,10 +2333,38 @@ export default function KurbanProcessModuleView() {
         <div className="space-y-6">
           {/* Slaughter Batches Section */}
           <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
-            <h3 className="text-lg font-black text-slate-900 dark:text-slate-100 flex items-center gap-2">
-              <Warehouse className="w-5 h-5 text-rose-600" />
-              Kesimhane Oturumları & Karkas Tartım Tutanakları
-            </h3>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-200 dark:border-slate-800">
+              <div>
+                <h3 className="text-lg font-black text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                  <Warehouse className="w-5 h-5 text-rose-600" />
+                  Kesimhane Oturumları & Karkas Tartım Tutanakları ({slaughterBatches.length})
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Kesim oturumları, kasap ekipleri, veteriner onayları ve karkas tartım tutanakları
+                </p>
+              </div>
+
+              <button
+                onClick={() => {
+                  setEditingSlaughter({
+                    batchNo: `KSM-BATCH-00${slaughterBatches.length + 1}`,
+                    slaughterDate: new Date().toISOString().split("T")[0],
+                    slaughterTime: "07:00",
+                    cuttingLocationId: cuttingLocations[0]?.id || "",
+                    animalCount: 50,
+                    totalCarcassWeightKg: 18500,
+                    butcherTeam: "Başkasap Ekibi (12 Kişi)",
+                    veterinaryApproval: true,
+                    officialProtocolNo: `TUT-2026-0${slaughterBatches.length + 1}`,
+                  });
+                  setSlaughterModalOpen(true);
+                }}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shadow-md shadow-rose-600/20 flex items-center gap-1.5 transition-all self-start sm:self-auto active:scale-95"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Yeni Kesim Oturumu Ekle</span>
+              </button>
+            </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {slaughterBatches.map((b) => (
@@ -2072,7 +2380,7 @@ export default function KurbanProcessModuleView() {
                   </div>
 
                   <h4 className="text-base font-bold text-slate-900 dark:text-slate-100">
-                    {b.cuttingLocationName}
+                    {cuttingLocations.find((l) => l.id === b.cuttingLocationId)?.name || b.cuttingLocationName}
                   </h4>
 
                   <div className="grid grid-cols-2 gap-2 p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800">
@@ -2096,37 +2404,58 @@ export default function KurbanProcessModuleView() {
                     <div><strong>Veteriner Onayı:</strong> <span className="text-emerald-600 font-bold">✓ Tam Onaylı</span></div>
                   </div>
 
-                  <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-200/60 dark:border-slate-800">
-                    <button
-                      onClick={() =>
-                        openPhotoUploadModal(
-                          "slaughter",
-                          b.id,
-                          `${b.cuttingLocationName} Kesim & Tartım Tutanağı Fotoğrafı`
-                        )
-                      }
-                      className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600 hover:text-emerald-700 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-1 rounded-lg border border-emerald-200 dark:border-emerald-800 transition-colors"
-                    >
-                      <Plus className="w-3 h-3" />
-                      <span>Fotoğraf Ekle</span>
-                    </button>
+                  <div className="pt-2 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200/60 dark:border-slate-800">
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => {
+                          setEditingSlaughter(b);
+                          setSlaughterModalOpen(true);
+                        }}
+                        className="p-1.5 rounded-lg text-slate-600 hover:text-rose-600 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-bold flex items-center gap-1"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                        <span>Düzenle</span>
+                      </button>
+                      <button
+                        onClick={() => handleDeleteSlaughter(b.id)}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
 
-                    <button
-                      onClick={() => {
-                        const doc = documents.find((d) => d.relatedEntityId === b.id) || documents[2];
-                        if (doc) {
-                          setPhotoPreview({
-                            url: doc.fileUrl,
-                            title: `${b.cuttingLocationName} Kesimhane Fotoğrafı`,
-                            desc: doc.description,
-                          });
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() =>
+                          openPhotoUploadModal(
+                            "slaughter",
+                            b.id,
+                            `${b.cuttingLocationName} Kesim & Tartım Tutanağı Fotoğrafı`
+                          )
                         }
-                      }}
-                      className="inline-flex items-center gap-1 text-xs font-bold text-rose-600 hover:text-rose-700"
-                    >
-                      <Camera className="w-3.5 h-3.5" />
-                      <span>Kesimhane Fotoğrafı</span>
-                    </button>
+                        className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600 hover:text-emerald-700 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-1 rounded-lg border border-emerald-200 dark:border-emerald-800 transition-colors"
+                      >
+                        <Plus className="w-3 h-3" />
+                        <span>Fotoğraf Ekle</span>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          const doc = documents.find((d) => d.relatedEntityId === b.id) || documents[2];
+                          if (doc) {
+                            setPhotoPreview({
+                              url: doc.fileUrl,
+                              title: `${b.cuttingLocationName} Kesimhane Fotoğrafı`,
+                              desc: doc.description,
+                            });
+                          }
+                        }}
+                        className="inline-flex items-center gap-1 text-xs font-bold text-rose-600 hover:text-rose-700"
+                      >
+                        <Camera className="w-3.5 h-3.5" />
+                        <span>Kesimhane Fotoğrafı</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -2238,12 +2567,35 @@ export default function KurbanProcessModuleView() {
             <div>
               <h3 className="text-lg font-black text-slate-900 dark:text-slate-100 flex items-center gap-2">
                 <FileText className="w-5 h-5 text-indigo-600" />
-                Mali Belgeler: Alım, Nakliye, Kesim, Depo ve Satış Faturaları
+                Mali Belgeler: Alım, Nakliye, Kesim, Depo ve Satış Faturaları ({invoices.length})
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
                 Kurban süreci kapsamındaki tüm mali kayıtlar, %1 ve %20 KDV analizleri
               </p>
             </div>
+
+            <button
+              onClick={() => {
+                setEditingInvoice({
+                  invoiceNo: `GIB${new Date().getFullYear()}000000${invoices.length + 1}`,
+                  invoiceDate: new Date().toISOString().split("T")[0],
+                  invoiceType: "animal_purchase",
+                  issuerCompany: parties.find((p) => p.partyType === "supplier_seller")?.name || "",
+                  recipientCompany: organization?.clientCompanyName || "",
+                  cuttingLocationId: cuttingLocations[0]?.id || "",
+                  description: "",
+                  subtotal: 0,
+                  vatRate: 1,
+                  vatAmount: 0,
+                  totalAmount: 0,
+                });
+                setInvoiceModalOpen(true);
+              }}
+              className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-md shadow-indigo-600/20 flex items-center gap-1.5 transition-all self-start sm:self-auto active:scale-95"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Yeni Fatura Ekle</span>
+            </button>
           </div>
 
           <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800">
@@ -2258,6 +2610,7 @@ export default function KurbanProcessModuleView() {
                   <th className="py-3 px-3 text-right">Matrah (₺)</th>
                   <th className="py-3 px-3 text-center">KDV</th>
                   <th className="py-3 px-3 text-right">Genel Toplam (₺)</th>
+                  <th className="py-3 px-3 text-center">İşlem</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -2300,6 +2653,27 @@ export default function KurbanProcessModuleView() {
                     </td>
                     <td className="py-3 px-3 text-right font-mono font-extrabold text-slate-900 dark:text-slate-100">
                       {inv.totalAmount.toLocaleString("tr-TR")} ₺
+                    </td>
+                    <td className="py-3 px-3 text-center">
+                      <div className="flex items-center justify-center gap-1">
+                        <button
+                          onClick={() => {
+                            setEditingInvoice(inv);
+                            setInvoiceModalOpen(true);
+                          }}
+                          className="p-1 text-slate-400 hover:text-indigo-600 transition-colors"
+                          title="Düzenle"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteInvoice(inv.id)}
+                          className="p-1 text-slate-400 hover:text-rose-600 transition-colors"
+                          title="Sil"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -2995,7 +3369,10 @@ export default function KurbanProcessModuleView() {
 
               <div className="space-y-1">
                 <div className="text-slate-500 font-bold uppercase text-[10px]">Tesis Yetkili Veteriner Hekimi</div>
-                <div className="font-bold text-slate-900">Vet. Hekim Dr. Selim Karaca</div>
+                <div className="font-bold text-slate-900">
+                  {cuttingLocations.find((l) => l.id === activeReport.cuttingLocationId)?.veterinaryName ||
+                    "Tesis Veteriner Hekimi"}
+                </div>
                 <div className="text-slate-500">Gıda & Tarım Bakanlığı Denetçisi</div>
                 <div className="h-14 flex items-end justify-center font-cursive text-slate-400">
                   (Resmî Mühür & İmza)
@@ -3004,8 +3381,14 @@ export default function KurbanProcessModuleView() {
 
               <div className="space-y-1">
                 <div className="text-slate-500 font-bold uppercase text-[10px]">Müşteri Kabul Yetkilisi</div>
-                <div className="font-bold text-slate-900">Mehmet Akif Yılmaz</div>
-                <div className="text-slate-500">Anadolu Gıda & Perakende A.Ş.</div>
+                <div className="font-bold text-slate-900">
+                  {parties.find((p) => p.partyType === "client_buyer")?.authorizedPerson || "Müşteri Kabul Yetkilisi"}
+                </div>
+                <div className="text-slate-500">
+                  {parties.find((p) => p.partyType === "client_buyer")?.name ||
+                    organization?.clientCompanyName ||
+                    activeReport.clientCompanyName}
+                </div>
                 <div className="h-14 flex items-end justify-center font-cursive text-slate-400">
                   (Onay & İmza)
                 </div>
@@ -3086,8 +3469,12 @@ export default function KurbanProcessModuleView() {
                     onChange={(e) => setEditingAnimal({ ...editingAnimal, cuttingLocationId: e.target.value })}
                     className="w-full text-xs p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-medium"
                   >
-                    <option value={SEED_LOC_TUZLA_ID}>1. Kesimhane (Tuzla)</option>
-                    <option value={SEED_LOC_KOCAELI_ID}>2. Kesimhane (Kartepe)</option>
+                    <option value="">Kesim Yeri Seçiniz...</option>
+                    {cuttingLocations.map((loc) => (
+                      <option key={loc.id} value={loc.id}>
+                        {loc.name} ({loc.city})
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
@@ -4745,6 +5132,515 @@ export default function KurbanProcessModuleView() {
                 )}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: ORGANİZASYON & ANA ALICI KURUM DÜZENLE                             */}
+      {/* ========================================================================= */}
+      {organizationModalOpen && editingOrganization && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+          <div className="w-full max-w-xl rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl p-6 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
+              <h3 className="text-base font-extrabold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                <Building2 className="w-5 h-5 text-amber-500" />
+                <span>Organizasyon & Ana Alıcı Kurum Bilgileri</span>
+              </h3>
+              <button
+                onClick={() => setOrganizationModalOpen(false)}
+                className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (editingOrganization) handleSaveOrganization(editingOrganization);
+              }}
+              className="space-y-4 text-xs"
+            >
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Organizasyon / Operasyon Adı *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editingOrganization.name || ""}
+                  onChange={(e) =>
+                    setEditingOrganization({ ...editingOrganization, name: e.target.value })
+                  }
+                  placeholder="Örn: 2026 Kurban Eti Tedarik ve Kesim Operasyonu"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Ana Alıcı Müşteri / Kurum Adı *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editingOrganization.clientCompanyName || ""}
+                  onChange={(e) =>
+                    setEditingOrganization({
+                      ...editingOrganization,
+                      clientCompanyName: e.target.value,
+                    })
+                  }
+                  placeholder="Örn: Anadolu Gıda & Perakende A.Ş."
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-bold"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Başlangıç Tarihi
+                  </label>
+                  <input
+                    type="date"
+                    value={editingOrganization.startDate || ""}
+                    onChange={(e) =>
+                      setEditingOrganization({
+                        ...editingOrganization,
+                        startDate: e.target.value,
+                      })
+                    }
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Alıcı Vergi No
+                  </label>
+                  <input
+                    type="text"
+                    value={editingOrganization.clientTaxNo || ""}
+                    onChange={(e) =>
+                      setEditingOrganization({
+                        ...editingOrganization,
+                        clientTaxNo: e.target.value,
+                      })
+                    }
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Planlanan Hayvan Adedi
+                  </label>
+                  <input
+                    type="number"
+                    value={editingOrganization.targetAnimalCount || 0}
+                    onChange={(e) =>
+                      setEditingOrganization({
+                        ...editingOrganization,
+                        targetAnimalCount: Number(e.target.value),
+                      })
+                    }
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Operasyon Açıklaması / Notlar
+                  </label>
+                  <input
+                    type="text"
+                    value={editingOrganization.description || ""}
+                    onChange={(e) =>
+                      setEditingOrganization({
+                        ...editingOrganization,
+                        description: e.target.value,
+                      })
+                    }
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setOrganizationModalOpen(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold"
+                >
+                  İptal
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSaving}
+                  className="px-5 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold shadow-md shadow-amber-600/20"
+                >
+                  {isSaving ? "Kaydediliyor..." : "Bilgileri Kaydet"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: KESİM OTURUMU EKLE / DÜZENLE                                       */}
+      {/* ========================================================================= */}
+      {slaughterModalOpen && editingSlaughter && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+          <div className="w-full max-w-xl rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl p-6 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
+              <h3 className="text-base font-extrabold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                <Warehouse className="w-5 h-5 text-rose-600" />
+                <span>{editingSlaughter.id ? "Kesim Oturumu Düzenle" : "Yeni Kesim Oturumu Ekle"}</span>
+              </h3>
+              <button
+                onClick={() => setSlaughterModalOpen(false)}
+                className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (editingSlaughter) handleSaveSlaughter(editingSlaughter);
+              }}
+              className="space-y-4 text-xs"
+            >
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Kesim Yeri / Mezbaha *
+                  </label>
+                  <select
+                    required
+                    value={editingSlaughter.cuttingLocationId || ""}
+                    onChange={(e) =>
+                      setEditingSlaughter({
+                        ...editingSlaughter,
+                        cuttingLocationId: e.target.value,
+                      })
+                    }
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold"
+                  >
+                    <option value="">Seçiniz...</option>
+                    {cuttingLocations.map((loc) => (
+                      <option key={loc.id} value={loc.id}>
+                        {loc.name} ({loc.city})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Parti / Oturum Kodu *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editingSlaughter.batchNo || ""}
+                    onChange={(e) =>
+                      setEditingSlaughter({ ...editingSlaughter, batchNo: e.target.value })
+                    }
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Kesim Tarihi
+                  </label>
+                  <input
+                    type="date"
+                    value={editingSlaughter.slaughterDate || ""}
+                    onChange={(e) =>
+                      setEditingSlaughter({ ...editingSlaughter, slaughterDate: e.target.value })
+                    }
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Kesilen Hayvan Adedi
+                  </label>
+                  <input
+                    type="number"
+                    value={editingSlaughter.animalCount || 0}
+                    onChange={(e) =>
+                      setEditingSlaughter({
+                        ...editingSlaughter,
+                        animalCount: Number(e.target.value),
+                      })
+                    }
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-mono font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Karkas Net Et (Kg)
+                  </label>
+                  <input
+                    type="number"
+                    value={editingSlaughter.totalCarcassWeightKg || 0}
+                    onChange={(e) =>
+                      setEditingSlaughter({
+                        ...editingSlaughter,
+                        totalCarcassWeightKg: Number(e.target.value),
+                      })
+                    }
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-mono font-bold text-emerald-600"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Kasap Ekibi
+                  </label>
+                  <input
+                    type="text"
+                    value={editingSlaughter.butcherTeam || ""}
+                    onChange={(e) =>
+                      setEditingSlaughter({ ...editingSlaughter, butcherTeam: e.target.value })
+                    }
+                    className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Resmî Tutanak No
+                  </label>
+                  <input
+                    type="text"
+                    value={editingSlaughter.officialProtocolNo || ""}
+                    onChange={(e) =>
+                      setEditingSlaughter({
+                        ...editingSlaughter,
+                        officialProtocolNo: e.target.value,
+                      })
+                    }
+                    className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setSlaughterModalOpen(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold"
+                >
+                  İptal
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSaving}
+                  className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold shadow-md shadow-rose-600/20"
+                >
+                  {isSaving ? "Kaydediliyor..." : "Kesim Oturumunu Kaydet"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: FATURA EKLE / DÜZENLE                                              */}
+      {/* ========================================================================= */}
+      {invoiceModalOpen && editingInvoice && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+          <div className="w-full max-w-xl rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl p-6 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
+              <h3 className="text-base font-extrabold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                <FileText className="w-5 h-5 text-indigo-600" />
+                <span>{editingInvoice.id ? "Fatura Düzenle" : "Yeni Fatura Ekle"}</span>
+              </h3>
+              <button
+                onClick={() => setInvoiceModalOpen(false)}
+                className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (editingInvoice) handleSaveInvoice(editingInvoice);
+              }}
+              className="space-y-4 text-xs"
+            >
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Fatura Türü
+                  </label>
+                  <select
+                    value={editingInvoice.invoiceType || "animal_purchase"}
+                    onChange={(e) =>
+                      setEditingInvoice({
+                        ...editingInvoice,
+                        invoiceType: e.target.value as KurbanInvoice["invoiceType"],
+                      })
+                    }
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold"
+                  >
+                    <option value="animal_purchase">Hayvan Alımı</option>
+                    <option value="transport_shipping">Nakliye</option>
+                    <option value="slaughter_service">Kesim Hizmeti</option>
+                    <option value="storage_service">Soğuk Depolama</option>
+                    <option value="sales_outgoing">Satış Çıkış</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Fatura No *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editingInvoice.invoiceNo || ""}
+                    onChange={(e) =>
+                      setEditingInvoice({ ...editingInvoice, invoiceNo: e.target.value })
+                    }
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-mono font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Tarih
+                  </label>
+                  <input
+                    type="date"
+                    value={editingInvoice.invoiceDate || ""}
+                    onChange={(e) =>
+                      setEditingInvoice({ ...editingInvoice, invoiceDate: e.target.value })
+                    }
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Düzenleyen Firma *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editingInvoice.issuerCompany || ""}
+                    onChange={(e) =>
+                      setEditingInvoice({ ...editingInvoice, issuerCompany: e.target.value })
+                    }
+                    className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Alıcı / Muhatap Firma *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editingInvoice.recipientCompany || ""}
+                    onChange={(e) =>
+                      setEditingInvoice({ ...editingInvoice, recipientCompany: e.target.value })
+                    }
+                    className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-semibold"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Matrah (KDV Hariç ₺)
+                  </label>
+                  <input
+                    type="number"
+                    value={editingInvoice.subtotal || 0}
+                    onChange={(e) => {
+                      const sub = Number(e.target.value);
+                      const rate = Number(editingInvoice.vatRate ?? 1);
+                      const vat = Math.round((sub * rate) / 100);
+                      setEditingInvoice({
+                        ...editingInvoice,
+                        subtotal: sub,
+                        vatAmount: vat,
+                        totalAmount: sub + vat,
+                      });
+                    }}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    KDV Oranı (%)
+                  </label>
+                  <input
+                    type="number"
+                    value={editingInvoice.vatRate ?? 1}
+                    onChange={(e) => {
+                      const rate = Number(e.target.value);
+                      const sub = Number(editingInvoice.subtotal || 0);
+                      const vat = Math.round((sub * rate) / 100);
+                      setEditingInvoice({
+                        ...editingInvoice,
+                        vatRate: rate,
+                        vatAmount: vat,
+                        totalAmount: sub + vat,
+                      });
+                    }}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Genel Toplam (₺)
+                  </label>
+                  <input
+                    type="number"
+                    value={editingInvoice.totalAmount || 0}
+                    onChange={(e) =>
+                      setEditingInvoice({
+                        ...editingInvoice,
+                        totalAmount: Number(e.target.value),
+                      })
+                    }
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-mono font-bold text-indigo-600"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setInvoiceModalOpen(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold"
+                >
+                  İptal
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSaving}
+                  className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold shadow-md shadow-indigo-600/20"
+                >
+                  {isSaving ? "Kaydediliyor..." : "Faturayı Kaydet"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

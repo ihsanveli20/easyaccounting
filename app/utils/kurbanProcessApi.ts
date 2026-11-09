@@ -39,13 +39,19 @@ export async function fetchProcessOverviewApi(locationId?: string): Promise<{
   error?: string;
 }> {
   try {
-    const url = `/api/kurban-process${
-      locationId && locationId !== "all" ? `?locationId=${encodeURIComponent(locationId)}` : ""
-    }`;
+    const query = new URLSearchParams();
+    if (locationId && locationId !== "all") {
+      query.set("locationId", locationId);
+    }
+    query.set("_t", String(Date.now()));
+    const url = `/api/kurban-process?${query.toString()}`;
 
     const res = await fetch(url, {
       method: "GET",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "Cache-Control": "no-cache",
+      },
       cache: "no-store",
     });
 
@@ -394,11 +400,22 @@ export function downloadAnimalImportTemplate(): void {
   XLSX.writeFile(workbook, "Toplu_Hayvan_Yukleme_Sablonu.xlsx");
 }
 
+export type KurbanEntityType =
+  | "organization"
+  | "party"
+  | "location"
+  | "shipment"
+  | "slaughter"
+  | "storage"
+  | "invoice"
+  | "delivery"
+  | "document";
+
 /**
- * Generic Entity Save API (Party, Location, Shipment, Storage, Delivery)
+ * Generic Entity Save API (Organization, Party, Location, Shipment, Slaughter, Storage, Invoice, Delivery, Document)
  */
 export async function saveEntityApi<T = any>(
-  entityType: "party" | "location" | "shipment" | "storage" | "delivery",
+  entityType: KurbanEntityType,
   data: Partial<T>
 ): Promise<{ success: boolean; data?: T; [key: string]: any; error?: string }> {
   try {
@@ -417,9 +434,9 @@ export async function saveEntityApi<T = any>(
  * Generic Entity Delete API
  */
 export async function deleteEntityApi(
-  entityType: "party" | "location" | "shipment" | "storage" | "delivery",
+  entityType: KurbanEntityType,
   id: string
-): Promise<{ success: boolean; message?: string; error?: string }> {
+): Promise<{ success: boolean; message?: string; [key: string]: any; error?: string }> {
   try {
     const res = await fetch(
       `/api/kurban-process?entityType=${encodeURIComponent(entityType)}&id=${encodeURIComponent(id)}`,
@@ -428,5 +445,25 @@ export async function deleteEntityApi(
     return await res.json();
   } catch (err: any) {
     return { success: false, error: err?.message || "Silme hatası." };
+  }
+}
+
+/**
+ * Clear all mock / demo data permanently from Supabase and persistent state
+ */
+export async function clearMockDataApi(): Promise<{
+  success: boolean;
+  message?: string;
+  error?: string;
+}> {
+  try {
+    const res = await fetch("/api/kurban-process", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "clear_mock_data" }),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err?.message || "Temizleme hatası." };
   }
 }

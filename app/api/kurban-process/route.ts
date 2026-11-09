@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, connection } from "next/server";
 import {
   SEED_ORGANIZATION,
   SEED_PARTIES,
@@ -20,6 +20,11 @@ import {
   getActiveOrganizationId,
   getActiveLocationId,
   ensureDatabaseReady,
+  safeDeleteLocationFromDb,
+  loadKurbanPersistentState,
+  saveKurbanPersistentState,
+  createDefaultPersistentState,
+  KurbanPersistentState,
   mapLocationFromDb,
   mapPartyFromDb,
   mapShipmentFromDb,
@@ -31,6 +36,7 @@ import {
   mapReportFromDb,
 } from "../../utils/kurbanProcessDb";
 import {
+  KurbanProcessOrganization,
   KurbanCuttingLocation,
   KurbanParty,
   KurbanShipment,
@@ -42,67 +48,160 @@ import {
   KurbanReport,
 } from "../../types/kurbanProcess";
 
-// In-memory fallback cache if Supabase is offline
-let inMemoryStore = {
-  organizations: [SEED_ORGANIZATION],
-  parties: [...SEED_PARTIES],
-  contracts: [SEED_CONTRACT],
-  locations: [...SEED_CUTTING_LOCATIONS],
-  animals: [...SEED_ANIMALS],
-  shipments: [...SEED_SHIPMENTS],
-  slaughterBatches: [...SEED_SLAUGHTER_BATCHES],
-  storageRecords: [...SEED_STORAGE_RECORDS],
-  invoices: [...SEED_INVOICES],
-  deliveries: [...SEED_DELIVERIES],
-  documents: [...SEED_DOCUMENTS],
-  reports: [...SEED_REPORTS],
+const NO_STORE_HEADERS = {
+  "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+  Pragma: "no-cache",
+  Expires: "0",
 };
 
+// In-memory fallback cache
+let inMemoryStore: KurbanPersistentState = createDefaultPersistentState();
+let inMemoryAnimalsCount = SEED_ANIMALS.length;
+
 /**
- * GET: Full process data overview with stats, locations, and reports
+ * Helper: Build a default 10-section official report for a newly added cutting location
  */
-export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const locationId = searchParams.get("locationId");
+function createReportForLocation(
+  loc: KurbanCuttingLocation,
+  org: KurbanProcessOrganization,
+  index: number
+): KurbanReport {
+  const reportId = ensureUUID();
+  const baseTemplate = SEED_REPORTS[0];
+  const sections = (baseTemplate?.sections || []).map((sec, idx) => ({
+    ...sec,
+    id: ensureUUID(),
+    reportId,
+    orderIndex: idx + 1,
+    contentHtml: (sec.contentHtml || "")
+      .replace(/Tuzla Entegre Et Kombinası/g, loc.name)
+      .replace(/1\. Kesimhane \(İstanbul Tuzla\)/g, loc.name)
+      .replace(/Anadolu Gıda & Perakende A\.Ş\./g, org.clientCompanyName || "Alıcı Kurum"),
+  }));
 
-  const supabase = getSupabaseServerClient();
+  return {
+    id: reportId,
+    organizationId: org.id,
+    cuttingLocationId: loc.id,
+    cuttingLocationName: loc.name,
+    reportNo: `KRB-2026-RAP-0${index + 1}`,
+    title: `${loc.name} — Kurban Kesim, Depolama ve Teslimat Resmî Denetim Raporu`,
+    reportDate: new Date().toISOString().split("T")[0],
+    reportPeriod: "2026 Kurban Dönemi",
+    preparedBy: loc.responsiblePerson || "Operasyon Denetim Kurulu",
+    status: "final_approved",
+    clientCompanyName: org.clientCompanyName || "Alıcı Kurum",
+    executiveSummary: `${loc.name} (${loc.city}) tesisinde gerçekleştirilen kurban kesim, soğuk hava depolama ve teslimat süreçlerine ilişkin resmî denetim raporu.`,
+    evaluationNotes: "Tüm süreçler veteriner hekim kontrolünde ve hijyen standartlarına uygun tamamlanmıştır.",
+    finalResultSummary: "Tam Mutabakat • 0 Fire",
+    metadata: {},
+    sections,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+}
 
+/**
+ * Resolves the authoritative Kurban state by combining the cloud persistent state (`proposals` table)
+ * and relational `kurban_*` tables without EVER re-seeding deleted/edited mock data.
+ */
+async function resolveAuthoritativeState(supabase: any): Promise<{
+  state: KurbanPersistentState;
+  totalAnimalCount: number;
+  source: string;
+}> {
+  // 1. Load persistent state from Supabase `proposals` table (or /tmp file fallback)
+  const persisted = await loadKurbanPersistentState(supabase);
+
+  let totalAnimalCount = inMemoryAnimalsCount;
   if (supabase) {
     try {
-      await ensureDatabaseReady(supabase);
+      const { count } = await supabase
+        .from("kurban_animals")
+        .select("id", { count: "exact", head: true });
+      if (typeof count === "number" && count > 0) {
+        totalAnimalCount = count;
+      }
+    } catch {
+      // ignore
+    }
+  }
 
-      const { data: orgData, error: orgErr } = await supabase
-        .from("kurban_process_organizations")
-        .select("*")
-        .order("created_at", { ascending: false });
+  // If the user has already customized state (saved/edited/deleted any record),
+  // `persisted` is the authoritative state and never resurrects deleted mock items!
+  if (persisted && persisted.isCustomized) {
+    const deletedSet = new Set(persisted.deletedIds || []);
+    const cleanState: KurbanPersistentState = {
+      ...persisted,
+      parties: (persisted.parties || []).filter((p) => !deletedSet.has(p.id)),
+      cuttingLocations: (persisted.cuttingLocations || []).filter((l) => !deletedSet.has(l.id)),
+      shipments: (persisted.shipments || []).filter((s) => !deletedSet.has(s.id)),
+      slaughterBatches: (persisted.slaughterBatches || []).filter((b) => !deletedSet.has(b.id)),
+      storageRecords: (persisted.storageRecords || []).filter((st) => !deletedSet.has(st.id)),
+      invoices: (persisted.invoices || []).filter((inv) => !deletedSet.has(inv.id)),
+      deliveries: (persisted.deliveries || []).filter((d) => !deletedSet.has(d.id)),
+      documents: (persisted.documents || []).filter((doc) => !deletedSet.has(doc.id)),
+      reports: (persisted.reports || []).filter((rep) => !deletedSet.has(rep.id)),
+    };
+    inMemoryStore = cleanState;
+    return { state: cleanState, totalAnimalCount, source: "supabase_persistent_state" };
+  }
 
-      if (!orgErr && orgData && orgData.length > 0) {
-        // Fetch all tables in parallel
-        const [
-          locsRes,
-          partiesRes,
-          shipmentsRes,
-          slaughtersRes,
-          storagesRes,
-          deliveriesRes,
-          invoicesRes,
-          docsRes,
-          reportsRes,
-          animalsCountRes,
-        ] = await Promise.all([
-          supabase.from("kurban_cutting_locations").select("*").order("location_code", { ascending: true }),
-          supabase.from("kurban_parties").select("*").order("name", { ascending: true }),
-          supabase.from("kurban_shipments").select("*").order("shipment_date", { ascending: false }),
-          supabase.from("kurban_slaughter_batches").select("*").order("slaughter_date", { ascending: false }),
-          supabase.from("kurban_storage_records").select("*").order("entry_date", { ascending: false }),
-          supabase.from("kurban_deliveries").select("*").order("delivery_date", { ascending: false }),
-          supabase.from("kurban_invoices").select("*").order("invoice_date", { ascending: false }),
-          supabase.from("kurban_documents").select("*").order("uploaded_at", { ascending: false }),
-          supabase.from("kurban_reports").select("*, kurban_report_sections(*)").order("report_no", { ascending: true }),
-          supabase.from("kurban_animals").select("id", { count: "exact", head: true }),
-        ]);
+  // 2. Otherwise, check relational `kurban_*` tables in Supabase (WITHOUT calling auto-seeding!)
+  if (supabase) {
+    try {
+      const [
+        orgRes,
+        locsRes,
+        partiesRes,
+        shipmentsRes,
+        slaughtersRes,
+        storagesRes,
+        deliveriesRes,
+        invoicesRes,
+        docsRes,
+        reportsRes,
+      ] = await Promise.all([
+        supabase.from("kurban_process_organizations").select("*").order("created_at", { ascending: false }),
+        supabase.from("kurban_cutting_locations").select("*").order("location_code", { ascending: true }),
+        supabase.from("kurban_parties").select("*").order("created_at", { ascending: false }),
+        supabase.from("kurban_shipments").select("*").order("shipment_date", { ascending: false }),
+        supabase.from("kurban_slaughter_batches").select("*").order("slaughter_date", { ascending: false }),
+        supabase.from("kurban_storage_records").select("*").order("entry_date", { ascending: false }),
+        supabase.from("kurban_deliveries").select("*").order("delivery_date", { ascending: false }),
+        supabase.from("kurban_invoices").select("*").order("invoice_date", { ascending: false }),
+        supabase.from("kurban_documents").select("*").order("uploaded_at", { ascending: false }),
+        supabase.from("kurban_reports").select("*, kurban_report_sections(*)").order("report_no", { ascending: true }),
+      ]);
 
-        // Map locations first for lookup
+      const hasRelationalData =
+        (!orgRes.error && orgRes.data && orgRes.data.length > 0) ||
+        (!locsRes.error && locsRes.data && locsRes.data.length > 0) ||
+        (!partiesRes.error && partiesRes.data && partiesRes.data.length > 0);
+
+      if (hasRelationalData) {
+        const activeOrgRow = orgRes.data?.[0];
+        const organization: KurbanProcessOrganization = activeOrgRow
+          ? {
+              id: activeOrgRow.id,
+              name: activeOrgRow.name || SEED_ORGANIZATION.name,
+              clientCompanyName:
+                activeOrgRow.client_company_name || SEED_ORGANIZATION.clientCompanyName,
+              clientTaxNo: activeOrgRow.client_tax_no || "",
+              clientTaxOffice: activeOrgRow.client_tax_office || "",
+              clientAddress: activeOrgRow.client_address || "",
+              clientContact: activeOrgRow.client_contact || "",
+              startDate: activeOrgRow.start_date || SEED_ORGANIZATION.startDate,
+              endDate: activeOrgRow.end_date || SEED_ORGANIZATION.endDate,
+              targetAnimalCount: Number(activeOrgRow.target_animal_count) || 350,
+              status: activeOrgRow.status || "in_progress",
+              description: activeOrgRow.description || "",
+              generalNotes: activeOrgRow.general_notes || "",
+              createdAt: activeOrgRow.created_at || new Date().toISOString(),
+              updatedAt: activeOrgRow.updated_at || new Date().toISOString(),
+            }
+          : { ...SEED_ORGANIZATION };
+
         const locationsMap = new Map<string, string>();
         const cuttingLocations: KurbanCuttingLocation[] = (locsRes.data || []).map((row: any) => {
           const loc = mapLocationFromDb(row);
@@ -111,167 +210,178 @@ export async function GET(request: Request) {
         });
 
         const parties: KurbanParty[] = (partiesRes.data || []).map(mapPartyFromDb);
-        const shipments: KurbanShipment[] = (shipmentsRes.data || []).map((r: any) =>
-          mapShipmentFromDb(r, locationsMap)
-        );
-        const slaughterBatches: KurbanSlaughterBatch[] = (slaughtersRes.data || []).map((r: any) =>
-          mapSlaughterBatchFromDb(r, locationsMap)
-        );
-        const storageRecords: KurbanStorageRecord[] = (storagesRes.data || []).map((r: any) =>
-          mapStorageRecordFromDb(r, locationsMap)
-        );
-        const deliveries: KurbanDelivery[] = (deliveriesRes.data || []).map((r: any) =>
-          mapDeliveryFromDb(r, locationsMap)
-        );
-        const invoices: KurbanInvoice[] = (invoicesRes.data || []).map((r: any) =>
-          mapInvoiceFromDb(r, locationsMap)
-        );
-        const documents: KurbanDocument[] = (docsRes.data || []).map(mapDocumentFromDb);
+        const shipments: KurbanShipment[] =
+          shipmentsRes.data && shipmentsRes.data.length > 0
+            ? shipmentsRes.data.map((r: any) => mapShipmentFromDb(r, locationsMap))
+            : [...SEED_SHIPMENTS];
+        const slaughterBatches: KurbanSlaughterBatch[] =
+          slaughtersRes.data && slaughtersRes.data.length > 0
+            ? slaughtersRes.data.map((r: any) => mapSlaughterBatchFromDb(r, locationsMap))
+            : [...SEED_SLAUGHTER_BATCHES];
+        const storageRecords: KurbanStorageRecord[] =
+          storagesRes.data && storagesRes.data.length > 0
+            ? storagesRes.data.map((r: any) => mapStorageRecordFromDb(r, locationsMap))
+            : [...SEED_STORAGE_RECORDS];
+        const deliveries: KurbanDelivery[] =
+          deliveriesRes.data && deliveriesRes.data.length > 0
+            ? deliveriesRes.data.map((r: any) => mapDeliveryFromDb(r, locationsMap))
+            : [...SEED_DELIVERIES];
+        const invoices: KurbanInvoice[] =
+          invoicesRes.data && invoicesRes.data.length > 0
+            ? invoicesRes.data.map((r: any) => mapInvoiceFromDb(r, locationsMap))
+            : [...SEED_INVOICES];
+        const documents: KurbanDocument[] =
+          docsRes.data && docsRes.data.length > 0
+            ? docsRes.data.map(mapDocumentFromDb)
+            : [...SEED_DOCUMENTS];
         const reports: KurbanReport[] =
           reportsRes.data && reportsRes.data.length > 0
             ? reportsRes.data.map((r: any) => mapReportFromDb(r, locationsMap))
-            : SEED_REPORTS;
+            : JSON.parse(JSON.stringify(SEED_REPORTS));
 
-        // Filter by location if specified
-        let filteredShipments = shipments;
-        let filteredSlaughters = slaughterBatches;
-        let filteredStorage = storageRecords;
-        let filteredDeliveries = deliveries;
-        let filteredInvoices = invoices;
-        let filteredReports = reports;
-
-        if (locationId && locationId !== "all") {
-          filteredShipments = shipments.filter((s) => s.destinationLocationId === locationId);
-          filteredSlaughters = slaughterBatches.filter((b) => b.cuttingLocationId === locationId);
-          filteredStorage = storageRecords.filter((st) => st.cuttingLocationId === locationId);
-          filteredDeliveries = deliveries.filter((d) => d.cuttingLocationId === locationId);
-          filteredInvoices = invoices.filter(
-            (inv) => !inv.cuttingLocationId || inv.cuttingLocationId === locationId
-          );
-          const matched = reports.filter((rep) => rep.cuttingLocationId === locationId);
-          if (matched.length > 0) {
-            filteredReports = matched;
-          }
-        }
-
-        const totalShipped = filteredShipments.reduce((acc, s) => acc + s.animalCount, 0);
-        const totalSlaughtered = filteredSlaughters.reduce((acc, b) => acc + b.animalCount, 0);
-        const totalCarcass = filteredSlaughters.reduce((acc, b) => acc + b.totalCarcassWeightKg, 0);
-        const totalStoredKg = filteredStorage.reduce((acc, st) => acc + st.storedQuantityKg, 0);
-        const totalDeliveredKg = filteredDeliveries.reduce((acc, d) => acc + d.deliveredQuantityKg, 0);
-        const totalInvoiceAmount = filteredInvoices.reduce((acc, inv) => acc + inv.totalAmount, 0);
-        const totalAnimalCount = animalsCountRes.count || inMemoryStore.animals.length;
-
-        const activeOrg = orgData[0];
-        const targetCount = activeOrg.target_animal_count || 350;
-
-        return NextResponse.json({
-          success: true,
-          source: "supabase",
-          organization: {
-            id: activeOrg.id,
-            name: activeOrg.name,
-            clientCompanyName: activeOrg.client_company_name,
-            clientTaxNo: activeOrg.client_tax_no,
-            clientTaxOffice: activeOrg.client_tax_office,
-            clientAddress: activeOrg.client_address,
-            clientContact: activeOrg.client_contact,
-            startDate: activeOrg.start_date,
-            endDate: activeOrg.end_date,
-            targetAnimalCount: activeOrg.target_animal_count,
-            status: activeOrg.status,
-            description: activeOrg.description,
-            generalNotes: activeOrg.general_notes,
-            createdAt: activeOrg.created_at,
-            updatedAt: activeOrg.updated_at,
-          },
-          organizations: orgData,
-          cuttingLocations,
+        const relationalState: KurbanPersistentState = {
+          isCustomized: false,
+          deletedIds: [],
+          organization,
           parties,
-          shipments: filteredShipments,
-          slaughterBatches: filteredSlaughters,
-          storageRecords: filteredStorage,
-          deliveries: filteredDeliveries,
-          invoices: filteredInvoices,
+          contracts: [{ ...SEED_CONTRACT }],
+          cuttingLocations,
+          shipments,
+          slaughterBatches,
+          storageRecords,
+          invoices,
+          deliveries,
           documents,
-          reports: reports,
-          allReports: reports,
-          totalAnimalCount,
-          stats: {
-            totalTargetAnimals: targetCount,
-            totalPurchasedAnimals: totalAnimalCount,
-            totalShipments: filteredShipments.length,
-            totalShippedAnimals: totalShipped,
-            totalSlaughterBatches: filteredSlaughters.length,
-            totalSlaughteredAnimals: totalSlaughtered,
-            totalCarcassWeightKg: totalCarcass,
-            totalStorageRecords: filteredStorage.length,
-            totalStoredQuantityKg: totalStoredKg,
-            totalDeliveries: filteredDeliveries.length,
-            totalDeliveredQuantityKg: totalDeliveredKg,
-            totalDeliveredAnimals: totalSlaughtered,
-            totalInvoicesCount: filteredInvoices.length,
-            totalInvoiceAmount,
-            totalDocumentsCount: documents.length,
-            missingDocumentsCount: 0,
-            discrepancies: {
-              unshippedAnimals: Math.max(0, totalAnimalCount - totalShipped),
-              unslaughteredShippedAnimals: Math.max(0, totalShipped - totalSlaughtered),
-              unstoredOrUndeliveredKg: Math.max(0, totalCarcass - totalDeliveredKg),
-            },
-          },
-        });
+          reports,
+          updatedAt: new Date().toISOString(),
+        };
+
+        inMemoryStore = relationalState;
+        return { state: relationalState, totalAnimalCount, source: "supabase_relational" };
       }
     } catch (err) {
-      console.warn("Supabase fetch warning, falling back to in-memory store:", err);
+      console.warn("Supabase relational fetch warning:", err);
     }
   }
 
-  // Fallback to inMemoryStore
-  let filteredShipments = inMemoryStore.shipments;
-  let filteredSlaughters = inMemoryStore.slaughterBatches;
-  let filteredStorage = inMemoryStore.storageRecords;
-  let filteredDeliveries = inMemoryStore.deliveries;
-  let filteredInvoices = inMemoryStore.invoices;
-  let filteredReports = inMemoryStore.reports;
+  return { state: inMemoryStore, totalAnimalCount, source: "default_state" };
+}
 
-  if (locationId && locationId !== "all") {
-    filteredShipments = filteredShipments.filter((s) => s.destinationLocationId === locationId);
-    filteredSlaughters = filteredSlaughters.filter((b) => b.cuttingLocationId === locationId);
-    filteredStorage = filteredStorage.filter((st) => st.cuttingLocationId === locationId);
-    filteredDeliveries = filteredDeliveries.filter((d) => d.cuttingLocationId === locationId);
-    filteredInvoices = filteredInvoices.filter(
-      (inv) => !inv.cuttingLocationId || inv.cuttingLocationId === locationId
-    );
-    filteredReports = filteredReports.filter((rep) => rep.cuttingLocationId === locationId);
+/**
+ * Formats the API response payload from a KurbanPersistentState
+ */
+function buildOverviewResponse(
+  state: KurbanPersistentState,
+  locationId: string | null,
+  totalAnimalCount: number,
+  source: string
+) {
+  const locationsMap = new Map<string, string>();
+  for (const loc of state.cuttingLocations) {
+    locationsMap.set(loc.id, loc.name);
   }
 
-  const totalShipped = filteredShipments.reduce((acc, s) => acc + s.animalCount, 0);
-  const totalSlaughtered = filteredSlaughters.reduce((acc, b) => acc + b.animalCount, 0);
-  const totalCarcass = filteredSlaughters.reduce((acc, b) => acc + b.totalCarcassWeightKg, 0);
-  const totalStoredKg = filteredStorage.reduce((acc, st) => acc + st.storedQuantityKg, 0);
-  const totalDeliveredKg = filteredDeliveries.reduce((acc, d) => acc + d.deliveredQuantityKg, 0);
-  const totalInvoiceAmount = filteredInvoices.reduce((acc, inv) => acc + inv.totalAmount, 0);
+  // Ensure location names stay synchronized
+  const shipments = state.shipments.map((s) => ({
+    ...s,
+    destinationLocationName:
+      locationsMap.get(s.destinationLocationId) || s.destinationLocationName || "Kesimhane",
+  }));
+  const slaughterBatches = state.slaughterBatches.map((b) => ({
+    ...b,
+    cuttingLocationName:
+      locationsMap.get(b.cuttingLocationId) || b.cuttingLocationName || "Kesimhane",
+  }));
+  const storageRecords = state.storageRecords.map((st) => ({
+    ...st,
+    cuttingLocationName:
+      (st.cuttingLocationId && locationsMap.get(st.cuttingLocationId)) ||
+      st.cuttingLocationName,
+  }));
+  const deliveries = state.deliveries.map((d) => ({
+    ...d,
+    cuttingLocationName:
+      (d.cuttingLocationId && locationsMap.get(d.cuttingLocationId)) ||
+      d.cuttingLocationName,
+  }));
+  const invoices = state.invoices.map((inv) => ({
+    ...inv,
+    cuttingLocationName:
+      (inv.cuttingLocationId && locationsMap.get(inv.cuttingLocationId)) ||
+      inv.cuttingLocationName,
+  }));
+  const reports = state.reports.map((rep) => ({
+    ...rep,
+    cuttingLocationName:
+      (rep.cuttingLocationId && locationsMap.get(rep.cuttingLocationId)) ||
+      rep.cuttingLocationName,
+  }));
 
-  return NextResponse.json({
+  let filteredShipments = shipments;
+  let filteredSlaughters = slaughterBatches;
+  let filteredStorage = storageRecords;
+  let filteredDeliveries = deliveries;
+  let filteredInvoices = invoices;
+  let filteredReports = reports;
+
+  if (locationId && locationId !== "all") {
+    filteredShipments = shipments.filter((s) => s.destinationLocationId === locationId);
+    filteredSlaughters = slaughterBatches.filter((b) => b.cuttingLocationId === locationId);
+    filteredStorage = storageRecords.filter((st) => st.cuttingLocationId === locationId);
+    filteredDeliveries = deliveries.filter((d) => d.cuttingLocationId === locationId);
+    filteredInvoices = invoices.filter(
+      (inv) => !inv.cuttingLocationId || inv.cuttingLocationId === locationId
+    );
+    const matched = reports.filter((rep) => rep.cuttingLocationId === locationId);
+    if (matched.length > 0) {
+      filteredReports = matched;
+    }
+  }
+
+  const totalShipped = filteredShipments.reduce((acc, s) => acc + (Number(s.animalCount) || 0), 0);
+  const totalSlaughtered = filteredSlaughters.reduce(
+    (acc, b) => acc + (Number(b.animalCount) || 0),
+    0
+  );
+  const totalCarcass = filteredSlaughters.reduce(
+    (acc, b) => acc + (Number(b.totalCarcassWeightKg) || 0),
+    0
+  );
+  const totalStoredKg = filteredStorage.reduce(
+    (acc, st) => acc + (Number(st.storedQuantityKg) || 0),
+    0
+  );
+  const totalDeliveredKg = filteredDeliveries.reduce(
+    (acc, d) => acc + (Number(d.deliveredQuantityKg) || 0),
+    0
+  );
+  const totalInvoiceAmount = filteredInvoices.reduce(
+    (acc, inv) => acc + (Number(inv.totalAmount) || 0),
+    0
+  );
+  const targetCount = state.organization?.targetAnimalCount || 350;
+
+  return {
     success: true,
-    source: "in_memory_seed",
-    organization: inMemoryStore.organizations[0],
-    organizations: inMemoryStore.organizations,
-    parties: inMemoryStore.parties,
-    contracts: inMemoryStore.contracts,
-    cuttingLocations: inMemoryStore.locations,
+    source,
+    isCustomized: state.isCustomized,
+    organization: state.organization,
+    organizations: [state.organization],
+    cuttingLocations: state.cuttingLocations,
+    parties: state.parties,
+    contracts: state.contracts || [SEED_CONTRACT],
     shipments: filteredShipments,
     slaughterBatches: filteredSlaughters,
     storageRecords: filteredStorage,
-    invoices: filteredInvoices,
     deliveries: filteredDeliveries,
-    documents: inMemoryStore.documents,
+    invoices: filteredInvoices,
+    documents: state.documents,
     reports: filteredReports,
-    totalAnimalCount: inMemoryStore.animals.length,
+    allReports: reports,
+    totalAnimalCount,
     stats: {
-      totalTargetAnimals: inMemoryStore.organizations[0]?.targetAnimalCount || 350,
-      totalPurchasedAnimals: inMemoryStore.animals.length,
+      totalTargetAnimals: targetCount,
+      totalPurchasedAnimals: totalAnimalCount,
       totalShipments: filteredShipments.length,
       totalShippedAnimals: totalShipped,
       totalSlaughterBatches: filteredSlaughters.length,
@@ -284,19 +394,37 @@ export async function GET(request: Request) {
       totalDeliveredAnimals: totalSlaughtered,
       totalInvoicesCount: filteredInvoices.length,
       totalInvoiceAmount,
-      totalDocumentsCount: inMemoryStore.documents.length,
+      totalDocumentsCount: state.documents.length,
       missingDocumentsCount: 0,
       discrepancies: {
-        unshippedAnimals: inMemoryStore.animals.length - totalShipped,
-        unslaughteredShippedAnimals: totalShipped - totalSlaughtered,
-        unstoredOrUndeliveredKg: totalCarcass - totalDeliveredKg,
+        unshippedAnimals: Math.max(0, totalAnimalCount - totalShipped),
+        unslaughteredShippedAnimals: Math.max(0, totalShipped - totalSlaughtered),
+        unstoredOrUndeliveredKg: Math.max(0, totalCarcass - totalDeliveredKg),
       },
     },
-  });
+  };
 }
 
 /**
- * POST: Create organization, seed full demo, or save individual entity (party, location, shipment, storage, delivery)
+ * GET: Full process data overview with stats, locations, parties, and reports
+ */
+export async function GET(request: Request) {
+  await connection();
+  const { searchParams } = new URL(request.url);
+  const locationId = searchParams.get("locationId");
+
+  const supabase = getSupabaseServerClient();
+  const { state, totalAnimalCount, source } = await resolveAuthoritativeState(supabase);
+
+  return NextResponse.json(
+    buildOverviewResponse(state, locationId, totalAnimalCount, source),
+    { headers: NO_STORE_HEADERS }
+  );
+}
+
+/**
+ * POST: Save / Update entities (organization, party, location, shipment, slaughter, storage, invoice, delivery, document)
+ * or run special actions (clear_mock_data, seed_demo_to_supabase)
  */
 export async function POST(request: Request) {
   try {
@@ -304,193 +432,290 @@ export async function POST(request: Request) {
     const { action } = body;
     const supabase = getSupabaseServerClient();
 
+    // Load current authoritative state first
+    const { state } = await resolveAuthoritativeState(supabase);
+
+    // ------------------------------------------------------------------------
+    // Action: Clear All Mock / Demo Records
+    // ------------------------------------------------------------------------
+    if (action === "clear_mock_data") {
+      const allDeletedIds = [
+        ...state.deletedIds,
+        ...SEED_PARTIES.map((p) => p.id),
+        ...SEED_CUTTING_LOCATIONS.map((l) => l.id),
+        ...SEED_SHIPMENTS.map((s) => s.id),
+        ...SEED_SLAUGHTER_BATCHES.map((b) => b.id),
+        ...SEED_STORAGE_RECORDS.map((st) => st.id),
+        ...SEED_INVOICES.map((inv) => inv.id),
+        ...SEED_DELIVERIES.map((d) => d.id),
+        ...SEED_DOCUMENTS.map((doc) => doc.id),
+        ...SEED_REPORTS.map((r) => r.id),
+        ...state.parties.map((p) => p.id),
+        ...state.cuttingLocations.map((l) => l.id),
+        ...state.shipments.map((s) => s.id),
+        ...state.slaughterBatches.map((b) => b.id),
+        ...state.storageRecords.map((st) => st.id),
+        ...state.invoices.map((inv) => inv.id),
+        ...state.deliveries.map((d) => d.id),
+        ...state.documents.map((doc) => doc.id),
+      ];
+
+      if (supabase) {
+        try {
+          await supabase.from("kurban_parties").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+          for (const loc of state.cuttingLocations) {
+            await safeDeleteLocationFromDb(supabase, loc.id);
+          }
+          for (const loc of SEED_CUTTING_LOCATIONS) {
+            await safeDeleteLocationFromDb(supabase, loc.id);
+          }
+        } catch (e) {
+          console.warn("clear_mock_data relational cleanup warning:", e);
+        }
+      }
+
+      const clearedState: KurbanPersistentState = {
+        ...state,
+        isCustomized: true,
+        deletedIds: Array.from(new Set(allDeletedIds)),
+        parties: [],
+        cuttingLocations: [],
+        shipments: [],
+        slaughterBatches: [],
+        storageRecords: [],
+        invoices: [],
+        deliveries: [],
+        documents: [],
+        reports: [],
+        updatedAt: new Date().toISOString(),
+      };
+
+      inMemoryStore = clearedState;
+      await saveKurbanPersistentState(clearedState, supabase);
+
+      return NextResponse.json({
+        success: true,
+        message: "Tüm örnek (mock) veriler kalıcı olarak temizlendi. Kendi kayıtlarınızı ekleyebilirsiniz.",
+      });
+    }
+
     // ------------------------------------------------------------------------
     // Action: Seed Full Demo to Supabase
     // ------------------------------------------------------------------------
     if (action === "seed_demo_to_supabase") {
-      if (!supabase) {
-        return NextResponse.json(
-          { success: false, error: "Supabase istemcisi yapılandırılamadı." },
-          { status: 500 }
-        );
-      }
+      const demoState = createDefaultPersistentState();
+      demoState.isCustomized = true;
+      demoState.deletedIds = [];
+      inMemoryStore = demoState;
+      await saveKurbanPersistentState(demoState, supabase);
 
-      // 1. Insert organization
-      const { error: orgErr } = await supabase.from("kurban_process_organizations").upsert({
-        id: SEED_ORGANIZATION.id,
-        name: SEED_ORGANIZATION.name,
-        client_company_name: SEED_ORGANIZATION.clientCompanyName,
-        client_tax_no: SEED_ORGANIZATION.clientTaxNo,
-        client_tax_office: SEED_ORGANIZATION.clientTaxOffice,
-        client_address: SEED_ORGANIZATION.clientAddress,
-        client_contact: SEED_ORGANIZATION.clientContact,
-        start_date: SEED_ORGANIZATION.startDate,
-        end_date: SEED_ORGANIZATION.endDate,
-        target_animal_count: SEED_ORGANIZATION.targetAnimalCount,
-        status: SEED_ORGANIZATION.status,
-        description: SEED_ORGANIZATION.description,
-        general_notes: SEED_ORGANIZATION.generalNotes,
-      });
+      if (supabase) {
+        try {
+          await supabase.from("kurban_process_organizations").upsert({
+            id: SEED_ORGANIZATION.id,
+            name: SEED_ORGANIZATION.name,
+            client_company_name: SEED_ORGANIZATION.clientCompanyName,
+            client_tax_no: SEED_ORGANIZATION.clientTaxNo,
+            client_tax_office: SEED_ORGANIZATION.clientTaxOffice,
+            client_address: SEED_ORGANIZATION.clientAddress,
+            client_contact: SEED_ORGANIZATION.clientContact,
+            start_date: SEED_ORGANIZATION.startDate,
+            end_date: SEED_ORGANIZATION.endDate,
+            target_animal_count: SEED_ORGANIZATION.targetAnimalCount,
+            status: SEED_ORGANIZATION.status,
+            description: SEED_ORGANIZATION.description,
+            general_notes: SEED_ORGANIZATION.generalNotes,
+          });
 
-      if (orgErr) {
-        return NextResponse.json(
-          { success: false, error: `Organizasyon kayıt hatası: ${orgErr.message}` },
-          { status: 500 }
-        );
-      }
-
-      // 2. Insert Cutting Locations
-      for (const loc of SEED_CUTTING_LOCATIONS) {
-        const { error: locErr } = await supabase.from("kurban_cutting_locations").upsert({
-          id: loc.id,
-          organization_id: loc.organizationId,
-          name: loc.name,
-          location_code: loc.locationCode,
-          city: loc.city,
-          address: loc.address,
-          responsible_person: loc.responsiblePerson,
-          responsible_phone: loc.responsiblePhone,
-          official_approval_no: loc.officialApprovalNo,
-          veterinary_name: loc.veterinaryName,
-          daily_capacity: loc.dailyCapacity,
-          allocated_animal_count: loc.allocatedAnimalCount,
-          notes: loc.notes,
-        });
-        if (locErr) {
-          return NextResponse.json(
-            { success: false, error: `Kesim yeri kayıt hatası: ${locErr.message}` },
-            { status: 500 }
-          );
-        }
-      }
-
-      // 3. Insert Parties
-      for (const p of SEED_PARTIES) {
-        const { error: partyErr } = await supabase.from("kurban_parties").upsert({
-          id: p.id,
-          organization_id: p.organizationId,
-          party_type: p.partyType,
-          name: p.name,
-          tax_id: p.taxId,
-          tax_office: p.taxOffice,
-          phone: p.phone,
-          email: p.email,
-          city: p.city,
-          address: p.address,
-          authorized_person: p.authorizedPerson,
-          notes: p.notes,
-        });
-        if (partyErr) {
-          return NextResponse.json(
-            { success: false, error: `Paydaş firma kayıt hatası: ${partyErr.message}` },
-            { status: 500 }
-          );
-        }
-      }
-
-      // 4. Insert Reports & Sections
-      for (const rep of SEED_REPORTS) {
-        const { error: repErr } = await supabase.from("kurban_reports").upsert({
-          id: rep.id,
-          organization_id: rep.organizationId,
-          cutting_location_id: rep.cuttingLocationId,
-          report_no: rep.reportNo,
-          title: rep.title,
-          report_date: rep.reportDate,
-          report_period: rep.reportPeriod,
-          prepared_by: rep.preparedBy,
-          status: rep.status,
-          client_company_name: rep.clientCompanyName,
-          executive_summary: rep.executiveSummary,
-          evaluation_notes: rep.evaluationNotes,
-          final_result_summary: rep.finalResultSummary,
-          metadata: rep.metadata || {},
-        });
-
-        if (repErr) {
-          return NextResponse.json(
-            { success: false, error: `Rapor kayıt hatası: ${repErr.message}` },
-            { status: 500 }
-          );
-        }
-
-        if (rep.sections && rep.sections.length > 0) {
-          for (const sec of rep.sections) {
-            const { error: secErr } = await supabase.from("kurban_report_sections").upsert({
-              id: sec.id,
-              report_id: rep.id,
-              section_key: sec.sectionKey,
-              section_title: sec.sectionTitle,
-              order_index: sec.orderIndex,
-              is_enabled: sec.isEnabled,
-              content_html: sec.contentHtml,
-              custom_notes: sec.customNotes,
-              include_tables: sec.includeTables,
-              page_break_after: sec.pageBreakAfter,
+          for (const loc of SEED_CUTTING_LOCATIONS) {
+            await supabase.from("kurban_cutting_locations").upsert({
+              id: loc.id,
+              organization_id: loc.organizationId,
+              name: loc.name,
+              location_code: loc.locationCode,
+              city: loc.city,
+              address: loc.address,
+              responsible_person: loc.responsiblePerson,
+              responsible_phone: loc.responsiblePhone,
+              official_approval_no: loc.officialApprovalNo,
+              veterinary_name: loc.veterinaryName,
+              daily_capacity: loc.dailyCapacity,
+              allocated_animal_count: loc.allocatedAnimalCount,
+              notes: loc.notes,
             });
-            if (secErr) {
-              return NextResponse.json(
-                { success: false, error: `Rapor bölüm kayıt hatası: ${secErr.message}` },
-                { status: 500 }
-              );
+          }
+
+          for (const p of SEED_PARTIES) {
+            await supabase.from("kurban_parties").upsert({
+              id: p.id,
+              organization_id: p.organizationId,
+              party_type: p.partyType,
+              name: p.name,
+              tax_id: p.taxId,
+              tax_office: p.taxOffice,
+              phone: p.phone,
+              email: p.email,
+              city: p.city,
+              address: p.address,
+              authorized_person: p.authorizedPerson,
+              notes: p.notes,
+            });
+          }
+
+          for (const rep of SEED_REPORTS) {
+            await supabase.from("kurban_reports").upsert({
+              id: rep.id,
+              organization_id: rep.organizationId,
+              cutting_location_id: rep.cuttingLocationId,
+              report_no: rep.reportNo,
+              title: rep.title,
+              report_date: rep.reportDate,
+              report_period: rep.reportPeriod,
+              prepared_by: rep.preparedBy,
+              status: rep.status,
+              client_company_name: rep.clientCompanyName,
+              executive_summary: rep.executiveSummary,
+              evaluation_notes: rep.evaluationNotes,
+              final_result_summary: rep.finalResultSummary,
+              metadata: rep.metadata || {},
+            });
+
+            if (rep.sections && rep.sections.length > 0) {
+              for (const sec of rep.sections) {
+                await supabase.from("kurban_report_sections").upsert({
+                  id: sec.id,
+                  report_id: rep.id,
+                  section_key: sec.sectionKey,
+                  section_title: sec.sectionTitle,
+                  order_index: sec.orderIndex,
+                  is_enabled: sec.isEnabled,
+                  content_html: sec.contentHtml,
+                  custom_notes: sec.customNotes,
+                  include_tables: sec.includeTables,
+                  page_break_after: sec.pageBreakAfter,
+                });
+              }
             }
           }
-        }
-      }
 
-      // 5. Batch insert animals (50 per batch)
-      const batchSize = 50;
-      for (let i = 0; i < SEED_ANIMALS.length; i += batchSize) {
-        const batch = SEED_ANIMALS.slice(i, i + batchSize).map((a) => ({
-          id: a.id,
-          organization_id: a.organizationId,
-          cutting_location_id: a.cuttingLocationId,
-          ear_tag_no: a.earTagNo,
-          animal_type: a.animalType,
-          animal_type_label: a.animalTypeLabel,
-          breed: a.breed,
-          gender: a.gender,
-          birth_date: a.birthDate,
-          age_months: a.ageMonths,
-          passport_no: a.passportNo,
-          farm_reg_no: a.farmRegNo,
-          farm_name: a.farmName,
-          health_doc_no: a.healthDocNo,
-          live_weight_kg: a.liveWeightKg,
-          carcass_weight_kg: a.carcassWeightKg,
-          status: a.status,
-          notes: a.notes,
-        }));
-        const { error: animalBatchErr } = await supabase.from("kurban_animals").upsert(batch);
-        if (animalBatchErr) {
-          return NextResponse.json(
-            { success: false, error: `Hayvan grubu kayıt hatası: ${animalBatchErr.message}` },
-            { status: 500 }
-          );
+          const batchSize = 50;
+          for (let i = 0; i < SEED_ANIMALS.length; i += batchSize) {
+            const batch = SEED_ANIMALS.slice(i, i + batchSize).map((a) => ({
+              id: a.id,
+              organization_id: a.organizationId,
+              cutting_location_id: a.cuttingLocationId,
+              ear_tag_no: a.earTagNo,
+              animal_type: a.animalType,
+              animal_type_label: a.animalTypeLabel,
+              breed: a.breed,
+              gender: a.gender,
+              birth_date: a.birthDate,
+              age_months: a.ageMonths,
+              passport_no: a.passportNo,
+              farm_reg_no: a.farmRegNo,
+              farm_name: a.farmName,
+              health_doc_no: a.healthDocNo,
+              live_weight_kg: a.liveWeightKg,
+              carcass_weight_kg: a.carcassWeightKg,
+              status: a.status,
+              notes: a.notes,
+            }));
+            await supabase.from("kurban_animals").upsert(batch);
+          }
+        } catch (err) {
+          console.warn("seed_demo_to_supabase relational warning:", err);
         }
       }
 
       return NextResponse.json({
         success: true,
-        message: "350 hayvan, 2 kesimhane ve tüm süreç kayıtları Supabase'e başarıyla aktarıldı.",
+        message: "350 hayvan, 2 kesimhane ve tüm süreç kayıtları başarıyla yüklendi.",
       });
     }
 
     // ------------------------------------------------------------------------
-    // Entity CRUD: Party, Location, Shipment, Storage, Delivery
+    // Entity CRUD: Organization, Party, Location, Shipment, Slaughter, Storage, Invoice, Delivery, Document
     // ------------------------------------------------------------------------
     if (body.entityType && body.data) {
       const { entityType, data } = body;
-      const orgId = await getActiveOrganizationId(supabase, data.organizationId);
+      await ensureDatabaseReady(supabase);
+      const orgId = await getActiveOrganizationId(supabase, data.organizationId || state.organization?.id);
       const entityId = ensureUUID(data.id);
 
-      // --- 1. PARTY ---
+      // Remove entityId from deletedIds if it was previously deleted
+      state.deletedIds = (state.deletedIds || []).filter((id) => id !== entityId);
+
+      // --- 0. ORGANIZATION (Ana Organizasyon & Alıcı Kurum Bilgileri) ---
+      if (entityType === "organization") {
+        const updatedOrg: KurbanProcessOrganization = {
+          ...state.organization,
+          id: ensureUUID(data.id || state.organization?.id || orgId),
+          name: data.name?.trim() || state.organization.name || "2026 Kurban Organizasyonu",
+          clientCompanyName:
+            data.clientCompanyName?.trim() ||
+            state.organization.clientCompanyName ||
+            "Alıcı Kurum",
+          clientTaxNo: data.clientTaxNo ?? state.organization.clientTaxNo ?? "",
+          clientTaxOffice: data.clientTaxOffice ?? state.organization.clientTaxOffice ?? "",
+          clientAddress: data.clientAddress ?? state.organization.clientAddress ?? "",
+          clientContact: data.clientContact ?? state.organization.clientContact ?? "",
+          startDate: data.startDate || state.organization.startDate,
+          endDate: data.endDate || state.organization.endDate,
+          targetAnimalCount:
+            Number(data.targetAnimalCount) || state.organization.targetAnimalCount || 350,
+          status: data.status || state.organization.status || "in_progress",
+          description: data.description ?? state.organization.description ?? "",
+          generalNotes: data.generalNotes ?? state.organization.generalNotes ?? "",
+          createdAt: state.organization.createdAt || new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+
+        state.organization = updatedOrg;
+        // Sync clientCompanyName to reports
+        state.reports = state.reports.map((r) => ({
+          ...r,
+          clientCompanyName: updatedOrg.clientCompanyName,
+        }));
+
+        if (supabase) {
+          const { error: dbErr } = await supabase.from("kurban_process_organizations").upsert({
+            id: updatedOrg.id,
+            name: updatedOrg.name,
+            client_company_name: updatedOrg.clientCompanyName,
+            client_tax_no: updatedOrg.clientTaxNo || null,
+            client_tax_office: updatedOrg.clientTaxOffice || null,
+            client_address: updatedOrg.clientAddress || null,
+            client_contact: updatedOrg.clientContact || null,
+            start_date: updatedOrg.startDate || null,
+            end_date: updatedOrg.endDate || null,
+            target_animal_count: updatedOrg.targetAnimalCount,
+            status: updatedOrg.status,
+            description: updatedOrg.description || null,
+            general_notes: updatedOrg.generalNotes || null,
+            updated_at: updatedOrg.updatedAt,
+          });
+          if (dbErr) {
+            console.warn("Supabase organization upsert warning (saved to persistent state):", dbErr);
+          }
+        }
+
+        inMemoryStore = state;
+        await saveKurbanPersistentState(state, supabase);
+
+        return NextResponse.json({
+          success: true,
+          organization: updatedOrg,
+          message: "Organizasyon ve alıcı kurum bilgileri başarıyla kaydedildi.",
+        });
+      }
+
+      // --- 1. PARTY (Firma / Alıcı Müşteri / Besici / Soğuk Depo / Mezbaha / Lojistik) ---
       if (entityType === "party") {
         const item: KurbanParty = {
           id: entityId,
           organizationId: orgId,
           partyType: data.partyType || "supplier_seller",
-          name: data.name,
+          name: (data.name || "").trim(),
           taxId: data.taxId || "",
           taxOffice: data.taxOffice || "",
           phone: data.phone || "",
@@ -501,6 +726,43 @@ export async function POST(request: Request) {
           notes: data.notes || "",
           createdAt: data.createdAt || new Date().toISOString(),
         };
+
+        const idx = state.parties.findIndex((p) => p.id === item.id);
+        if (idx >= 0) state.parties[idx] = item;
+        else state.parties.unshift(item);
+
+        // If this party is a Buyer / Client (Alıcı Müşteri), also sync organization buyer info!
+        if (item.partyType === "client_buyer") {
+          state.organization = {
+            ...state.organization,
+            clientCompanyName: item.name,
+            clientTaxNo: item.taxId || state.organization.clientTaxNo,
+            clientTaxOffice: item.taxOffice || state.organization.clientTaxOffice,
+            clientAddress: item.address || state.organization.clientAddress,
+            clientContact:
+              [item.authorizedPerson, item.phone].filter(Boolean).join(" • ") ||
+              state.organization.clientContact,
+            updatedAt: new Date().toISOString(),
+          };
+          state.reports = state.reports.map((r) => ({
+            ...r,
+            clientCompanyName: item.name,
+          }));
+
+          if (supabase && isUUID(state.organization.id)) {
+            await supabase
+              .from("kurban_process_organizations")
+              .update({
+                client_company_name: state.organization.clientCompanyName,
+                client_tax_no: state.organization.clientTaxNo || null,
+                client_tax_office: state.organization.clientTaxOffice || null,
+                client_address: state.organization.clientAddress || null,
+                client_contact: state.organization.clientContact || null,
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", state.organization.id);
+          }
+        }
 
         if (supabase) {
           const { error: dbErr } = await supabase.from("kurban_parties").upsert({
@@ -519,32 +781,29 @@ export async function POST(request: Request) {
           });
 
           if (dbErr) {
-            console.error("Supabase party upsert error:", dbErr);
-            return NextResponse.json(
-              { success: false, error: `Paydaş Supabase'e kaydedilemedi: ${dbErr.message}` },
-              { status: 500 }
-            );
+            console.warn("Supabase party upsert warning (saved to persistent state):", dbErr);
           }
         }
 
-        const idx = inMemoryStore.parties.findIndex((p) => p.id === item.id);
-        if (idx >= 0) inMemoryStore.parties[idx] = item;
-        else inMemoryStore.parties.unshift(item);
+        inMemoryStore = state;
+        await saveKurbanPersistentState(state, supabase);
 
         return NextResponse.json({
           success: true,
           party: item,
+          organization: state.organization,
           message: "Paydaş / Firma başarıyla kaydedildi.",
         });
       }
 
-      // --- 2. LOCATION ---
+      // --- 2. LOCATION (Kesim Yeri / Mezbaha) ---
       if (entityType === "location") {
         const item: KurbanCuttingLocation = {
           id: entityId,
           organizationId: orgId,
-          name: data.name,
-          locationCode: data.locationCode || `KSM-0${inMemoryStore.locations.length + 1}`,
+          name: (data.name || "").trim(),
+          locationCode:
+            data.locationCode?.trim() || `KSM-0${state.cuttingLocations.length + 1}`,
           city: data.city || "İstanbul",
           address: data.address || "",
           responsiblePerson: data.responsiblePerson || "",
@@ -556,6 +815,41 @@ export async function POST(request: Request) {
           notes: data.notes || "",
           createdAt: data.createdAt || new Date().toISOString(),
         };
+
+        const idx = state.cuttingLocations.findIndex((l) => l.id === item.id);
+        if (idx >= 0) {
+          state.cuttingLocations[idx] = item;
+        } else {
+          state.cuttingLocations.push(item);
+        }
+
+        // Propagate updated location name to linked entities & ensure an official report exists for this location
+        state.shipments = state.shipments.map((s) =>
+          s.destinationLocationId === item.id
+            ? { ...s, destinationLocationName: item.name }
+            : s
+        );
+        state.slaughterBatches = state.slaughterBatches.map((b) =>
+          b.cuttingLocationId === item.id ? { ...b, cuttingLocationName: item.name } : b
+        );
+        state.storageRecords = state.storageRecords.map((st) =>
+          st.cuttingLocationId === item.id ? { ...st, cuttingLocationName: item.name } : st
+        );
+        state.deliveries = state.deliveries.map((d) =>
+          d.cuttingLocationId === item.id ? { ...d, cuttingLocationName: item.name } : d
+        );
+
+        const existingRepIdx = state.reports.findIndex((r) => r.cuttingLocationId === item.id);
+        if (existingRepIdx >= 0) {
+          state.reports[existingRepIdx] = {
+            ...state.reports[existingRepIdx],
+            cuttingLocationName: item.name,
+            updatedAt: new Date().toISOString(),
+          };
+        } else {
+          const newRep = createReportForLocation(item, state.organization, state.reports.length);
+          state.reports.push(newRep);
+        }
 
         if (supabase) {
           const { error: dbErr } = await supabase.from("kurban_cutting_locations").upsert({
@@ -575,35 +869,36 @@ export async function POST(request: Request) {
           });
 
           if (dbErr) {
-            console.error("Supabase location upsert error:", dbErr);
-            return NextResponse.json(
-              { success: false, error: `Kesim yeri Supabase'e kaydedilemedi: ${dbErr.message}` },
-              { status: 500 }
-            );
+            console.warn("Supabase location upsert warning (saved to persistent state):", dbErr);
           }
         }
 
-        const idx = inMemoryStore.locations.findIndex((l) => l.id === item.id);
-        if (idx >= 0) inMemoryStore.locations[idx] = item;
-        else inMemoryStore.locations.push(item);
+        inMemoryStore = state;
+        await saveKurbanPersistentState(state, supabase);
 
         return NextResponse.json({
           success: true,
           location: item,
+          reports: state.reports,
           message: "Kesim yeri başarıyla kaydedildi.",
         });
       }
 
-      // --- 3. SHIPMENT ---
+      // --- 3. SHIPMENT (Canlı Hayvan Sevk Tırı) ---
       if (entityType === "shipment") {
-        const destLocId = await getActiveLocationId(supabase, data.destinationLocationId);
+        const destLocId =
+          data.destinationLocationId ||
+          state.cuttingLocations[0]?.id ||
+          (await getActiveLocationId(supabase, data.destinationLocationId));
+        const matchedLoc = state.cuttingLocations.find((l) => l.id === destLocId);
 
         const item: KurbanShipment = {
           id: entityId,
           organizationId: orgId,
           destinationLocationId: destLocId,
-          destinationLocationName: data.destinationLocationName || "Kesimhane",
-          shipmentNo: data.shipmentNo || `SVK-2026-00${inMemoryStore.shipments.length + 1}`,
+          destinationLocationName:
+            matchedLoc?.name || data.destinationLocationName || "Kesimhane",
+          shipmentNo: data.shipmentNo || `SVK-2026-00${state.shipments.length + 1}`,
           shipmentDate: data.shipmentDate || new Date().toISOString().split("T")[0],
           originAddress: data.originAddress || "Besi İşletmesi",
           carrierCompany: data.carrierCompany || "",
@@ -620,16 +915,22 @@ export async function POST(request: Request) {
           createdAt: data.createdAt || new Date().toISOString(),
         };
 
+        const idx = state.shipments.findIndex((s) => s.id === item.id);
+        if (idx >= 0) state.shipments[idx] = item;
+        else state.shipments.unshift(item);
+
         if (supabase) {
           const { error: dbErr } = await supabase.from("kurban_shipments").upsert({
             id: item.id,
             organization_id: item.organizationId,
-            destination_location_id: item.destinationLocationId,
+            destination_location_id: isUUID(item.destinationLocationId)
+              ? item.destinationLocationId
+              : null,
             shipment_no: item.shipmentNo,
             shipment_date: item.shipmentDate,
             origin_address: item.originAddress,
             carrier_company: item.carrierCompany || null,
-            vehicle_plate: item.vehiclePlate, // NOT NULL satisfies postgres constraint
+            vehicle_plate: item.vehiclePlate,
             driver_name: item.driverName,
             driver_phone: item.driverPhone || null,
             animal_count: item.animalCount,
@@ -642,17 +943,12 @@ export async function POST(request: Request) {
           });
 
           if (dbErr) {
-            console.error("Supabase shipment upsert error:", dbErr);
-            return NextResponse.json(
-              { success: false, error: `Sevk tırı Supabase'e kaydedilemedi: ${dbErr.message}` },
-              { status: 500 }
-            );
+            console.warn("Supabase shipment upsert warning (saved to persistent state):", dbErr);
           }
         }
 
-        const idx = inMemoryStore.shipments.findIndex((s) => s.id === item.id);
-        if (idx >= 0) inMemoryStore.shipments[idx] = item;
-        else inMemoryStore.shipments.unshift(item);
+        inMemoryStore = state;
+        await saveKurbanPersistentState(state, supabase);
 
         return NextResponse.json({
           success: true,
@@ -661,16 +957,80 @@ export async function POST(request: Request) {
         });
       }
 
-      // --- 4. STORAGE ---
+      // --- 3.5. SLAUGHTER BATCH (Kesimhane Oturumu & Karkas Tartım Tutanağı) ---
+      if (entityType === "slaughter") {
+        const cutLocId =
+          data.cuttingLocationId ||
+          state.cuttingLocations[0]?.id ||
+          (await getActiveLocationId(supabase, data.cuttingLocationId));
+        const matchedLoc = state.cuttingLocations.find((l) => l.id === cutLocId);
+
+        const item: KurbanSlaughterBatch = {
+          id: entityId,
+          organizationId: orgId,
+          cuttingLocationId: cutLocId,
+          cuttingLocationName: matchedLoc?.name || data.cuttingLocationName || "Kesimhane",
+          batchNo: data.batchNo || `KSM-PARTI-0${state.slaughterBatches.length + 1}`,
+          slaughterDate: data.slaughterDate || new Date().toISOString().split("T")[0],
+          slaughterTime: data.slaughterTime || "08:00 - 17:00",
+          animalCount: Number(data.animalCount) || 0,
+          totalCarcassWeightKg: Number(data.totalCarcassWeightKg) || 0,
+          responsiblePerson: data.responsiblePerson || matchedLoc?.responsiblePerson || "",
+          butcherTeam: data.butcherTeam || "Uzman Kasap Ekibi",
+          veterinaryApproval: Boolean(data.veterinaryApproval ?? true),
+          officialProtocolNo: data.officialProtocolNo || `TUT-2026-0${state.slaughterBatches.length + 1}`,
+          notes: data.notes || "",
+          createdAt: data.createdAt || new Date().toISOString(),
+        };
+
+        const idx = state.slaughterBatches.findIndex((b) => b.id === item.id);
+        if (idx >= 0) state.slaughterBatches[idx] = item;
+        else state.slaughterBatches.unshift(item);
+
+        if (supabase) {
+          const { error: dbErr } = await supabase.from("kurban_slaughter_batches").upsert({
+            id: item.id,
+            organization_id: item.organizationId,
+            cutting_location_id: isUUID(item.cuttingLocationId) ? item.cuttingLocationId : null,
+            batch_no: item.batchNo,
+            slaughter_date: item.slaughterDate,
+            slaughter_time: item.slaughterTime || null,
+            animal_count: item.animalCount,
+            total_carcass_weight_kg: item.totalCarcassWeightKg,
+            responsible_person: item.responsiblePerson || null,
+            butcher_team: item.butcherTeam || null,
+            veterinary_approval: item.veterinaryApproval,
+            official_protocol_no: item.officialProtocolNo || null,
+            notes: item.notes || null,
+          });
+          if (dbErr) {
+            console.warn("Supabase slaughter upsert warning (saved to persistent state):", dbErr);
+          }
+        }
+
+        inMemoryStore = state;
+        await saveKurbanPersistentState(state, supabase);
+
+        return NextResponse.json({
+          success: true,
+          slaughter: item,
+          message: "Kesimhane oturumu ve karkas tartım tutanağı kaydedildi.",
+        });
+      }
+
+      // --- 4. STORAGE (Soğuk Hava Depolama Kaydı) ---
       if (entityType === "storage") {
-        const cutLocId = isUUID(data.cuttingLocationId)
-          ? data.cuttingLocationId
-          : await getActiveLocationId(supabase, data.cuttingLocationId);
+        const cutLocId =
+          data.cuttingLocationId ||
+          state.cuttingLocations[0]?.id ||
+          (await getActiveLocationId(supabase, data.cuttingLocationId));
+        const matchedLoc = state.cuttingLocations.find((l) => l.id === cutLocId);
 
         const item: KurbanStorageRecord = {
           id: entityId,
           organizationId: orgId,
           cuttingLocationId: cutLocId,
+          cuttingLocationName: matchedLoc?.name || data.cuttingLocationName,
           storageCompany: data.storageCompany || "Soğuk Depo Firması",
           warehouseName: data.warehouseName || "Soğuk Hava Antreposu",
           warehouseAddress: data.warehouseAddress || "",
@@ -690,11 +1050,15 @@ export async function POST(request: Request) {
           createdAt: data.createdAt || new Date().toISOString(),
         };
 
+        const idx = state.storageRecords.findIndex((st) => st.id === item.id);
+        if (idx >= 0) state.storageRecords[idx] = item;
+        else state.storageRecords.unshift(item);
+
         if (supabase) {
           const { error: dbErr } = await supabase.from("kurban_storage_records").upsert({
             id: item.id,
             organization_id: item.organizationId,
-            cutting_location_id: item.cuttingLocationId,
+            cutting_location_id: isUUID(item.cuttingLocationId) ? item.cuttingLocationId : null,
             storage_company: item.storageCompany,
             warehouse_name: item.warehouseName,
             warehouse_address: item.warehouseAddress || null,
@@ -714,17 +1078,12 @@ export async function POST(request: Request) {
           });
 
           if (dbErr) {
-            console.error("Supabase storage upsert error:", dbErr);
-            return NextResponse.json(
-              { success: false, error: `Soğuk depo kaydı Supabase'e kaydedilemedi: ${dbErr.message}` },
-              { status: 500 }
-            );
+            console.warn("Supabase storage upsert warning (saved to persistent state):", dbErr);
           }
         }
 
-        const idx = inMemoryStore.storageRecords.findIndex((st) => st.id === item.id);
-        if (idx >= 0) inMemoryStore.storageRecords[idx] = item;
-        else inMemoryStore.storageRecords.unshift(item);
+        inMemoryStore = state;
+        await saveKurbanPersistentState(state, supabase);
 
         return NextResponse.json({
           success: true,
@@ -733,18 +1092,87 @@ export async function POST(request: Request) {
         });
       }
 
-      // --- 5. DELIVERY ---
+      // --- 4.5. INVOICE (Mali Fatura & İrsaliye Kaydı) ---
+      if (entityType === "invoice") {
+        const subtotal = Number(data.subtotal) || 0;
+        const vatRate = Number(data.vatRate ?? 1);
+        const vatAmount =
+          data.vatAmount !== undefined
+            ? Number(data.vatAmount)
+            : Math.round(subtotal * (vatRate / 100) * 100) / 100;
+        const totalAmount =
+          Number(data.totalAmount) || Math.round((subtotal + vatAmount) * 100) / 100;
+
+        const item: KurbanInvoice = {
+          id: entityId,
+          organizationId: orgId,
+          cuttingLocationId: data.cuttingLocationId || undefined,
+          invoiceType: data.invoiceType || "animal_purchase",
+          invoiceNo: data.invoiceNo || `FAT-2026-00${state.invoices.length + 1}`,
+          invoiceDate: data.invoiceDate || new Date().toISOString().split("T")[0],
+          issuerCompany: data.issuerCompany || "",
+          recipientCompany: data.recipientCompany || state.organization.clientCompanyName || "",
+          subtotal,
+          vatRate,
+          vatAmount,
+          totalAmount,
+          description: data.description || "",
+          fileUrl: data.fileUrl || undefined,
+          createdAt: data.createdAt || new Date().toISOString(),
+        };
+
+        const idx = state.invoices.findIndex((inv) => inv.id === item.id);
+        if (idx >= 0) state.invoices[idx] = item;
+        else state.invoices.unshift(item);
+
+        if (supabase) {
+          const { error: dbErr } = await supabase.from("kurban_invoices").upsert({
+            id: item.id,
+            organization_id: item.organizationId,
+            cutting_location_id: isUUID(item.cuttingLocationId) ? item.cuttingLocationId : null,
+            invoice_type: item.invoiceType,
+            invoice_no: item.invoiceNo,
+            invoice_date: item.invoiceDate,
+            issuer_company: item.issuerCompany,
+            recipient_company: item.recipientCompany,
+            subtotal: item.subtotal,
+            vat_rate: item.vatRate,
+            vat_amount: item.vatAmount,
+            total_amount: item.totalAmount,
+            description: item.description || null,
+            file_url: item.fileUrl || null,
+          });
+          if (dbErr) {
+            console.warn("Supabase invoice upsert warning (saved to persistent state):", dbErr);
+          }
+        }
+
+        inMemoryStore = state;
+        await saveKurbanPersistentState(state, supabase);
+
+        return NextResponse.json({
+          success: true,
+          invoice: item,
+          message: "Fatura kaydı başarıyla kaydedildi.",
+        });
+      }
+
+      // --- 5. DELIVERY (Taşıma Aracı & Müşteri Teslimatı) ---
       if (entityType === "delivery") {
-        const cutLocId = isUUID(data.cuttingLocationId)
-          ? data.cuttingLocationId
-          : await getActiveLocationId(supabase, data.cuttingLocationId);
+        const cutLocId =
+          data.cuttingLocationId ||
+          state.cuttingLocations[0]?.id ||
+          (await getActiveLocationId(supabase, data.cuttingLocationId));
+        const matchedLoc = state.cuttingLocations.find((l) => l.id === cutLocId);
 
         const item: KurbanDelivery = {
           id: entityId,
           organizationId: orgId,
           cuttingLocationId: cutLocId,
-          deliveryNo: data.deliveryNo || `TSL-2026-00${inMemoryStore.deliveries.length + 1}`,
-          recipientCompany: data.recipientCompany || "Alıcı Firma",
+          cuttingLocationName: matchedLoc?.name || data.cuttingLocationName,
+          deliveryNo: data.deliveryNo || `TSL-2026-00${state.deliveries.length + 1}`,
+          recipientCompany:
+            data.recipientCompany || state.organization.clientCompanyName || "Alıcı Firma",
           deliveryDate: data.deliveryDate || new Date().toISOString().split("T")[0],
           deliveredQuantityKg: Number(data.deliveredQuantityKg) || 0,
           deliveredAnimalCount: Number(data.deliveredAnimalCount) || 0,
@@ -754,7 +1182,6 @@ export async function POST(request: Request) {
           recipientPerson: data.recipientPerson || "Yetkili",
           deliveredByPerson: data.deliveredByPerson || "Sevkiyat Sorumlusu",
           transportType: data.transportType || "company_vehicle",
-          // Araç plakası kullanıcı için opsiyoneldir. Boş ise Postgres NOT NULL hatasını önlemek için varsayılan değer gönderilir.
           vehiclePlate: data.vehiclePlate?.trim() || "Plakasız / Belirtilmedi",
           driverName: data.driverName || "Şoför",
           transportCost: Number(data.transportCost) || 0,
@@ -763,11 +1190,15 @@ export async function POST(request: Request) {
           createdAt: data.createdAt || new Date().toISOString(),
         };
 
+        const idx = state.deliveries.findIndex((d) => d.id === item.id);
+        if (idx >= 0) state.deliveries[idx] = item;
+        else state.deliveries.unshift(item);
+
         if (supabase) {
           const { error: dbErr } = await supabase.from("kurban_deliveries").upsert({
             id: item.id,
             organization_id: item.organizationId,
-            cutting_location_id: item.cuttingLocationId,
+            cutting_location_id: isUUID(item.cuttingLocationId) ? item.cuttingLocationId : null,
             delivery_no: item.deliveryNo,
             recipient_company: item.recipientCompany,
             delivery_date: item.deliveryDate,
@@ -787,25 +1218,68 @@ export async function POST(request: Request) {
           });
 
           if (dbErr) {
-            console.error("Supabase delivery upsert error:", dbErr);
-            return NextResponse.json(
-              {
-                success: false,
-                error: `Taşıma / Teslimat aracı Supabase'e kaydedilemedi: ${dbErr.message}`,
-              },
-              { status: 500 }
-            );
+            console.warn("Supabase delivery upsert warning (saved to persistent state):", dbErr);
           }
         }
 
-        const idx = inMemoryStore.deliveries.findIndex((d) => d.id === item.id);
-        if (idx >= 0) inMemoryStore.deliveries[idx] = item;
-        else inMemoryStore.deliveries.unshift(item);
+        inMemoryStore = state;
+        await saveKurbanPersistentState(state, supabase);
 
         return NextResponse.json({
           success: true,
           delivery: item,
           message: "Taşıma / Teslimat aracı başarıyla kaydedildi.",
+        });
+      }
+
+      // --- 6. DOCUMENT (Fotoğraf & Belge) ---
+      if (entityType === "document") {
+        const item: KurbanDocument = {
+          id: entityId,
+          organizationId: orgId,
+          cuttingLocationId: data.cuttingLocationId || undefined,
+          category: data.category || "shipment_photo",
+          title: data.title || "Süreç Görseli",
+          description: data.description || "",
+          fileUrl: data.fileUrl || "",
+          fileName: data.fileName || undefined,
+          mimeType: data.mimeType || undefined,
+          relatedEntityType: data.relatedEntityType || undefined,
+          relatedEntityId: data.relatedEntityId || undefined,
+          uploadedAt: data.uploadedAt || new Date().toISOString(),
+        };
+
+        const idx = state.documents.findIndex((doc) => doc.id === item.id);
+        if (idx >= 0) state.documents[idx] = item;
+        else state.documents.unshift(item);
+
+        if (supabase) {
+          const { error: dbErr } = await supabase.from("kurban_documents").upsert({
+            id: item.id,
+            organization_id: item.organizationId,
+            cutting_location_id: isUUID(item.cuttingLocationId) ? item.cuttingLocationId : null,
+            category: item.category,
+            title: item.title,
+            description: item.description || null,
+            file_url: item.fileUrl,
+            file_name: item.fileName || null,
+            mime_type: item.mimeType || null,
+            related_entity_type: item.relatedEntityType || null,
+            related_entity_id: isUUID(item.relatedEntityId) ? item.relatedEntityId : null,
+            uploaded_at: item.uploadedAt,
+          });
+          if (dbErr) {
+            console.warn("Supabase document upsert warning (saved to persistent state):", dbErr);
+          }
+        }
+
+        inMemoryStore = state;
+        await saveKurbanPersistentState(state, supabase);
+
+        return NextResponse.json({
+          success: true,
+          document: item,
+          message: "Fotoğraf / Belge başarıyla kaydedildi.",
         });
       }
     }
@@ -824,7 +1298,7 @@ export async function POST(request: Request) {
 }
 
 /**
- * DELETE: Delete a party, location, shipment, storage record, or delivery
+ * DELETE: Delete a party, location, shipment, slaughter, storage, invoice, delivery, or document
  */
 export async function DELETE(request: Request) {
   try {
@@ -840,75 +1314,106 @@ export async function DELETE(request: Request) {
     }
 
     const supabase = getSupabaseServerClient();
+    const { state } = await resolveAuthoritativeState(supabase);
+
+    // Record ID as deleted permanently so it never comes back from seed or relational tables
+    state.deletedIds = Array.from(new Set([...(state.deletedIds || []), id]));
 
     if (entityType === "party") {
+      state.parties = state.parties.filter((p) => p.id !== id);
       if (supabase && isUUID(id)) {
         const { error } = await supabase.from("kurban_parties").delete().eq("id", id);
-        if (error) {
-          return NextResponse.json(
-            { success: false, error: `Paydaş silinemedi: ${error.message}` },
-            { status: 500 }
-          );
-        }
+        if (error) console.warn("Supabase party delete warning:", error);
       }
-      inMemoryStore.parties = inMemoryStore.parties.filter((p) => p.id !== id);
+      inMemoryStore = state;
+      await saveKurbanPersistentState(state, supabase);
       return NextResponse.json({ success: true, message: "Paydaş firma silindi." });
     }
 
     if (entityType === "location") {
+      const removedReportIds = state.reports
+        .filter((r) => r.cuttingLocationId === id)
+        .map((r) => r.id);
+      state.deletedIds = Array.from(new Set([...state.deletedIds, ...removedReportIds]));
+      state.cuttingLocations = state.cuttingLocations.filter((l) => l.id !== id);
+      state.reports = state.reports.filter((r) => r.cuttingLocationId !== id);
+
       if (supabase && isUUID(id)) {
-        const { error } = await supabase.from("kurban_cutting_locations").delete().eq("id", id);
-        if (error) {
-          return NextResponse.json(
-            { success: false, error: `Kesim yeri silinemedi: ${error.message}` },
-            { status: 500 }
-          );
-        }
+        await safeDeleteLocationFromDb(supabase, id);
       }
-      inMemoryStore.locations = inMemoryStore.locations.filter((l) => l.id !== id);
-      return NextResponse.json({ success: true, message: "Kesim yeri silindi." });
+      inMemoryStore = state;
+      await saveKurbanPersistentState(state, supabase);
+      return NextResponse.json({
+        success: true,
+        reports: state.reports,
+        message: "Kesim yeri kalıcı olarak silindi.",
+      });
     }
 
     if (entityType === "shipment") {
+      state.shipments = state.shipments.filter((s) => s.id !== id);
       if (supabase && isUUID(id)) {
         const { error } = await supabase.from("kurban_shipments").delete().eq("id", id);
-        if (error) {
-          return NextResponse.json(
-            { success: false, error: `Sevk tırı silinemedi: ${error.message}` },
-            { status: 500 }
-          );
-        }
+        if (error) console.warn("Supabase shipment delete warning:", error);
       }
-      inMemoryStore.shipments = inMemoryStore.shipments.filter((s) => s.id !== id);
+      inMemoryStore = state;
+      await saveKurbanPersistentState(state, supabase);
       return NextResponse.json({ success: true, message: "Sevk tırı silindi." });
     }
 
+    if (entityType === "slaughter") {
+      state.slaughterBatches = state.slaughterBatches.filter((b) => b.id !== id);
+      if (supabase && isUUID(id)) {
+        const { error } = await supabase.from("kurban_slaughter_batches").delete().eq("id", id);
+        if (error) console.warn("Supabase slaughter delete warning:", error);
+      }
+      inMemoryStore = state;
+      await saveKurbanPersistentState(state, supabase);
+      return NextResponse.json({ success: true, message: "Kesimhane oturumu silindi." });
+    }
+
     if (entityType === "storage") {
+      state.storageRecords = state.storageRecords.filter((st) => st.id !== id);
       if (supabase && isUUID(id)) {
         const { error } = await supabase.from("kurban_storage_records").delete().eq("id", id);
-        if (error) {
-          return NextResponse.json(
-            { success: false, error: `Soğuk depo kaydı silinemedi: ${error.message}` },
-            { status: 500 }
-          );
-        }
+        if (error) console.warn("Supabase storage delete warning:", error);
       }
-      inMemoryStore.storageRecords = inMemoryStore.storageRecords.filter((st) => st.id !== id);
+      inMemoryStore = state;
+      await saveKurbanPersistentState(state, supabase);
       return NextResponse.json({ success: true, message: "Soğuk depo kaydı silindi." });
     }
 
+    if (entityType === "invoice") {
+      state.invoices = state.invoices.filter((inv) => inv.id !== id);
+      if (supabase && isUUID(id)) {
+        const { error } = await supabase.from("kurban_invoices").delete().eq("id", id);
+        if (error) console.warn("Supabase invoice delete warning:", error);
+      }
+      inMemoryStore = state;
+      await saveKurbanPersistentState(state, supabase);
+      return NextResponse.json({ success: true, message: "Fatura kaydı silindi." });
+    }
+
     if (entityType === "delivery") {
+      state.deliveries = state.deliveries.filter((d) => d.id !== id);
       if (supabase && isUUID(id)) {
         const { error } = await supabase.from("kurban_deliveries").delete().eq("id", id);
-        if (error) {
-          return NextResponse.json(
-            { success: false, error: `Taşıma aracı silinemedi: ${error.message}` },
-            { status: 500 }
-          );
-        }
+        if (error) console.warn("Supabase delivery delete warning:", error);
       }
-      inMemoryStore.deliveries = inMemoryStore.deliveries.filter((d) => d.id !== id);
+      inMemoryStore = state;
+      await saveKurbanPersistentState(state, supabase);
       return NextResponse.json({ success: true, message: "Taşıma aracı kaydı silindi." });
+    }
+
+    if (entityType === "document") {
+      state.documents = state.documents.filter((doc) => doc.id !== id);
+      if (supabase && isUUID(id)) {
+        const { error } = await supabase.from("kurban_documents").delete().eq("id", id);
+        if (error) console.warn("Supabase document delete warning:", error);
+      }
+      inMemoryStore = state;
+      await saveKurbanPersistentState(state, supabase);
+      return NextResponse.json({ success: true, message: "Belge / Fotoğraf silindi." });
     }
 
     return NextResponse.json({ success: false, error: "Geçersiz entityType." }, { status: 400 });

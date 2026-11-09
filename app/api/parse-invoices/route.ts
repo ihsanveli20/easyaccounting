@@ -134,6 +134,7 @@ export interface ExtractedInvoiceDocument {
   grandTotalAmount: number;
   rawTextSnippet?: string;
   parseNote?: string;
+  needsClientOcr?: boolean;
 }
 
 const UNIT_CODE_MAP: Record<string, string> = {
@@ -164,11 +165,11 @@ const UNIT_CODE_MAP: Record<string, string> = {
 };
 
 function normalizeUnit(codeOrText?: string): string {
-  if (!codeOrText) return "Adet";
+  if (!codeOrText) return "Kg";
   const upper = codeOrText.trim().toUpperCase();
   if (UNIT_CODE_MAP[upper]) return UNIT_CODE_MAP[upper];
+  if (/^(KG|KILO|KİLO|KILogram|KİLOGRAM|KGM|KG\.)$/i.test(upper)) return "Kg";
   if (/^(ADET|AD\.?|ADT)$/i.test(upper)) return "Adet";
-  if (/^(KG|KILO|KİLO|KGM)$/i.test(upper)) return "Kg";
   if (/^(LT|LITRE|LİTRE|LTR)$/i.test(upper)) return "Lt";
   if (/^(MT|METRE|MTR)$/i.test(upper)) return "Mt";
   if (/^(KOLİ|KOLI)$/i.test(upper)) return "Koli";
@@ -187,12 +188,27 @@ function parseFlexibleNumber(val?: string | null): number {
 
   if (lastComma > -1 && lastDot > -1) {
     if (lastComma > lastDot) {
+      // Turkish format: 1.234,56 -> 1234.56
       cleaned = cleaned.replace(/\./g, "").replace(",", ".");
     } else {
+      // US/XML format: 1,234.56 -> 1234.56
       cleaned = cleaned.replace(/,/g, "");
     }
   } else if (lastComma > -1) {
-    cleaned = cleaned.replace(",", ".");
+    // Only comma present: 1234,56 or 12,500
+    const parts = cleaned.split(",");
+    if (parts.length === 2 && parts[1].length === 3 && parts[0].length <= 3) {
+      // Could be decimal 3 digits for kg (e.g., 12,500 kg = 12.5)
+      cleaned = cleaned.replace(",", ".");
+    } else {
+      cleaned = cleaned.replace(",", ".");
+    }
+  } else if (lastDot > -1) {
+    // Check if dot is thousands separator like "12.500" or decimal like "410.50"
+    const parts = cleaned.split(".");
+    if (parts.length > 2) {
+      cleaned = cleaned.replace(/\./g, "");
+    }
   }
   const num = parseFloat(cleaned);
   return Number.isFinite(num) ? num : 0;
@@ -311,7 +327,7 @@ function parseInvoiceXml(xmlText: string, fileName: string): ExtractedInvoiceDoc
     );
     const qtyAttr = qtyMatch ? qtyMatch[1] : "";
     const unitCodeMatch = qtyAttr.match(/unitCode=["']([^"']+)["']/i);
-    const unit = normalizeUnit(unitCodeMatch ? unitCodeMatch[1] : "Adet");
+    const unit = normalizeUnit(unitCodeMatch ? unitCodeMatch[1] : "Kg");
     const quantity = parseFlexibleNumber(qtyMatch ? qtyMatch[2] : "1") || 1;
 
     const netAmount = parseFlexibleNumber(
@@ -409,6 +425,306 @@ function normalizeDateString(raw: string): string {
   return trimmed;
 }
 
+/**
+ * Strips right-side e-Fatura metadata table fragments that often get merged onto the same line as SAYIN / Buyer Name
+ */
+function stripRightColumnMetadata(line: string): string {
+  return line
+    .replace(
+      /\b(?:Özelleştirme\s*No|Ozellestirme\s*No|Senaryo|Fatura\s*Tipi|Fatura\s*No|Fatura\s*Numaras[ıi]|Fatura\s*Tarihi|Düzenleme\s*Tarihi|Duzenleme\s*Tarihi|Düzenleme\s*Zaman[ıi]|İrsaliye\s*No|Irsaliye\s*No|İrsaliye\s*Tarihi|Sipariş\s*No|Siparis\s*No|Sipariş\s*Tarihi|ETTN|e-Fatura|e-Arşiv\s*Fatura|E-FATURA|E-ARŞİV)\s*[:.]?.*$/i,
+      ""
+    )
+    .replace(/\b[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\b/gi, "")
+    .trim();
+}
+
+/**
+ * Extracts Buyer Institution / Company starting with "SAYIN" (Fatura Alıcısı)
+ */
+function extractSayinBuyer(lines: string[], rawText: string): {
+  buyerName: string;
+  buyerTaxId: string;
+} {
+  let buyerName = "";
+  let buyerTaxId = "";
+
+  // 1. Find the line containing SAYIN (case-insensitive, Turkish characters & OCR tolerances like SAYİN, SAY1N)
+  const sayinIdx = lines.findIndex((l) =>
+    /\b(SAYIN|SAY[Iİ1]N|Say[ıi]n|ALICI)\b/i.test(l)
+  );
+
+  if (sayinIdx !== -1) {
+    const sayinLine = lines[sayinIdx];
+    // Extract everything after SAYIN on that same line
+    const afterSayinMatch = sayinLine.match(
+      /\b(?:SAYIN|SAY[Iİ1]N|Say[ıi]n|ALICI)\b\s*[:.\-]?\s*(.*)$/i
+    );
+    const sameLinePart = stripRightColumnMetadata(afterSayinMatch ? afterSayinMatch[1] : "");
+
+    const buyerParts: string[] = [];
+    if (
+      sameLinePart.length > 2 &&
+      !/^(VKN|TCKN|VERGİ|VERGI|TEL|ADRES|WEB|E-POSTA)/i.test(sameLinePart)
+    ) {
+      buyerParts.push(sameLinePart);
+    }
+
+    // Collect the next 1-4 lines belonging to the institution/company name under SAYIN
+    for (let i = sayinIdx + 1; i < Math.min(sayinIdx + 7, lines.length); i++) {
+      const cleaned = stripRightColumnMetadata(lines[i]);
+      if (!cleaned || cleaned.length < 2) continue;
+
+      // Stop if we hit address/tax/table headers
+      if (
+        /^(VKN|TCKN|Vergi\s*Dairesi|Vergi\s*No|T\.?C\.?\s*Kimlik|Adres|Mah\.|Mahallesi|Cad\.|Caddesi|Sok\.|Sokak|No\s*:|Tel|Telefon|Faks|E-Posta|Web\s*Sitesi|Sıra\s*No|Sira\s*No|Mal\s*Hizmet|Açıklama|Miktar)/i.test(
+          cleaned
+        )
+      ) {
+        // Still check if this line has VKN/TCKN before breaking
+        const vknInStop = cleaned.match(/\b(\d{10,11})\b/);
+        if (vknInStop && !buyerTaxId) {
+          buyerTaxId = vknInStop[1];
+        }
+        if (buyerParts.length > 0) break;
+        continue;
+      }
+
+      buyerParts.push(cleaned);
+      // Usually institution/company title is 1 or 2 lines max
+      if (buyerParts.length >= 2) break;
+    }
+
+    buyerName = buyerParts.join(" ").replace(/\s+/g, " ").trim();
+
+    // Extract VKN/TCKN in the lines following SAYIN
+    for (let i = sayinIdx; i < Math.min(sayinIdx + 12, lines.length); i++) {
+      const vknMatch =
+        lines[i].match(
+          /(?:VKN|TCKN|Vergi\s*No|Vergi\s*Kimlik|T\.?C\.?\s*Kimlik)\s*[:./\-]?\s*(\d{10,11})/i
+        ) || lines[i].match(/\b(\d{10,11})\b/);
+      if (vknMatch) {
+        buyerTaxId = vknMatch[1];
+        break;
+      }
+    }
+  }
+
+  // Fallback regex over rawText if line-by-line didn't catch it
+  if (!buyerName) {
+    const blockMatch = rawText.match(
+      /\b(?:SAYIN|Say[ıi]n)\b\s*[:.\-]?\s*([^\r\n]+)(?:\r?\n\s*([^\r\n]+))?/i
+    );
+    if (blockMatch) {
+      const p1 = stripRightColumnMetadata(blockMatch[1] || "");
+      const p2 = stripRightColumnMetadata(blockMatch[2] || "");
+      const combined = [p1, p2]
+        .filter(
+          (p) =>
+            p.length > 2 &&
+            !/^(VKN|TCKN|VERGİ|ADRES|MAHALLESİ|CAD|SOKAK|TEL)/i.test(p)
+        )
+        .join(" ")
+        .trim();
+      if (combined) buyerName = combined;
+    }
+  }
+
+  return { buyerName, buyerTaxId };
+}
+
+/**
+ * Extracts invoice line items, prioritizing rows with KG (Kilogram) quantities as well as standard units
+ */
+function extractKgAndStandardLineItems(lines: string[]): ExtractedInvoiceItem[] {
+  const items: ExtractedInvoiceItem[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    // Skip summary/footer lines and header labels
+    if (
+      /^(Mal\s*Hizmet\s*Toplam|Toplam\s*İskonto|Toplam\s*Iskonto|Hesaplanan\s*KDV|Vergiler\s*Dahil|Ödenecek\s*Tutar|Odenecek\s*Tutar|Genel\s*Toplam|Ara\s*Toplam|Yalnız|Yalniz|Not\s*:|IBAN|TR\d{2}|Sıra\s*No|Sira\s*No\s*Mal)/i.test(
+        line
+      )
+    ) {
+      continue;
+    }
+
+    // Look for quantity + unit (specifically prioritizing KG / Kg / KGM / Kilogram, plus Adet/Lt/Paket/Koli)
+    const unitRegex =
+      /(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{1,4})?|\d+(?:[.,]\d{1,4})?)\s*(KG|Kg|kg|KGM|Kilogram|KİLOGRAM|Adet|ADET|Lt|LT|Koli|KOLİ|Paket|PAKET|Ton|TON|C62|NIU)\b/;
+    const qtyUnitMatch = line.match(unitRegex);
+    if (!qtyUnitMatch || qtyUnitMatch.index === undefined) continue;
+
+    const quantity = parseFlexibleNumber(qtyUnitMatch[1]);
+    if (quantity <= 0) continue;
+
+    const rawUnit = qtyUnitMatch[2];
+    const unit = normalizeUnit(rawUnit);
+
+    // Everything before the quantity match is the row number + product name
+    const beforeQty = line.slice(0, qtyUnitMatch.index).trim();
+    // Everything after the quantity+unit match contains Unit Price, VAT %, VAT Amount, Line Total (and possibly next line if wrapped)
+    let afterQty = line.slice(qtyUnitMatch.index + qtyUnitMatch[0].length).trim();
+
+    // Clean product name (strip leading row index like "1 ", "2 ", product code, or "|")
+    let productName = beforeQty
+      .replace(/^\s*\d{1,3}\s+/, "")
+      .replace(/^[|\-–—:\s]+/, "")
+      .replace(/[|\-–—:\s]+$/, "")
+      .trim();
+
+    // If product name is empty or very short on this line, check the previous line
+    if (productName.length < 2 && i > 0) {
+      const prevLine = stripRightColumnMetadata(lines[i - 1]);
+      if (
+        prevLine.length >= 3 &&
+        !/^(Sıra|Sira|Mal\s*Hizmet|Miktar|Birim|Fatura|SAYIN|Vergi|VKN|TCKN|ETTN)/i.test(
+          prevLine
+        ) &&
+        !unitRegex.test(prevLine)
+      ) {
+        productName = prevLine.replace(/^\s*\d{1,3}\s+/, "").trim();
+      }
+    }
+
+    // If afterQty has very few numbers (e.g. row wrapped onto the next line), append next line if it doesn't have its own KG unit
+    if (i + 1 < lines.length && !unitRegex.test(lines[i + 1])) {
+      const nextLine = lines[i + 1];
+      if (
+        !/^(Mal\s*Hizmet\s*Toplam|Toplam\s*İskonto|Hesaplanan\s*KDV|Vergiler\s*Dahil|Ödenecek\s*Tutar|Yalnız)/i.test(
+          nextLine
+        )
+      ) {
+        const numbersInAfter = afterQty.match(/\d+(?:[.,]\d+)?/g) || [];
+        if (numbersInAfter.length < 2) {
+          afterQty = `${afterQty} ${nextLine}`;
+        }
+      }
+    }
+
+    // Extract VAT rate if marked with % (e.g. "%1", "% 10", "%20", "1%", "%01", "%8")
+    let vatRate = 1; // Default 1% for KG meat/food invoices if not explicitly found
+    const vatRateExplicitMatch =
+      afterQty.match(/%\s*(\d{1,2}(?:[.,]\d{1,2})?)/) ||
+      afterQty.match(/(\d{1,2}(?:[.,]\d{1,2})?)\s*%/);
+    if (vatRateExplicitMatch) {
+      const parsedRate = parseFlexibleNumber(vatRateExplicitMatch[1]);
+      if ([0, 1, 8, 10, 18, 20].includes(Math.round(parsedRate))) {
+        vatRate = Math.round(parsedRate);
+      }
+    }
+
+    // Remove the explicit "%XX" token from afterQty so we can cleanly extract monetary amounts
+    const afterWithoutPercent = afterQty
+      .replace(/%\s*\d{1,2}(?:[.,]\d{1,2})?/g, " ")
+      .replace(/\d{1,2}(?:[.,]\d{1,2})?\s*%/g, " ");
+
+    // Extract all number tokens from afterWithoutPercent
+    const numberTokens =
+      afterWithoutPercent.match(
+        /\d{1,3}(?:[.,]\d{3})+(?:[.,]\d{1,4})?|\d+(?:[.,]\d{1,4})?/g
+      ) || [];
+
+    const parsedNums = numberTokens
+      .map((t) => parseFlexibleNumber(t))
+      .filter((n) => n >= 0);
+
+    // Filter out standalone VAT rate numbers like 1, 10, 20 if they aren't the unit price
+    let unitPrice = 0;
+    let vatAmount = 0;
+    let netAmount = 0;
+
+    if (parsedNums.length > 0) {
+      // Find a number in parsedNums where quantity * candidate ≈ another number in parsedNums (the line net total!)
+      let matchedPair = false;
+      for (let a = 0; a < parsedNums.length; a++) {
+        const candidatePrice = parsedNums[a];
+        if (candidatePrice <= 0) continue;
+        const expectedNet = quantity * candidatePrice;
+        for (let b = a + 1; b < parsedNums.length; b++) {
+          const candidateNet = parsedNums[b];
+          if (
+            candidateNet > 0 &&
+            Math.abs(candidateNet - expectedNet) / Math.max(1, expectedNet) < 0.03
+          ) {
+            unitPrice = candidatePrice;
+            netAmount = candidateNet;
+            matchedPair = true;
+            // Look for VAT amount among remaining numbers between a and b or after b
+            const expectedVat = (netAmount * vatRate) / 100;
+            for (let c = a + 1; c < parsedNums.length; c++) {
+              if (c === b) continue;
+              const candVat = parsedNums[c];
+              if (
+                candVat > 0 &&
+                Math.abs(candVat - expectedVat) / Math.max(1, expectedVat) < 0.15
+              ) {
+                vatAmount = candVat;
+                break;
+              }
+            }
+            break;
+          }
+        }
+        if (matchedPair) break;
+      }
+
+      if (!matchedPair) {
+        const nonZeroNums = parsedNums.filter((n) => n > 0);
+        if (nonZeroNums.length >= 3) {
+          unitPrice = nonZeroNums[0];
+          netAmount = nonZeroNums[nonZeroNums.length - 1];
+          // Check if a middle number is a valid VAT rate (1, 10, 20) when % sign was missed by OCR
+          if (!vatRateExplicitMatch) {
+            const possibleRate = nonZeroNums.find((n) =>
+              [1, 8, 10, 18, 20].includes(n)
+            );
+            if (possibleRate) vatRate = possibleRate;
+          }
+          vatAmount = Number(((netAmount * vatRate) / 100).toFixed(2));
+        } else if (nonZeroNums.length === 2) {
+          unitPrice = nonZeroNums[0];
+          netAmount = nonZeroNums[1];
+          vatAmount = Number(((netAmount * vatRate) / 100).toFixed(2));
+        } else if (nonZeroNums.length === 1) {
+          unitPrice = nonZeroNums[0];
+          netAmount = Number((quantity * unitPrice).toFixed(2));
+          vatAmount = Number(((netAmount * vatRate) / 100).toFixed(2));
+        }
+      }
+    }
+
+    if (!netAmount && quantity > 0 && unitPrice > 0) {
+      netAmount = Number((quantity * unitPrice).toFixed(2));
+    }
+    if (!unitPrice && quantity > 0 && netAmount > 0) {
+      unitPrice = Number((netAmount / quantity).toFixed(2));
+    }
+    if (!vatAmount && netAmount > 0 && vatRate > 0) {
+      vatAmount = Number(((netAmount * vatRate) / 100).toFixed(2));
+    }
+
+    const totalAmount = Number((netAmount + vatAmount).toFixed(2));
+
+    if (quantity > 0 && (unitPrice > 0 || netAmount > 0 || unit === "Kg")) {
+      items.push({
+        id: `${Date.now()}-${items.length}-${Math.random().toString(36).slice(2, 6)}`,
+        productName: productName || `Fatura Kalemi (${quantity} ${unit})`,
+        quantity,
+        unit,
+        unitPrice: Number(unitPrice.toFixed(2)),
+        vatRate,
+        vatAmount: Number(vatAmount.toFixed(2)),
+        netAmount: Number(netAmount.toFixed(2)),
+        totalAmount,
+      });
+    }
+  }
+
+  return items;
+}
+
 function parseInvoicePdfText(
   rawText: string,
   fileName: string,
@@ -419,6 +735,7 @@ function parseInvoicePdfText(
     .map((l) => l.replace(/\s+/g, " ").trim())
     .filter(Boolean);
 
+  // 1. Extract Invoice No (e.g., 16-char GIB number or "Fatura No: ...")
   let invoiceNo = "";
   const gibMatch = rawText.match(/\b([A-Z0-9]{3}20\d{11})\b/);
   if (gibMatch) {
@@ -433,6 +750,7 @@ function parseInvoicePdfText(
     invoiceNo = fileName.replace(/\.[^.]+$/, "").slice(0, 20).toUpperCase();
   }
 
+  // 2. Extract Invoice Date
   let invoiceDate = "";
   const dateLabelMatch = rawText.match(
     /(?:Fatura\s*Tarihi|D[üu]zenleme\s*Tarihi|Tarih)\s*[:.]?\s*(\d{1,2}[./\-]\d{1,2}[./\-]\d{4}|\d{4}[./\-]\d{1,2}[./\-]\d{1,2})/i
@@ -441,7 +759,7 @@ function parseInvoicePdfText(
     invoiceDate = normalizeDateString(dateLabelMatch[1]);
   } else {
     const anyDate = rawText.match(
-      /\b(\d{2}[./]\d{2}[./]20\d{2}|20\d{2}-\d{2}-\d{2})\b/
+      /\b(\d{2}[./\-]\d{2}[./\-]20\d{2}|20\d{2}[./\-]\d{2}[./\-]\d{2})\b/
     );
     if (anyDate) invoiceDate = normalizeDateString(anyDate[1]);
   }
@@ -449,118 +767,49 @@ function parseInvoicePdfText(
     invoiceDate = new Date().toISOString().slice(0, 10);
   }
 
-  let buyerName = "";
-  let buyerTaxId = "";
+  // 3. Extract Buyer starting with SAYIN (Fatura Alıcısı)
+  const { buyerName: sayinBuyer, buyerTaxId } = extractSayinBuyer(lines, rawText);
+  let buyerName = sayinBuyer;
   let sellerName = "";
 
   const sayinIdx = lines.findIndex((l) =>
-    /^(SAYIN|ALICI\s*[:]|MÜŞTERİ|MUSTERI)/i.test(l)
+    /\b(SAYIN|SAY[Iİ1]N|Say[ıi]n|ALICI)\b/i.test(l)
   );
-  if (sayinIdx !== -1) {
-    const inlineSayin = lines[sayinIdx]
-      .replace(/^(SAYIN|ALICI|MÜŞTERİ|MUSTERI)\s*[:.]?\s*/i, "")
-      .trim();
-    if (inlineSayin.length > 2 && !/^(VKN|TCKN|VERGİ)/i.test(inlineSayin)) {
-      buyerName = inlineSayin;
-    } else {
-      for (let i = sayinIdx + 1; i < Math.min(sayinIdx + 6, lines.length); i++) {
-        const candidate = lines[i];
-        if (
-          candidate.length > 2 &&
-          !/^(ETTN|FATURA|ÖZELLEŞTİRME|SENARYO|DÜZENLEME|İRSALİYE)/i.test(candidate)
-        ) {
-          buyerName = candidate;
-          break;
-        }
-      }
-    }
-    for (let i = sayinIdx; i < Math.min(sayinIdx + 10, lines.length); i++) {
-      const vknMatch =
-        lines[i].match(
-          /(?:VKN|TCKN|Vergi\s*No|T\.?C\.?\s*Kimlik)\s*[:./]?\s*(\d{10,11})/i
-        ) || lines[i].match(/\b(\d{10,11})\b/);
-      if (vknMatch) {
-        buyerTaxId = vknMatch[1];
-        break;
-      }
-    }
-  }
 
+  // Seller is usually before SAYIN in the header
   for (let i = 0; i < Math.min(12, lines.length); i++) {
     if (sayinIdx !== -1 && i >= sayinIdx) break;
+    const candidate = stripRightColumnMetadata(lines[i]);
     if (
-      /(A\.?\s*Ş\.?|LTD\.?|ŞTİ\.?|SAN\.?|TİC\.?|PAZARLAMA|GIDA|İNŞAAT|TEKSTİL|LOJİSTİK|OTOMOTİV|BİLİŞİM)/i.test(
-        lines[i]
+      /(A\.?\s*Ş\.?|LTD\.?|ŞTİ\.?|SAN\.?|TİC\.?|PAZARLAMA|GIDA|İNŞAAT|TEKSTİL|LOJİSTİK|OTOMOTİV|BİLİŞİM|TARIM|HAYVANCILIK|ET\b)/i.test(
+        candidate
       )
     ) {
-      sellerName = lines[i];
+      sellerName = candidate;
       break;
     }
   }
 
   if (!buyerName) {
-    const companyLines = lines.filter((l) =>
-      /(A\.?\s*Ş\.?|LTD\.?|ŞTİ\.?|SAN\.?|TİC\.?)/i.test(l)
-    );
+    const companyLines = lines
+      .map((l) => stripRightColumnMetadata(l))
+      .filter((l) =>
+        /(KURUMU|BAKANLIĞI|MÜDÜRLÜĞÜ|BELEDİYESİ|VAKFI|DERNEĞİ|ÜNİVERSİTESİ|BAŞKANLIĞI|A\.?\s*Ş\.?|LTD\.?|ŞTİ\.?|SAN\.?|TİC\.?)/i.test(
+          l
+        )
+      );
     if (companyLines.length >= 2) {
       sellerName = sellerName || companyLines[0];
       buyerName = companyLines[1];
     } else if (companyLines.length === 1) {
       buyerName = companyLines[0];
     } else {
-      buyerName =
-        fileType === "image"
-          ? "Fotoğraf Fatura Alıcısı (Düzenleyiniz)"
-          : "PDF Fatura Alıcısı";
+      buyerName = "Belirtilmemiş Alıcı (SAYIN Bulunamadı)";
     }
   }
 
-  const items: ExtractedInvoiceItem[] = [];
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (
-      /^(Mal\s*Hizmet\s*Toplam|Toplam\s*İskonto|Hesaplanan\s*KDV|Vergiler\s*Dahil|Ödenecek\s*Tutar|Genel\s*Toplam|Ara\s*Toplam|Yalnız|Not\s*:|IBAN|TR\d{2})/i.test(
-        line
-      )
-    ) {
-      continue;
-    }
-
-    const efaturaRowMatch = line.match(
-      /^(?:(\d{1,3})\s+)?(.+?)\s+(\d+(?:[.,]\d+)?)\s*(Adet|Kg|KGM|Lt|LTR|Mt|Koli|Paket|Kutu|Ton|Gr|m2|m²|Set|Çift|Gün|Saat|Ay|C62|NIU)?\s+(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2,4})|\d+(?:[.,]\d{2,4}))\s*(?:TL|TRY|₺|USD|EUR)?\s+(?:%?\s*(\d{1,2}(?:[.,]\d{1,2})?)\s*%?\s+)?(?:(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})|\d+(?:[.,]\d{2}))\s*(?:TL|TRY|₺|USD|EUR)?\s+)?(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})|\d+(?:[.,]\d{2}))\s*(?:TL|TRY|₺|USD|EUR)?$/i
-    );
-
-    if (efaturaRowMatch) {
-      const prodName = efaturaRowMatch[2].trim();
-      if (prodName.length >= 2 && !/^(Sıra|Mal\s*Hizmet|Miktar|Birim)/i.test(prodName)) {
-        const quantity = parseFlexibleNumber(efaturaRowMatch[3]) || 1;
-        const unit = normalizeUnit(efaturaRowMatch[4] || "Adet");
-        const unitPrice = parseFlexibleNumber(efaturaRowMatch[5]);
-        const vatRate = efaturaRowMatch[6] ? parseFlexibleNumber(efaturaRowMatch[6]) : 20;
-        const netFromRow = parseFlexibleNumber(efaturaRowMatch[8]);
-        const netAmount = netFromRow || Number((quantity * unitPrice).toFixed(2));
-        const vatFromRow = efaturaRowMatch[7]
-          ? parseFlexibleNumber(efaturaRowMatch[7])
-          : Number(((netAmount * vatRate) / 100).toFixed(2));
-        const totalAmount = Number((netAmount + vatFromRow).toFixed(2));
-
-        if (netAmount > 0 || unitPrice > 0) {
-          items.push({
-            id: `${Date.now()}-${items.length}-${Math.random().toString(36).slice(2, 6)}`,
-            productName: prodName,
-            quantity,
-            unit,
-            unitPrice: unitPrice || Number((netAmount / quantity).toFixed(2)),
-            vatRate,
-            vatAmount: vatFromRow,
-            netAmount,
-            totalAmount,
-          });
-        }
-      }
-    }
-  }
+  // 4. Extract Line Items (prioritizing KG quantities)
+  const items = extractKgAndStandardLineItems(lines);
 
   const subtotalMatch = rawText.match(
     /(?:Mal\s*Hizmet\s*Toplam\s*Tutar[ıi]|Ara\s*Toplam|Matrah)\s*[:.]?\s*([\d.,]+)\s*(?:TL|TRY|₺)?/i
@@ -569,14 +818,22 @@ function parseInvoicePdfText(
     /(?:Hesaplanan\s*KDV|Toplam\s*KDV|KDV\s*Tutar[ıi])\s*(?:\([^)]*\))?\s*[:.]?\s*([\d.,]+)\s*(?:TL|TRY|₺)?/i
   );
   const grandTotalMatch = rawText.match(
-    /(?:Ödenecek\s*Tutar|Vergiler\s*Dahil\s*Toplam\s*Tutar|Genel\s*Toplam|TOPLAM)\s*[:.]?\s*([\d.,]+)\s*(?:TL|TRY|₺)?/i
+    /(?:Ödenecek\s*Tutar|Odenecek\s*Tutar|Vergiler\s*Dahil\s*Toplam\s*Tutar|Genel\s*Toplam)\s*[:.]?\s*([\d.,]+)\s*(?:TL|TRY|₺)?/i
   );
 
   const pdfSubtotal = subtotalMatch ? parseFlexibleNumber(subtotalMatch[1]) : 0;
   const pdfVatTotal = vatTotalMatch ? parseFlexibleNumber(vatTotalMatch[1]) : 0;
   const pdfGrandTotal = grandTotalMatch ? parseFlexibleNumber(grandTotalMatch[1]) : 0;
 
+  // Also check if there is a standalone KG mention in rawText if row matcher didn't catch a structured line
   if (items.length === 0) {
+    const standaloneKgMatch = rawText.match(
+      /(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{1,3})?|\d+(?:[.,]\d{1,3})?)\s*(?:KG|Kg|kg|KGM|Kilogram)\b/
+    );
+    const detectedKg = standaloneKgMatch
+      ? parseFlexibleNumber(standaloneKgMatch[1])
+      : 1;
+
     const net =
       pdfSubtotal ||
       (pdfGrandTotal > 0 && pdfVatTotal > 0
@@ -584,17 +841,19 @@ function parseInvoicePdfText(
         : pdfGrandTotal);
     const vat = pdfVatTotal || 0;
     const total = pdfGrandTotal || net + vat;
-    const inferredRate = net > 0 && vat > 0 ? Math.round((vat / net) * 100) : 20;
+    const inferredRate = net > 0 && vat > 0 ? Math.round((vat / net) * 100) : 1;
+    const calcUnitPrice =
+      detectedKg > 0 && net > 0 ? Number((net / detectedKg).toFixed(2)) : Number(net.toFixed(2));
 
     items.push({
       id: `${Date.now()}-0`,
       productName:
         fileType === "image"
-          ? `${fileName.replace(/\.[^.]+$/, "")} - Fatura Kalemi`
+          ? "Fatura Kalemi (Görselden Okundu)"
           : "Fatura Genel Kalemi (PDF'den Aktarıldı)",
-      quantity: 1,
-      unit: "Adet",
-      unitPrice: Number(net.toFixed(2)),
+      quantity: detectedKg || 1,
+      unit: "Kg",
+      unitPrice: calcUnitPrice,
       vatRate: inferredRate,
       vatAmount: Number(vat.toFixed(2)),
       netAmount: Number(net.toFixed(2)),
@@ -620,11 +879,12 @@ function parseInvoicePdfText(
     subtotalAmount: Number((computedSubtotal || pdfSubtotal).toFixed(2)),
     totalVatAmount: Number((computedVat || pdfVatTotal).toFixed(2)),
     grandTotalAmount: Number((computedGrand || pdfGrandTotal).toFixed(2)),
-    rawTextSnippet: lines.slice(0, 35).join("\n"),
+    rawTextSnippet: lines.slice(0, 45).join("\n"),
     parseNote:
       fileType === "image"
-        ? "Fotoğraf metni ayrıştırıldı. Kalemleri kontrol edip düzenleyebilirsiniz."
-        : "PDF fatura metni ayrıştırıldı. Kalemleri tablodan kontrol edip düzenleyebilirsiniz.",
+        ? "Fotoğraf OCR ile okundu (SAYIN alıcı ve KG miktarlar ayrıştırıldı)."
+        : "PDF fatura metni ayrıştırıldı (SAYIN alıcı ve KG miktarlar ayrıştırıldı).",
+    needsClientOcr: lines.length === 0,
   };
 }
 
@@ -632,7 +892,6 @@ export async function POST(request: NextRequest) {
   try {
     const contentType = request.headers.get("content-type") || "";
 
-    // Support lightweight JSON payload (e.g. OCR text from image or XML text)
     if (contentType.includes("application/json")) {
       const body = await request.json();
       const { rawText = "", fileName = "belge.txt", fileType = "pdf" } = body;
@@ -680,51 +939,6 @@ export async function POST(request: NextRequest) {
           const rawText: string = result?.text || "";
           const doc = parseInvoicePdfText(rawText, file.name, "pdf");
           documents.push(doc);
-        } else if (
-          /\.(jpg|jpeg|png|webp|heic)$/i.test(lowerName) ||
-          file.type.startsWith("image/")
-        ) {
-          const baseName = file.name.replace(/\.[^.]+$/, "");
-          const dateInName = baseName.match(
-            /(20\d{2}[-_.]\d{2}[-_.]\d{2}|\d{2}[-_.]\d{2}[-_.]20\d{2})/
-          );
-          const invNoInName = baseName.match(
-            /([A-Z0-9]{3}20\d{11}|FAT[-_]?\d+|\d{6,16})/i
-          );
-
-          documents.push({
-            id: `inv-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-            fileName: file.name,
-            fileType: "image",
-            buyerName: "Fotoğraf Fatura Alıcısı (Düzenleyiniz)",
-            buyerTaxId: "",
-            sellerName: "",
-            invoiceDate: dateInName
-              ? normalizeDateString(dateInName[1].replace(/_/g, "-"))
-              : new Date().toISOString().slice(0, 10),
-            invoiceNo: invNoInName
-              ? invNoInName[1].toUpperCase()
-              : `FOTO-${Math.floor(100000 + Math.random() * 900000)}`,
-            currency: "TRY",
-            items: [
-              {
-                id: `${Date.now()}-img-0`,
-                productName: `${baseName} - Fatura Kalemi`,
-                quantity: 1,
-                unit: "Adet",
-                unitPrice: 0,
-                vatRate: 20,
-                vatAmount: 0,
-                netAmount: 0,
-                totalAmount: 0,
-              },
-            ],
-            subtotalAmount: 0,
-            totalVatAmount: 0,
-            grandTotalAmount: 0,
-            parseNote:
-              "Fotoğraf yüklendi. Görsel önizleme penceresinden bakarak değerleri hızlıca girebilirsiniz.",
-          });
         } else {
           errors.push({
             fileName: file.name,

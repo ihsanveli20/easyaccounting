@@ -1,9 +1,12 @@
-import { NextResponse } from "next/server";
+import { NextResponse, connection } from "next/server";
 import { SEED_REPORTS } from "../../../utils/kurbanProcessSeed";
 import {
   getSupabaseServerClient,
   isUUID,
   ensureUUID,
+  loadKurbanPersistentState,
+  saveKurbanPersistentState,
+  createDefaultPersistentState,
   mapReportFromDb,
 } from "../../../utils/kurbanProcessDb";
 import { KurbanReport, KurbanReportSection } from "../../../types/kurbanProcess";
@@ -15,12 +18,32 @@ let memoryReports: KurbanReport[] = JSON.parse(JSON.stringify(SEED_REPORTS));
  * GET: Fetch reports by location or reportId
  */
 export async function GET(request: Request) {
+  await connection();
   const { searchParams } = new URL(request.url);
   const locationId = searchParams.get("locationId");
   const reportId = searchParams.get("reportId");
 
   const supabase = getSupabaseServerClient();
 
+  // 1. Check persistent state first
+  const persisted = await loadKurbanPersistentState(supabase);
+  if (persisted && persisted.isCustomized) {
+    let result = persisted.reports || [];
+    if (reportId) {
+      result = result.filter((r) => r.id === reportId);
+    } else if (locationId && locationId !== "all") {
+      const matched = result.filter((r) => r.cuttingLocationId === locationId);
+      if (matched.length > 0) result = matched;
+    }
+    memoryReports = persisted.reports || [];
+    return NextResponse.json({
+      success: true,
+      source: "supabase_persistent_state",
+      reports: result,
+    });
+  }
+
+  // 2. Check relational table
   if (supabase) {
     try {
       let query = supabase
@@ -45,7 +68,6 @@ export async function GET(request: Request) {
           reports: mappedReports,
         });
       } else {
-        // If filtered query returned 0, return all reports from Supabase so reports never disappear
         const { data: allData } = await supabase
           .from("kurban_reports")
           .select("*, kurban_report_sections(*)");
@@ -62,7 +84,7 @@ export async function GET(request: Request) {
     }
   }
 
-  // Memory fallback
+  // 3. Memory fallback
   let result = memoryReports;
   if (reportId) {
     result = result.filter((r) => r.id === reportId);
@@ -93,96 +115,83 @@ export async function PUT(request: Request) {
       );
     }
 
+    const supabase = getSupabaseServerClient();
+    const persisted = (await loadKurbanPersistentState(supabase)) || createDefaultPersistentState();
+
+    // Update in persistent state
+    const pIdx = persisted.reports.findIndex((r) => r.id === body.id);
+    let updatedReportObj: KurbanReport;
+    if (pIdx !== -1) {
+      updatedReportObj = {
+        ...persisted.reports[pIdx],
+        ...body,
+        updatedAt: new Date().toISOString(),
+      } as KurbanReport;
+      persisted.reports[pIdx] = updatedReportObj;
+    } else {
+      updatedReportObj = {
+        ...SEED_REPORTS[0],
+        ...body,
+        id: ensureUUID(body.id),
+        updatedAt: new Date().toISOString(),
+      } as KurbanReport;
+      persisted.reports.push(updatedReportObj);
+    }
+
+    await saveKurbanPersistentState(persisted, supabase);
+
     // Update in memory store
     const idx = memoryReports.findIndex((r) => r.id === body.id);
     if (idx !== -1) {
-      memoryReports[idx] = {
-        ...memoryReports[idx],
-        ...body,
-        updatedAt: new Date().toISOString(),
-      };
+      memoryReports[idx] = updatedReportObj;
+    } else {
+      memoryReports.push(updatedReportObj);
     }
 
-    // Update in Supabase
-    const supabase = getSupabaseServerClient();
+    // Also try updating in Supabase relational tables
     if (supabase && isUUID(body.id)) {
-      const { error: repErr } = await supabase
-        .from("kurban_reports")
-        .update({
-          title: body.title,
-          report_date: body.reportDate,
-          report_period: body.reportPeriod,
-          prepared_by: body.preparedBy,
-          status: body.status,
-          executive_summary: body.executiveSummary,
-          evaluation_notes: body.evaluationNotes,
-          final_result_summary: body.finalResultSummary,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", body.id);
+      try {
+        await supabase
+          .from("kurban_reports")
+          .update({
+            title: body.title,
+            report_date: body.reportDate,
+            report_period: body.reportPeriod,
+            prepared_by: body.preparedBy,
+            status: body.status,
+            executive_summary: body.executiveSummary,
+            evaluation_notes: body.evaluationNotes,
+            final_result_summary: body.finalResultSummary,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", body.id);
 
-      if (repErr) {
-        console.error("Supabase report update error:", repErr);
-        return NextResponse.json(
-          {
-            success: false,
-            error: `Rapor Supabase'e kaydedilemedi: ${repErr.message}`,
-          },
-          { status: 500 }
-        );
-      }
-
-      // If sections provided, upsert them
-      if (body.sections && Array.isArray(body.sections)) {
-        for (const s of body.sections) {
-          const sectionId = ensureUUID(s.id);
-          const { error: secErr } = await supabase.from("kurban_report_sections").upsert({
-            id: sectionId,
-            report_id: body.id,
-            section_key: s.sectionKey,
-            section_title: s.sectionTitle,
-            order_index: s.orderIndex,
-            is_enabled: Boolean(s.isEnabled ?? true),
-            content_html: s.contentHtml || "",
-            custom_notes: s.customNotes || "",
-            include_tables: Boolean(s.includeTables ?? true),
-            page_break_after: Boolean(s.pageBreakAfter ?? false),
-          });
-
-          if (secErr) {
-            console.error("Supabase section update error:", secErr);
-            return NextResponse.json(
-              {
-                success: false,
-                error: `Rapor bölümü kaydedilemedi: ${secErr.message}`,
-              },
-              { status: 500 }
-            );
+        if (body.sections && Array.isArray(body.sections)) {
+          for (const s of body.sections) {
+            const sectionId = ensureUUID(s.id);
+            await supabase.from("kurban_report_sections").upsert({
+              id: sectionId,
+              report_id: body.id,
+              section_key: s.sectionKey,
+              section_title: s.sectionTitle,
+              order_index: s.orderIndex,
+              is_enabled: Boolean(s.isEnabled ?? true),
+              content_html: s.contentHtml || "",
+              custom_notes: s.customNotes || "",
+              include_tables: Boolean(s.includeTables ?? true),
+              page_break_after: Boolean(s.pageBreakAfter ?? false),
+            });
           }
         }
-      }
-
-      // Fetch fresh updated report from Supabase
-      const { data: updatedDbReport } = await supabase
-        .from("kurban_reports")
-        .select("*, kurban_report_sections(*)")
-        .eq("id", body.id)
-        .single();
-
-      if (updatedDbReport) {
-        const mapped = mapReportFromDb(updatedDbReport);
-        return NextResponse.json({
-          success: true,
-          message: "Resmi rapor ve bölümleri başarıyla kaydedildi.",
-          report: mapped,
-        });
+      } catch (e) {
+        console.warn("Supabase relational report update warning:", e);
       }
     }
 
     return NextResponse.json({
       success: true,
       message: "Resmi rapor ve bölümleri başarıyla kaydedildi.",
-      report: memoryReports.find((r) => r.id === body.id) || body,
+      report: updatedReportObj,
     });
   } catch (err: any) {
     return NextResponse.json(
@@ -221,14 +230,7 @@ export async function POST(request: Request) {
     if (supabase && isUUID(reportId)) {
       const { error: revErr } = await supabase.from("kurban_report_revisions").insert(revision);
       if (revErr) {
-        console.error("Supabase revision insert error:", revErr);
-        return NextResponse.json(
-          {
-            success: false,
-            error: `Revizyon Supabase'e kaydedilemedi: ${revErr.message}`,
-          },
-          { status: 500 }
-        );
+        console.warn("Supabase revision insert warning:", revErr);
       }
     }
 

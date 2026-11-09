@@ -261,11 +261,13 @@ export default function BulkInvoiceExtractorView() {
     }
   }, [documents]);
 
-  const compressImageToDataUrl = (file: File): Promise<string> =>
+  const compressImageToDataUrl = (
+    fileOrUrl: File | string,
+    maxDim = 1400,
+    forOcr = false
+  ): Promise<string> =>
     new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const rawDataUrl = typeof reader.result === "string" ? reader.result : "";
+      const processDataUrl = (rawDataUrl: string) => {
         if (!rawDataUrl) {
           resolve("");
           return;
@@ -273,10 +275,14 @@ export default function BulkInvoiceExtractorView() {
         const img = new window.Image();
         img.onload = () => {
           try {
-            const maxDim = 1400;
             let { width, height } = img;
             if (width > maxDim || height > maxDim) {
               const scale = Math.min(maxDim / width, maxDim / height);
+              width = Math.round(width * scale);
+              height = Math.round(height * scale);
+            } else if (forOcr && width < 1400 && height < 1400) {
+              // Upscale small invoice images slightly for sharper OCR
+              const scale = Math.min(1800 / Math.max(width, height), 2);
               width = Math.round(width * scale);
               height = Math.round(height * scale);
             }
@@ -288,8 +294,14 @@ export default function BulkInvoiceExtractorView() {
               resolve(rawDataUrl);
               return;
             }
+            if (forOcr) {
+              ctx.filter = "grayscale(100%) contrast(145%) brightness(105%)";
+            }
             ctx.drawImage(img, 0, 0, width, height);
-            const compressed = canvas.toDataURL("image/jpeg", 0.78);
+            const compressed = canvas.toDataURL(
+              "image/jpeg",
+              forOcr ? 0.92 : 0.78
+            );
             resolve(compressed || rawDataUrl);
           } catch {
             resolve(rawDataUrl);
@@ -298,15 +310,85 @@ export default function BulkInvoiceExtractorView() {
         img.onerror = () => resolve(rawDataUrl);
         img.src = rawDataUrl;
       };
+
+      if (typeof fileOrUrl === "string") {
+        processDataUrl(fileOrUrl);
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = () =>
+        processDataUrl(typeof reader.result === "string" ? reader.result : "");
       reader.onerror = () => resolve("");
-      reader.readAsDataURL(file);
+      reader.readAsDataURL(fileOrUrl);
     });
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const ensureTesseractLoaded = (): Promise<any> =>
+    new Promise((resolve, reject) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const win = window as any;
+      if (win.Tesseract) {
+        resolve(win.Tesseract);
+        return;
+      }
+      const existingScript = document.getElementById("tesseract-cdn-script");
+      if (existingScript) {
+        existingScript.addEventListener("load", () => resolve(win.Tesseract));
+        existingScript.addEventListener("error", () =>
+          reject(new Error("OCR motoru yüklenemedi."))
+        );
+        return;
+      }
+      const script = document.createElement("script");
+      script.id = "tesseract-cdn-script";
+      script.src =
+        "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
+      script.async = true;
+      script.onload = () => resolve(win.Tesseract);
+      script.onerror = () => reject(new Error("OCR motoru (Tesseract) yüklenemedi."));
+      document.head.appendChild(script);
+    });
+
+  const extractTextFromImageViaOcr = async (
+    fileOrDataUrl: File | string,
+    fileName: string
+  ): Promise<string> => {
+    try {
+      const Tesseract = await ensureTesseractLoaded();
+      const enhancedDataUrl = await compressImageToDataUrl(
+        fileOrDataUrl,
+        2200,
+        true
+      );
+      const result = await Tesseract.recognize(
+        enhancedDataUrl || fileOrDataUrl,
+        "tur+eng",
+        {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          logger: (m: any) => {
+            if (m && m.status === "recognizing text" && typeof m.progress === "number") {
+              const pct = Math.round(m.progress * 100);
+              setStatusBanner({
+                type: "info",
+                message: `Görseldeki fatura bilgileri okunuyor (OCR %${pct}): ${fileName}`,
+              });
+            }
+          },
+        }
+      );
+      return result?.data?.text || "";
+    } catch (ocrErr) {
+      console.warn("OCR error:", ocrErr);
+      return "";
+    }
+  };
 
   const safeParseApiResponse = async (
     response: Response,
     fileName: string
   ): Promise<{
-    documents?: InvoiceDocumentRecord[];
+    documents?: (InvoiceDocumentRecord & { needsClientOcr?: boolean })[];
     errors?: { fileName: string; message: string }[];
     error?: string;
   }> => {
@@ -325,6 +407,60 @@ export default function BulkInvoiceExtractorView() {
       throw new Error(
         `"${fileName}" işlenirken sunucudan geçersiz yanıt alındı (HTTP ${response.status}).`
       );
+    }
+  };
+
+  const handleReOcrDocument = async (doc: InvoiceDocumentRecord) => {
+    if (!doc.imagePreviewUrl) return;
+    setIsUploading(true);
+    setStatusBanner({
+      type: "info",
+      message: `"${doc.fileName}" görseli tekrar taranıyor (SAYIN alıcı ve KG miktarlar okunuyor)...`,
+    });
+    try {
+      const ocrText = await extractTextFromImageViaOcr(
+        doc.imagePreviewUrl,
+        doc.fileName
+      );
+      if (!ocrText.trim()) {
+        throw new Error("Görselden metin okunamadı.");
+      }
+      const response = await fetch("/api/parse-invoices", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          rawText: ocrText,
+          fileName: doc.fileName,
+          fileType: "image",
+        }),
+      });
+      const data = await safeParseApiResponse(response, doc.fileName);
+      if (data.documents && data.documents[0]) {
+        const parsedDoc = data.documents[0];
+        setDocuments((prev) =>
+          prev.map((d) =>
+            d.id === doc.id
+              ? {
+                  ...parsedDoc,
+                  id: doc.id,
+                  imagePreviewUrl: doc.imagePreviewUrl,
+                }
+              : d
+          )
+        );
+        setStatusBanner({
+          type: "success",
+          message: `"${doc.fileName}" görselindeki bilgiler (Alıcı: ${parsedDoc.buyerName}) başarıyla güncellendi.`,
+        });
+      }
+    } catch (e: unknown) {
+      setStatusBanner({
+        type: "error",
+        message:
+          e instanceof Error ? e.message : "Görsel tekrar okunurken hata oluştu.",
+      });
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -353,7 +489,6 @@ export default function BulkInvoiceExtractorView() {
 
         try {
           if (lowerName.endsWith(".xml") || file.type.includes("xml")) {
-            // Send only lightweight XML text as JSON (avoids multipart overhead)
             const xmlText = await file.text();
             const response = await fetch("/api/parse-invoices", {
               method: "POST",
@@ -378,55 +513,42 @@ export default function BulkInvoiceExtractorView() {
             file.type.startsWith("image/") ||
             /\.(jpg|jpeg|png|webp|heic)$/i.test(lowerName)
           ) {
-            // Process image directly on client with compressed preview (0 MB server upload, prevents 413 Request Entity Too Large)
-            const compressedPreview = await compressImageToDataUrl(file);
-            const baseName = file.name.replace(/\.[^.]+$/, "");
-            const dateInName = baseName.match(
-              /(20\d{2}[-_.]\d{2}[-_.]\d{2}|\d{2}[-_.]\d{2}[-_.]20\d{2})/
-            );
-            const invNoInName = baseName.match(
-              /([A-Z0-9]{3}20\d{11}|FAT[-_]?\d+|\d{6,16})/i
-            );
+            // 1. Create compressed preview for UI & storage
+            const compressedPreview = await compressImageToDataUrl(file, 1400, false);
 
-            newDocs.push({
-              id: `inv-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-              fileName: file.name,
-              fileType: "image",
-              buyerName: "Fotoğraf Fatura Alıcısı (Düzenleyiniz)",
-              buyerTaxId: "",
-              sellerName: "",
-              invoiceDate: dateInName
-                ? dateInName[1].replace(/[._]/g, "-")
-                : new Date().toISOString().slice(0, 10),
-              invoiceNo: invNoInName
-                ? invNoInName[1].toUpperCase()
-                : `FOTO-${Math.floor(100000 + Math.random() * 900000)}`,
-              currency: "TRY",
-              items: [
-                {
-                  id: `${Date.now()}-img-0`,
-                  productName: `${baseName} - Fatura Kalemi`,
-                  quantity: 1,
-                  unit: "Adet",
-                  unitPrice: 0,
-                  vatRate: 20,
-                  vatAmount: 0,
-                  netAmount: 0,
-                  totalAmount: 0,
-                },
-              ],
-              subtotalAmount: 0,
-              totalVatAmount: 0,
-              grandTotalAmount: 0,
-              imagePreviewUrl: compressedPreview,
-              parseNote:
-                "Fotoğraf sıkıştırılarak yüklendi. Göz (Önizleme) ikonuna tıklayıp fotoğrafa bakarak kalemleri hızlıca düzenleyebilirsiniz.",
+            // 2. Run OCR on the invoice image to read SAYIN buyer, date/no, and KG items
+            setStatusBanner({
+              type: "info",
+              message: `Fotoğraf üzerindeki yazılar okunuyor (OCR): ${file.name}...`,
             });
+            const ocrText = await extractTextFromImageViaOcr(file, file.name);
+
+            // 3. Send extracted OCR text (tiny JSON) to server parser
+            const response = await fetch("/api/parse-invoices", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                rawText: ocrText,
+                fileName: file.name,
+                fileType: "image",
+              }),
+            });
+            const data = await safeParseApiResponse(response, file.name);
+            if (!response.ok) {
+              throw new Error(data.error || "Fotoğraf verisi ayrıştırılamadı.");
+            }
+            if (Array.isArray(data.documents)) {
+              data.documents.forEach((doc) => {
+                newDocs.push({
+                  ...doc,
+                  imagePreviewUrl: compressedPreview,
+                });
+              });
+            }
           } else if (
             lowerName.endsWith(".pdf") ||
             file.type === "application/pdf"
           ) {
-            // Upload each PDF individually so batch uploads never exceed Vercel's 4.5MB limit
             const singleFormData = new FormData();
             singleFormData.append("files", file);
 
@@ -476,7 +598,7 @@ export default function BulkInvoiceExtractorView() {
         const totalLines = newDocs.reduce((acc, d) => acc + d.items.length, 0);
         setStatusBanner({
           type: "success",
-          message: `${newDocs.length} adet fatura belgesi ve toplam ${totalLines} kalem başarıyla tabloya aktarıldı.`,
+          message: `${newDocs.length} adet fatura belgesi ve toplam ${totalLines} kalem başarıyla okunarak tabloya aktarıldı.`,
         });
       }
     } catch (err: unknown) {
@@ -1579,25 +1701,50 @@ export default function BulkInvoiceExtractorView() {
                   </p>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setPreviewDocId(null)}
-                className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-200/70 cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
+              <div className="flex items-center gap-2">
+                {previewDoc.imagePreviewUrl && (
+                  <button
+                    type="button"
+                    disabled={isUploading}
+                    onClick={() => handleReOcrDocument(previewDoc)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 cursor-pointer"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isUploading ? "animate-spin" : ""}`} />
+                    Görseli Tekrar Oku (OCR)
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setPreviewDocId(null)}
+                  className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-200/70 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
             <div className="p-5 overflow-y-auto grid grid-cols-1 lg:grid-cols-2 gap-5">
               {/* Left Column: Image Preview or Extracted Text Snippet */}
-              <div className="bg-slate-100 rounded-xl border border-slate-200 p-4 flex flex-col items-center justify-center min-h-[320px]">
+              <div className="bg-slate-100 rounded-xl border border-slate-200 p-4 flex flex-col items-center justify-center min-h-[320px] gap-3">
                 {previewDoc.imagePreviewUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={previewDoc.imagePreviewUrl}
-                    alt={previewDoc.fileName}
-                    className="max-h-[480px] w-auto object-contain rounded-lg shadow-sm"
-                  />
+                  <>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={previewDoc.imagePreviewUrl}
+                      alt={previewDoc.fileName}
+                      className="max-h-[340px] w-auto object-contain rounded-lg shadow-sm"
+                    />
+                    {previewDoc.rawTextSnippet && (
+                      <div className="w-full">
+                        <span className="text-[10px] font-bold uppercase text-slate-500 block mb-1">
+                          Görselden Okunan Ham Metin (OCR)
+                        </span>
+                        <pre className="text-[10px] text-slate-700 bg-white p-2.5 rounded-lg border border-slate-200 whitespace-pre-wrap max-h-[140px] overflow-y-auto font-mono">
+                          {previewDoc.rawTextSnippet}
+                        </pre>
+                      </div>
+                    )}
+                  </>
                 ) : previewDoc.rawTextSnippet ? (
                   <div className="w-full h-full">
                     <span className="text-[11px] font-bold uppercase text-slate-500 block mb-2">

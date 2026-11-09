@@ -104,6 +104,7 @@ import {
   SEED_REP_TUZLA_ID,
   SEED_REP_KOCAELI_ID,
 } from "../utils/kurbanProcessSeed";
+import { htmlToMarkdown, renderMarkdownToHtml } from "../utils/markdown";
 
 type ProcessTab =
   | "overview" // 1. Kurban İşlemleri / Genel Bakış
@@ -149,8 +150,11 @@ export default function KurbanProcessModuleView() {
   const [activeReport, setActiveReport] = useState<KurbanReport | null>(null);
   const [isEditingReport, setIsEditingReport] = useState<boolean>(false);
   const [editingSectionId, setEditingSectionId] = useState<string | null>(null);
+  const [editedSectionTitle, setEditedSectionTitle] = useState<string>("");
   const [editedSectionHtml, setEditedSectionHtml] = useState<string>("");
   const [editedSectionNotes, setEditedSectionNotes] = useState<string>("");
+  const [markdownEditorMode, setMarkdownEditorMode] = useState<"split" | "edit" | "preview">("split");
+  const sectionTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Modals & UI States
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -746,6 +750,76 @@ export default function KurbanProcessModuleView() {
     reader.readAsBinaryString(file);
   };
 
+  // Helper to insert or wrap Markdown syntax at cursor selection in the section editor textarea
+  const insertMarkdownSyntax = (
+    prefix: string,
+    suffix: string = "",
+    placeholder: string = "Metin",
+    newLineBefore: boolean = false
+  ) => {
+    const textarea = sectionTextareaRef.current;
+    if (!textarea) {
+      setEditedSectionHtml(
+        (prev) => `${prev}${newLineBefore && prev && !prev.endsWith("\n") ? "\n" : ""}${prefix}${placeholder}${suffix}`
+      );
+      return;
+    }
+
+    const start = textarea.selectionStart ?? editedSectionHtml.length;
+    const end = textarea.selectionEnd ?? editedSectionHtml.length;
+    const selectedText = editedSectionHtml.substring(start, end);
+    const replacementInner = selectedText || placeholder;
+    const needsNewline = newLineBefore && start > 0 && editedSectionHtml[start - 1] !== "\n";
+    const fullInsert = `${needsNewline ? "\n" : ""}${prefix}${replacementInner}${suffix}`;
+
+    const nextValue =
+      editedSectionHtml.substring(0, start) +
+      fullInsert +
+      editedSectionHtml.substring(end);
+
+    setEditedSectionHtml(nextValue);
+
+    requestAnimationFrame(() => {
+      textarea.focus();
+      const cursorStart = start + (needsNewline ? 1 : 0) + prefix.length;
+      const cursorEnd = cursorStart + replacementInner.length;
+      textarea.setSelectionRange(cursorStart, cursorEnd);
+    });
+  };
+
+  // Add a new custom Markdown section to the active report
+  const handleAddCustomSection = async () => {
+    if (!activeReport) return;
+    const currentSections = activeReport.sections || [];
+    const nextOrder = currentSections.length + 1;
+    const newSec: KurbanReportSection = {
+      id: `sec-custom-${Date.now()}`,
+      reportId: activeReport.id,
+      sectionKey: "custom",
+      sectionTitle: `${nextOrder}. Ek Değerlendirme & Özel Rapor Bölümü`,
+      orderIndex: nextOrder,
+      isEnabled: true,
+      contentHtml: `### Ek Denetim Başlığı\n\nBu bölümde **kalın**, *italik*, madde işaretleri ve tablolar dahil olmak üzere **Markdown** formatında rapor metni oluşturabilirsiniz.\n\n- **Birinci Denetim Notu:** Eksiksiz kontrol edildi.\n- **İkinci Denetim Notu:** Belgeler arşivlendi.`,
+      customNotes: "Denetim heyeti özel değerlendirme notu.",
+      includeTables: false,
+      pageBreakAfter: false,
+      createdAt: new Date().toISOString(),
+    };
+
+    const updatedReport: KurbanReport = {
+      ...activeReport,
+      sections: [...currentSections, newSec],
+    };
+
+    setActiveReport(updatedReport);
+    setReports((prev) => prev.map((r) => (r.id === updatedReport.id ? updatedReport : r)));
+    setEditingSectionId(newSec.id);
+    setEditedSectionTitle(newSec.sectionTitle);
+    setEditedSectionHtml(newSec.contentHtml || "");
+    setEditedSectionNotes(newSec.customNotes || "");
+    showToast("Yeni Markdown rapor bölümü eklendi. Düzenleyip kaydedebilirsiniz.");
+  };
+
   // Section Live Edit Save
   const handleSaveSectionEdit = async (section: KurbanReportSection) => {
     if (!activeReport) return;
@@ -756,6 +830,7 @@ export default function KurbanProcessModuleView() {
         s.id === section.id
           ? {
               ...s,
+              sectionTitle: editedSectionTitle.trim() || s.sectionTitle,
               contentHtml: editedSectionHtml,
               customNotes: editedSectionNotes,
             }
@@ -2426,6 +2501,16 @@ export default function KurbanProcessModuleView() {
               </div>
 
               <button
+                onClick={handleAddCustomSection}
+                disabled={isSaving}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 font-bold text-xs transition-colors"
+                title="Rapora yeni bir Markdown destekli bölüm ekle"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>+ Bölüm Ekle (Markdown)</span>
+              </button>
+
+              <button
                 onClick={handleSaveRevision}
                 disabled={isSaving}
                 className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs transition-colors"
@@ -2492,10 +2577,25 @@ export default function KurbanProcessModuleView() {
                   } ${sec.pageBreakAfter ? "print:break-after-page" : ""}`}
                 >
                   {/* Section Title & Live Edit Button */}
-                  <div className="flex items-center justify-between pb-3 border-b border-slate-200 mb-3">
-                    <h3 className="text-base font-black text-slate-900 tracking-tight">
-                      {sec.sectionTitle}
-                    </h3>
+                  <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-200 mb-3">
+                    {editingSectionId === sec.id ? (
+                      <div className="flex-1 min-w-[240px]">
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-emerald-700 mb-1">
+                          Bölüm Başlığı:
+                        </label>
+                        <input
+                          type="text"
+                          value={editedSectionTitle}
+                          onChange={(e) => setEditedSectionTitle(e.target.value)}
+                          className="w-full text-sm font-black text-slate-900 px-3 py-1.5 rounded-xl border border-emerald-400 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                          placeholder="Bölüm başlığını giriniz..."
+                        />
+                      </div>
+                    ) : (
+                      <h3 className="text-base font-black text-slate-900 tracking-tight">
+                        {sec.sectionTitle}
+                      </h3>
+                    )}
 
                     {/* Edit Trigger (Hidden in Print) */}
                     <div className="no-print">
@@ -2521,14 +2621,15 @@ export default function KurbanProcessModuleView() {
                         <button
                           onClick={() => {
                             setEditingSectionId(sec.id);
-                            setEditedSectionHtml(sec.contentHtml || "");
+                            setEditedSectionTitle(sec.sectionTitle || "");
+                            setEditedSectionHtml(htmlToMarkdown(sec.contentHtml || ""));
                             setEditedSectionNotes(sec.customNotes || "");
                           }}
                           className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold shadow-xs transition-all"
-                          title="Bölüm metnini düzenle"
+                          title="Bölüm metnini Markdown ile düzenle"
                         >
                           <Edit3 className="w-3.5 h-3.5 text-emerald-600" />
-                          <span>Düzenle</span>
+                          <span>Düzenle (Markdown)</span>
                         </button>
                       )}
                     </div>
@@ -2536,94 +2637,270 @@ export default function KurbanProcessModuleView() {
 
                   {/* Section Content: Edit Mode or View Mode */}
                   {editingSectionId === sec.id ? (
-                    <div className="space-y-4 pt-2">
+                    <div className="space-y-4 pt-2 no-print">
                       <div className="bg-slate-50 dark:bg-slate-800/60 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-3">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <label className="block text-xs font-extrabold text-slate-800 dark:text-slate-200">
-                            Bölüm Metni / Rapor Paragrafı:
-                          </label>
-                          <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-bold text-slate-500">
-                            <span>Hızlı Ekle:</span>
+                        {/* Top Header & Mode Switcher */}
+                        <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-200 dark:border-slate-700">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-extrabold text-slate-800 dark:text-slate-200">
+                              Markdown Rapor Editörü
+                            </span>
+                            <span className="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 text-[10px] font-bold">
+                              Markdown Destekli
+                            </span>
+                          </div>
+
+                          <div className="flex items-center bg-slate-200/80 dark:bg-slate-900 p-0.5 rounded-lg text-[11px] font-bold">
                             <button
                               type="button"
-                              onClick={() => setEditedSectionHtml((prev) => prev + " <strong>Önemli Bilgi</strong>")}
-                              className="px-2 py-0.5 rounded bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 hover:text-emerald-600 font-black"
-                              title="Kalın Metin Ekle"
+                              onClick={() => setMarkdownEditorMode("split")}
+                              className={`px-2.5 py-1 rounded-md transition-colors ${
+                                markdownEditorMode === "split"
+                                  ? "bg-white dark:bg-slate-800 text-emerald-600 shadow-xs"
+                                  : "text-slate-600 dark:text-slate-400"
+                              }`}
+                            >
+                              Bölünmüş Görünüm
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setMarkdownEditorMode("edit")}
+                              className={`px-2.5 py-1 rounded-md transition-colors ${
+                                markdownEditorMode === "edit"
+                                  ? "bg-white dark:bg-slate-800 text-emerald-600 shadow-xs"
+                                  : "text-slate-600 dark:text-slate-400"
+                              }`}
+                            >
+                              Sadece Markdown
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setMarkdownEditorMode("preview")}
+                              className={`px-2.5 py-1 rounded-md transition-colors ${
+                                markdownEditorMode === "preview"
+                                  ? "bg-white dark:bg-slate-800 text-emerald-600 shadow-xs"
+                                  : "text-slate-600 dark:text-slate-400"
+                              }`}
+                            >
+                              Tam Önizleme
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Rich Markdown Formatting Toolbar */}
+                        {markdownEditorMode !== "preview" && (
+                          <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-bold text-slate-600 dark:text-slate-300">
+                            <button
+                              type="button"
+                              onClick={() => insertMarkdownSyntax("**", "**", "Kalın Metin")}
+                              className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 hover:border-emerald-500 hover:text-emerald-600 font-black shadow-2xs"
+                              title="Kalın (**metin**) - Ctrl/Cmd+B"
                             >
                               B
                             </button>
                             <button
                               type="button"
-                              onClick={() => setEditedSectionHtml((prev) => prev + "<p>Yeni paragraf açıklaması...</p>")}
-                              className="px-2 py-0.5 rounded bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 hover:text-emerald-600"
-                              title="Paragraf Ekle"
+                              onClick={() => insertMarkdownSyntax("*", "*", "İtalik Metin")}
+                              className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 hover:border-emerald-500 hover:text-emerald-600 italic font-serif shadow-2xs"
+                              title="İtalik (*metin*) - Ctrl/Cmd+I"
                             >
-                              ¶ Paragraf
+                              I
                             </button>
                             <button
                               type="button"
-                              onClick={() => setEditedSectionHtml((prev) => prev + "<li>Madde detayı</li>")}
-                              className="px-2 py-0.5 rounded bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 hover:text-emerald-600"
-                              title="Madde Ekle"
+                              onClick={() => insertMarkdownSyntax("~~", "~~", "Üstü Çizili")}
+                              className="px-2 py-1 rounded-lg bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 hover:border-emerald-500 hover:text-emerald-600 line-through shadow-2xs"
+                              title="Üstü Çizili (~~metin~~)"
                             >
-                              • Madde
+                              S
                             </button>
                             <button
                               type="button"
-                              onClick={() => setEditedSectionHtml((prev) => prev + '<span class="text-emerald-600 font-bold"> ✓ Onaylandı </span>')}
-                              className="px-2 py-0.5 rounded bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-emerald-600 font-bold"
-                              title="Onay İkonu Ekle"
+                              onClick={() => insertMarkdownSyntax("==", "==", "Vurgulu Bilgi")}
+                              className="px-2 py-1 rounded-lg bg-amber-50 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300 hover:border-amber-500 shadow-2xs"
+                              title="Sarı Vurgu (==metin==)"
+                            >
+                              ==Vurgu==
+                            </button>
+
+                            <span className="h-4 w-px bg-slate-300 dark:bg-slate-600 mx-0.5" />
+
+                            <button
+                              type="button"
+                              onClick={() => insertMarkdownSyntax("# ", "", "Ana Başlık", true)}
+                              className="px-2 py-1 rounded-lg bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 hover:border-emerald-500 hover:text-emerald-600 font-extrabold shadow-2xs"
+                              title="Başlık 1 (# Başlık)"
+                            >
+                              H1
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => insertMarkdownSyntax("## ", "", "Alt Başlık", true)}
+                              className="px-2 py-1 rounded-lg bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 hover:border-emerald-500 hover:text-emerald-600 font-extrabold shadow-2xs"
+                              title="Başlık 2 (## Alt Başlık)"
+                            >
+                              H2
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => insertMarkdownSyntax("### ", "", "Bölüm Alt Başlığı", true)}
+                              className="px-2 py-1 rounded-lg bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 hover:border-emerald-500 hover:text-emerald-600 font-bold shadow-2xs"
+                              title="Başlık 3 (### Alt Başlık)"
+                            >
+                              H3
+                            </button>
+
+                            <span className="h-4 w-px bg-slate-300 dark:bg-slate-600 mx-0.5" />
+
+                            <button
+                              type="button"
+                              onClick={() => insertMarkdownSyntax("- ", "", "Liste maddesi", true)}
+                              className="px-2 py-1 rounded-lg bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 hover:border-emerald-500 hover:text-emerald-600 shadow-2xs"
+                              title="Madde İşaretli Liste (- madde)"
+                            >
+                              • Liste
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => insertMarkdownSyntax("1. ", "", "Sıralı madde", true)}
+                              className="px-2 py-1 rounded-lg bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 hover:border-emerald-500 hover:text-emerald-600 shadow-2xs"
+                              title="Numaralı Liste (1. madde)"
+                            >
+                              1. Liste
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => insertMarkdownSyntax("- [x] ", "", "Kontrol edildi", true)}
+                              className="px-2 py-1 rounded-lg bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 hover:border-emerald-500 hover:text-emerald-600 shadow-2xs"
+                              title="Onay Kutulu Madde (- [x] madde)"
+                            >
+                              ☑ Kontrol
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => insertMarkdownSyntax("> ", "", "Resmî denetim notu veya alıntı...", true)}
+                              className="px-2 py-1 rounded-lg bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 hover:border-emerald-500 hover:text-emerald-600 shadow-2xs"
+                              title="Alıntı Bloğu (> not)"
+                            >
+                              ❝ Alıntı
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                insertMarkdownSyntax(
+                                  "\n| Kriter | Değer | Durum |\n| :--- | :---: | :--- |\n| ",
+                                  " | 100% | ✓ Uygun |\n",
+                                  "Denetim Kalemi",
+                                  true
+                                )
+                              }
+                              className="px-2 py-1 rounded-lg bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 hover:border-emerald-500 hover:text-emerald-600 shadow-2xs"
+                              title="Markdown Tablosu Ekle"
+                            >
+                              ⊞ Tablo
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => insertMarkdownSyntax("\n---\n", "", "", true)}
+                              className="px-2 py-1 rounded-lg bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 hover:border-emerald-500 hover:text-emerald-600 shadow-2xs"
+                              title="Yatay Ayırıcı Çizgi (---)"
+                            >
+                              ― Çizgi
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => insertMarkdownSyntax("**✓ Onaylandı:** ", "", "Denetim tamamlandı")}
+                              className="px-2 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300 font-bold shadow-2xs"
+                              title="Onay İfadesi Ekle"
                             >
                               ✓ Onay
                             </button>
                           </div>
-                        </div>
+                        )}
 
-                        <textarea
-                          rows={7}
-                          value={editedSectionHtml}
-                          onChange={(e) => setEditedSectionHtml(e.target.value)}
-                          className="w-full text-xs p-3.5 font-mono rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 leading-relaxed"
-                          placeholder="Bu bölümün resmi metnini buraya giriniz..."
-                        />
+                        {/* Editor & Live Preview Grid */}
+                        <div
+                          className={`grid gap-3 ${
+                            markdownEditorMode === "split" ? "grid-cols-1 lg:grid-cols-2" : "grid-cols-1"
+                          }`}
+                        >
+                          {markdownEditorMode !== "preview" && (
+                            <div className="space-y-1.5">
+                              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center justify-between">
+                                <span>Markdown Kaynak Metni</span>
+                                <span>**kalın** • *italik* • # başlık • - liste • | tablo |</span>
+                              </div>
+                              <textarea
+                                ref={sectionTextareaRef}
+                                rows={9}
+                                value={editedSectionHtml}
+                                onChange={(e) => setEditedSectionHtml(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "b") {
+                                    e.preventDefault();
+                                    insertMarkdownSyntax("**", "**", "Kalın Metin");
+                                  } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "i") {
+                                    e.preventDefault();
+                                    insertMarkdownSyntax("*", "*", "İtalik Metin");
+                                  }
+                                }}
+                                className="w-full text-xs p-3.5 font-mono rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500 leading-relaxed"
+                                placeholder="Markdown formatında rapor metnini giriniz (Örn: **Kalın**, *İtalik*, ## Başlık, - Liste, | Tablo |)..."
+                              />
+                            </div>
+                          )}
 
-                        {/* Live Preview of formatted content */}
-                        <div>
-                          <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1 flex items-center gap-1">
-                            <Eye className="w-3.5 h-3.5 text-emerald-600" />
-                            <span>Canlı Rapor Görünümü Önizlemesi:</span>
-                          </div>
-                          <div
-                            className="text-xs text-slate-700 dark:text-slate-300 p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 min-h-14 leading-relaxed"
-                            dangerouslySetInnerHTML={{ __html: editedSectionHtml || "<span class='text-slate-400'>İçerik boş...</span>" }}
-                          />
+                          {markdownEditorMode !== "edit" && (
+                            <div className="space-y-1.5">
+                              <div className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider flex items-center gap-1">
+                                <Eye className="w-3.5 h-3.5 text-emerald-600" />
+                                <span>Canlı Markdown Rapor Önizlemesi</span>
+                              </div>
+                              <div
+                                className="text-xs sm:text-sm text-slate-700 dark:text-slate-200 p-3.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 min-h-[210px] leading-relaxed space-y-2 overflow-y-auto"
+                                dangerouslySetInnerHTML={{
+                                  __html:
+                                    renderMarkdownToHtml(editedSectionHtml) ||
+                                    "<span class='text-slate-400 italic'>Önizlenecek içerik yok...</span>",
+                                }}
+                              />
+                            </div>
+                          )}
                         </div>
                       </div>
 
                       <div>
                         <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                          Özel Not / Değerlendirme Açıklaması:
+                          Özel Not / Değerlendirme Açıklaması (Markdown Destekli):
                         </label>
                         <input
                           type="text"
                           value={editedSectionNotes}
                           onChange={(e) => setEditedSectionNotes(e.target.value)}
-                          className="w-full text-xs p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800"
-                          placeholder="Örn: Yetkili denetçi tarafından imza altına alınmıştır."
+                          className="w-full text-xs p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono"
+                          placeholder="Örn: **Yetkili denetçi** tarafından *imza altına* alınmıştır."
                         />
                       </div>
                     </div>
                   ) : (
                     <div>
-                      {/* Render Content HTML */}
+                      {/* Render Content via Markdown + HTML Renderer */}
                       <div
                         className="text-xs sm:text-sm text-slate-700 leading-relaxed space-y-2"
-                        dangerouslySetInnerHTML={{ __html: sec.contentHtml || "" }}
+                        dangerouslySetInnerHTML={{
+                          __html: renderMarkdownToHtml(sec.contentHtml || ""),
+                        }}
                       />
 
                       {sec.customNotes && (
-                        <div className="mt-3 p-3 rounded-xl bg-slate-100 text-xs text-slate-600 font-semibold border-l-4 border-emerald-600">
-                          <strong>Not:</strong> {sec.customNotes}
+                        <div className="mt-3 p-3 rounded-xl bg-slate-100 text-xs text-slate-600 font-semibold border-l-4 border-emerald-600 flex items-start gap-1.5">
+                          <strong className="shrink-0">Not:</strong>
+                          <span
+                            className="inline"
+                            dangerouslySetInnerHTML={{
+                              __html: renderMarkdownToHtml(sec.customNotes).replace(/^<p[^>]*>|<\/p>$/g, ""),
+                            }}
+                          />
                         </div>
                       )}
                     </div>

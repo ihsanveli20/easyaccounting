@@ -67,6 +67,7 @@ import {
   formatBytes,
   uploadImageToOptimizedStorage,
 } from "../utils/imageCompressor";
+import { htmlToMarkdown, renderMarkdownToHtml } from "../utils/markdown";
 
 export default function KurbanReportingView() {
   // Main records state
@@ -1432,6 +1433,22 @@ export default function KurbanReportingView() {
                 </div>
               </div>
 
+              {/* Custom Markdown Report Notes */}
+              {activeReportModalRecord.notes && (
+                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2">
+                  <div className="text-xs font-extrabold uppercase tracking-wider text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5">
+                    <FileText className="w-4 h-4" />
+                    <span>Özel Rapor Açıklaması & Denetim Notları</span>
+                  </div>
+                  <div
+                    className="text-xs sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed space-y-2"
+                    dangerouslySetInnerHTML={{
+                      __html: renderMarkdownToHtml(activeReportModalRecord.notes),
+                    }}
+                  />
+                </div>
+              )}
+
               {/* Special Notes & Veterinary Statement */}
               <div className="p-4 rounded-2xl bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/40 text-amber-900 dark:text-amber-300 leading-relaxed text-xs">
                 <strong>İslami Usullere Uygunluk & Veteriner Sağlık Beyanı:</strong>{" "}
@@ -1939,6 +1956,107 @@ export default function KurbanReportingView() {
                       </div>
                     ))}
                 </div>
+              </div>
+
+              {/* Row 7: Markdown-enabled Report Notes */}
+              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-extrabold text-slate-700 dark:text-slate-300 flex items-center gap-1.5 uppercase text-[11px]">
+                    <FileText className="w-4 h-4 text-emerald-500" />
+                    <span>Rapor Açıklaması & Özel Notlar (Markdown Destekli)</span>
+                  </span>
+
+                  <div className="flex flex-wrap items-center gap-1 text-[11px] font-bold">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          notes: `${prev.notes || ""} **Kalın Bilgi**`,
+                        }))
+                      }
+                      className="px-2 py-0.5 rounded bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:border-emerald-500 font-black"
+                      title="Kalın Metin (**metin**)"
+                    >
+                      B
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          notes: `${prev.notes || ""} *İtalik*`,
+                        }))
+                      }
+                      className="px-2 py-0.5 rounded bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:border-emerald-500 italic font-serif"
+                      title="İtalik Metin (*metin*)"
+                    >
+                      I
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          notes: `${prev.notes ? prev.notes + "\n" : ""}### Başlık\n`,
+                        }))
+                      }
+                      className="px-2 py-0.5 rounded bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:border-emerald-500"
+                      title="Alt Başlık (### Başlık)"
+                    >
+                      H3
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          notes: `${prev.notes ? prev.notes + "\n" : ""}- Madde detayı`,
+                        }))
+                      }
+                      className="px-2 py-0.5 rounded bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:border-emerald-500"
+                      title="Madde İşareti (- madde)"
+                    >
+                      • Liste
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          notes: `${prev.notes ? prev.notes + "\n" : ""}> Denetim notu`,
+                        }))
+                      }
+                      className="px-2 py-0.5 rounded bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:border-emerald-500"
+                      title="Alıntı (> not)"
+                    >
+                      ❝ Alıntı
+                    </button>
+                  </div>
+                </div>
+
+                <textarea
+                  rows={4}
+                  value={htmlToMarkdown(formData.notes || "")}
+                  onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                  placeholder="Markdown formatında özel rapor notları ekleyebilirsiniz (**kalın**, *italik*, - madde, ### başlık vb.)..."
+                  className="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 font-mono text-xs leading-relaxed focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+
+                {formData.notes && formData.notes.trim() !== "" && (
+                  <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-1">
+                    <div className="text-[10px] font-bold uppercase text-emerald-600 flex items-center gap-1">
+                      <Eye className="w-3 h-3" />
+                      <span>Markdown Önizlemesi:</span>
+                    </div>
+                    <div
+                      className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed space-y-1.5"
+                      dangerouslySetInnerHTML={{
+                        __html: renderMarkdownToHtml(formData.notes),
+                      }}
+                    />
+                  </div>
+                )}
               </div>
 
               {/* Submit / Cancel Buttons */}

@@ -58,6 +58,7 @@ const MENU_ICONS: Record<AppMenuId, React.ComponentType<{ className?: string }>>
   details: Layers,
   calculator: Calculator,
   reconciliation: Scale,
+  "invoice-extractor": FileSpreadsheet,
   quote: FileText,
   "proposal-history": History,
   "proposal-comparison": ArrowLeftRight,

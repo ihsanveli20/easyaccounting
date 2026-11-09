@@ -5,6 +5,7 @@
       "details",
       "calculator",
       "reconciliation",
+      "invoice-extractor",
       "quote",
       "proposal-history",
       "stock-tracking",
@@ -17,25 +18,33 @@
       "proposal-history",
       "proposal-comparison",
       "stock-tracking",
+      "kurban-reporting",
+      "invoice-extractor",
       "details",
       "calculator"
     ],
     "viewer": [
       "summary",
       "details",
+      "invoice-extractor",
       "proposal-history",
-      "proposal-comparison"
+      "proposal-comparison",
+      "kurban-reporting"
     ],
     "purchasing": [
       "stock-tracking",
       "proposal-comparison",
+      "kurban-reporting",
+      "invoice-extractor",
       "summary",
       "calculator"
     ],
     "user": [
       "summary",
       "details",
+      "invoice-extractor",
       "proposal-comparison",
+      "kurban-reporting",
       "calculator"
     ]
   },

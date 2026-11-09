@@ -37,6 +37,13 @@ export const SYSTEM_MENUS: MenuItemDefinition[] = [
     category: "accounting",
   },
   {
+    id: "invoice-extractor",
+    name: "Toplu Fatura → Excel",
+    shortName: "Fatura Aktarım",
+    description: "XML, PDF ve Fotoğraf faturaları toplu yükleme, görüntüleme ve Excel'e indirme",
+    category: "accounting",
+  },
+  {
     id: "quote",
     name: "Fiyat Teklifi",
     shortName: "Fiyat Teklifi",
@@ -86,6 +93,7 @@ export const DEFAULT_ROLE_PERMISSIONS: RoleMenuPermissions = {
     "details",
     "calculator",
     "reconciliation",
+    "invoice-extractor",
     "quote",
     "proposal-history",
     "proposal-comparison",
@@ -99,12 +107,14 @@ export const DEFAULT_ROLE_PERMISSIONS: RoleMenuPermissions = {
     "proposal-comparison",
     "stock-tracking",
     "kurban-reporting",
+    "invoice-extractor",
     "details",
     "calculator",
   ],
   viewer: [
     "summary",
     "details",
+    "invoice-extractor",
     "proposal-history",
     "proposal-comparison",
     "kurban-reporting",
@@ -113,12 +123,14 @@ export const DEFAULT_ROLE_PERMISSIONS: RoleMenuPermissions = {
     "stock-tracking",
     "proposal-comparison",
     "kurban-reporting",
+    "invoice-extractor",
     "summary",
     "calculator",
   ],
   user: [
     "summary",
     "details",
+    "invoice-extractor",
     "proposal-comparison",
     "kurban-reporting",
     "calculator",
@@ -130,7 +142,7 @@ export const DEFAULT_PERMISSIONS_CONFIG: AppPermissionsConfig = {
   userPermissions: {},
 };
 
-const LOCAL_STORAGE_PERMISSIONS_KEY = "easy_accounting_permissions_config_v2";
+const LOCAL_STORAGE_PERMISSIONS_KEY = "easy_accounting_permissions_config_v3";
 
 /**
  * Get permissions configuration from localStorage (fallback)
@@ -207,6 +219,9 @@ export function resolveUserAllowedMenus(
     DEFAULT_ROLE_PERMISSIONS.user;
 
   let finalMenus = [...roleMenus];
+  if (!finalMenus.includes("invoice-extractor")) {
+    finalMenus.push("invoice-extractor");
+  }
   if (isAdmin && !finalMenus.includes("admin-users")) {
     finalMenus.push("admin-users");
   }

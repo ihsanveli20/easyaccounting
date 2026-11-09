@@ -66,6 +66,7 @@ import ProposalComparisonView from "./components/ProposalComparisonView";
 import ProductManagementView, { DEFAULT_SAMPLE_PRODUCTS } from "./components/ProductManagementView";
 import KurbanReportingView from "./components/KurbanReportingView";
 import KurbanProcessModuleView from "./components/KurbanProcessModuleView";
+import BulkInvoiceExtractorView from "./components/BulkInvoiceExtractorView";
 import LoginView from "./components/LoginView";
 import AdminUsersView from "./components/AdminUsersView";
 import { useAuth } from "./context/AuthContext";
@@ -87,9 +88,9 @@ export default function Home() {
     hasMenuAccess,
   } = useAuth();
 
-  // Navigation Tab: "summary" = Hesap Planı / Bakiye Listesi, "details" = Firma Detay Hareketleri, "calculator" = Ayrıntılı Hesap Makinesi, "reconciliation" = Ekstre & Luca Mutabakat, "quote" = Fiyat Teklifi, "proposal-history" = Teklif Geçmişi, "proposal-comparison" = Teklif Karşılaştırma, "stock-tracking" = Ürün Stok Takibi, "kurban-reporting" = Kurban Raporlama & Takip, "admin-users" = Kullanıcı & Yetki Yönetimi
+  // Navigation Tab: "summary" = Hesap Planı / Bakiye Listesi, "details" = Firma Detay Hareketleri, "calculator" = Ayrıntılı Hesap Makinesi, "reconciliation" = Ekstre & Luca Mutabakat, "invoice-extractor" = Toplu Fatura -> Excel, "quote" = Fiyat Teklifi, "proposal-history" = Teklif Geçmişi, "proposal-comparison" = Teklif Karşılaştırma, "stock-tracking" = Ürün Stok Takibi, "kurban-reporting" = Kurban Raporlama & Takip, "admin-users" = Kullanıcı & Yetki Yönetimi
   const [activeTab, setActiveTab] = useState<
-    "summary" | "details" | "calculator" | "reconciliation" | "quote" | "proposal-history" | "proposal-comparison" | "stock-tracking" | "kurban-reporting" | "admin-users"
+    "summary" | "details" | "calculator" | "reconciliation" | "invoice-extractor" | "quote" | "proposal-history" | "proposal-comparison" | "stock-tracking" | "kurban-reporting" | "admin-users"
   >("summary");
 
   // State for proposal editing when navigating from history to editor
@@ -660,6 +661,17 @@ export default function Home() {
       tag: "MUTABAKAT",
     },
     {
+      id: "invoice-extractor" as const,
+      name: "Toplu Fatura → Excel",
+      shortName: "Fatura Aktarım",
+      description: "XML, PDF & Fotoğraf Fatura Okuma",
+      icon: UploadCloud,
+      activeBg: "bg-indigo-600 text-white shadow-md shadow-indigo-600/25",
+      badge: null,
+      badgeStyle: "bg-white/20 text-white",
+      tag: "YENİ",
+    },
+    {
       id: "quote" as const,
       name: "Fiyat Teklifi",
       shortName: "Fiyat Teklifi",
@@ -1200,7 +1212,9 @@ export default function Home() {
                       ? "bg-gradient-to-tr from-slate-900 to-slate-700 shadow-slate-900/20"
                       : activeTab === "reconciliation"
                         ? "bg-gradient-to-tr from-rose-600 to-amber-500 shadow-rose-500/20"
-                        : activeTab === "quote"
+                        : activeTab === "invoice-extractor"
+                          ? "bg-gradient-to-tr from-indigo-600 to-emerald-500 shadow-indigo-500/20"
+                          : activeTab === "quote"
                           ? "bg-gradient-to-tr from-blue-600 to-cyan-500 shadow-blue-500/20"
                           : activeTab === "proposal-history"
                             ? "bg-gradient-to-tr from-indigo-600 to-purple-500 shadow-indigo-500/20"
@@ -1221,6 +1235,8 @@ export default function Home() {
                   <Calculator className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-400" />
                 ) : activeTab === "reconciliation" ? (
                   <Scale className="w-4 h-4 sm:w-5 sm:h-5" />
+                ) : activeTab === "invoice-extractor" ? (
+                  <UploadCloud className="w-4 h-4 sm:w-5 sm:h-5" />
                 ) : activeTab === "quote" ? (
                   <FileText className="w-4 h-4 sm:w-5 sm:h-5" />
                 ) : activeTab === "proposal-history" ? (
@@ -1247,7 +1263,9 @@ export default function Home() {
                           ? "Ayrıntılı Hesap Makinesi"
                           : activeTab === "reconciliation"
                             ? "Ekstre & Luca Karşılaştırma"
-                            : activeTab === "quote"
+                            : activeTab === "invoice-extractor"
+                              ? "Toplu Fatura Aktarım & Excel Merkezi"
+                              : activeTab === "quote"
                               ? "Fiyat Teklifi"
                               : activeTab === "proposal-history"
                                 ? "Teklif Geçmişi"
@@ -1268,7 +1286,9 @@ export default function Home() {
                           ? "bg-slate-900 text-emerald-400 border-slate-700"
                           : activeTab === "reconciliation"
                             ? "bg-rose-50 text-rose-700 border-rose-200"
-                            : activeTab === "quote"
+                            : activeTab === "invoice-extractor"
+                              ? "bg-indigo-50 text-indigo-700 border-indigo-200 font-bold"
+                              : activeTab === "quote"
                               ? "bg-blue-50 text-blue-700 border-blue-200"
                               : activeTab === "proposal-history"
                                 ? "bg-purple-50 text-purple-700 border-purple-200"
@@ -1289,7 +1309,9 @@ export default function Home() {
                           ? "Hesap & Stopaj"
                           : activeTab === "reconciliation"
                             ? "Mutabakat"
-                            : activeTab === "quote"
+                            : activeTab === "invoice-extractor"
+                              ? "XML / PDF / Foto → Excel"
+                              : activeTab === "quote"
                               ? "Teklif & Yazdır"
                               : activeTab === "proposal-history"
                                 ? "Kayıtlı Teklifler"
@@ -1311,7 +1333,9 @@ export default function Home() {
                         ? "Fişli muhasebe hesap makinesi, KDV & tevkifat, vade farkı ve stopaj araçları"
                         : activeTab === "reconciliation"
                           ? "Firma PDF ekstreleri ile Luca mizanını karşılaştırın, eksik ve uyuşmayanları bulun"
-                          : activeTab === "quote"
+                          : activeTab === "invoice-extractor"
+                            ? "XML, PDF ve Fotoğraf faturaları toplu yükleyin; Alıcı, Tarih/No ve Kalemleri görüntüleyip Excel'e indirin"
+                            : activeTab === "quote"
                             ? "Fiyat teklifi oluşturun, otomatik KDV ve toplamlar hesaplayıp yazdırın"
                             : activeTab === "proposal-history"
                               ? "Supabase bulutunda kayıtlı teklifleri görüntüleyin, düzenleyin ve durumlarını takip edin"
@@ -2106,6 +2130,13 @@ export default function Home() {
               onGoToHistory={() => setActiveTab("proposal-history")}
               onClearEditingProposal={() => setEditingProposal(null)}
             />
+          )}
+
+          {/* ========================================================================= */}
+          {/* TAB 4.5: BULK INVOICE EXTRACTOR (TOPLU FATURA XML/PDF/FOTO -> EXCEL)      */}
+          {/* ========================================================================= */}
+          {activeTab === "invoice-extractor" && (
+            <BulkInvoiceExtractorView />
           )}
 
           {/* ========================================================================= */}

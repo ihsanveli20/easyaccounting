@@ -2,8 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import path from "path";
 import { pathToFileURL } from "url";
 
-export const runtime = "nodejs";
-
 // Polyfill DOMMatrix, Path2D, and ImageData for Node.js environments (required by pdfjs-dist inside pdf-parse v2)
 if (typeof globalThis.DOMMatrix === "undefined") {
   class DOMMatrixPolyfill {
@@ -68,7 +66,7 @@ if (typeof globalThis.DOMMatrix === "undefined") {
 
 if (typeof globalThis.Path2D === "undefined") {
   // @ts-expect-error polyfill for pdfjs in node runtime
-  globalThis.Path2D = class Path2DPolyfill {};
+  globalThis.Path2D = class Path2DPolyfill { };
 }
 
 if (typeof globalThis.ImageData === "undefined") {
@@ -364,11 +362,11 @@ function parseInvoiceXml(xmlText: string, fileName: string): ExtractedInvoiceDoc
   const monetaryBlock = extractXmlTagValue(strippedHeaderXml, "LegalMonetaryTotal");
   const xmlSubtotal = parseFlexibleNumber(
     extractXmlTagValue(monetaryBlock, "LineExtensionAmount") ||
-      extractXmlTagValue(monetaryBlock, "TaxExclusiveAmount")
+    extractXmlTagValue(monetaryBlock, "TaxExclusiveAmount")
   );
   const xmlPayable = parseFlexibleNumber(
     extractXmlTagValue(monetaryBlock, "PayableAmount") ||
-      extractXmlTagValue(monetaryBlock, "TaxInclusiveAmount")
+    extractXmlTagValue(monetaryBlock, "TaxInclusiveAmount")
   );
 
   // Header TaxTotal (outside InvoiceLine)

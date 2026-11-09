@@ -101,6 +101,109 @@ function createReportForLocation(
   };
 }
 
+const LEGACY_PARTY_TO_LOCATION_ID: Record<string, string> = {
+  "30000000-0000-4000-a000-000000000004": "f4779128-11e4-4593-93de-ff811c1bbfc9",
+  "30000000-0000-4000-a000-000000000005": "e289c564-901a-4d76-b631-0e4c6b8f3a21",
+};
+
+const LOCATION_TO_LEGACY_PARTY_ID: Record<string, string> = {
+  "f4779128-11e4-4593-93de-ff811c1bbfc9": "30000000-0000-4000-a000-000000000004",
+  "e289c564-901a-4d76-b631-0e4c6b8f3a21": "30000000-0000-4000-a000-000000000005",
+};
+
+/**
+ * Derives and synchronizes `state.cuttingLocations` (Kesim Yerleri) directly from
+ * `state.parties` where `partyType === "slaughterhouse"` (Firma / Müşteri Bilgileri -> Kesimhane / Mezbaha).
+ */
+function syncLocationsWithSlaughterhouseParties(state: KurbanPersistentState): KurbanPersistentState {
+  const deletedSet = new Set(state.deletedIds || []);
+  const existingLocations = state.cuttingLocations || [];
+
+  // Normalize any legacy slaughterhouse party IDs to match their cutting location IDs
+  const normalizedParties: KurbanParty[] = [];
+  const seenPartyIds = new Set<string>();
+
+  for (const p of state.parties || []) {
+    const mappedId = LEGACY_PARTY_TO_LOCATION_ID[p.id] || p.id;
+    if (deletedSet.has(p.id) || deletedSet.has(mappedId)) continue;
+    if (seenPartyIds.has(mappedId)) continue;
+    seenPartyIds.add(mappedId);
+    normalizedParties.push({
+      ...p,
+      id: mappedId,
+    });
+  }
+
+  state.parties = normalizedParties;
+
+  const slaughterhouseParties = state.parties.filter((p) => p.partyType === "slaughterhouse");
+
+  // Derive cuttingLocations directly from the slaughterhouse parties in Firma / Müşteri Bilgileri
+  const derivedLocations: KurbanCuttingLocation[] = slaughterhouseParties.map((p, idx) => {
+    const existingLoc =
+      existingLocations.find((l) => l.id === p.id) ||
+      existingLocations.find(
+        (l) => l.name.trim().toLowerCase() === p.name.trim().toLowerCase()
+      );
+
+    // Extract approval number from notes if not explicitly set
+    const approvalMatch = (p.notes || "").match(/TR-\d{2}-\d+/i);
+    const derivedApproval =
+      existingLoc?.officialApprovalNo ||
+      (approvalMatch ? `${approvalMatch[0].toUpperCase()} (Bakanlık Onaylı)` : p.taxId || "");
+
+    return {
+      id: p.id,
+      organizationId: p.organizationId || state.organization?.id || SEED_ORGANIZATION.id,
+      name: p.name,
+      locationCode: existingLoc?.locationCode || `KSM-0${idx + 1}`,
+      city: p.city || existingLoc?.city || "İstanbul",
+      address: p.address || existingLoc?.address || "",
+      responsiblePerson: p.authorizedPerson || existingLoc?.responsiblePerson || "",
+      responsiblePhone: p.phone || existingLoc?.responsiblePhone || "",
+      officialApprovalNo: derivedApproval,
+      veterinaryName: existingLoc?.veterinaryName || p.authorizedPerson || "",
+      dailyCapacity: existingLoc?.dailyCapacity || 200,
+      allocatedAnimalCount: existingLoc?.allocatedAnimalCount ?? 0,
+      notes: p.notes || existingLoc?.notes || "",
+      createdAt: existingLoc?.createdAt || p.createdAt || new Date().toISOString(),
+    };
+  });
+
+  state.cuttingLocations = derivedLocations;
+
+  // Ensure each derived cutting location has a corresponding report, and keep report names synced
+  const activeLocIds = new Set(derivedLocations.map((l) => l.id));
+  const updatedReports: KurbanReport[] = [];
+
+  for (let i = 0; i < derivedLocations.length; i++) {
+    const loc = derivedLocations[i];
+    const existingRep = (state.reports || []).find((r) => r.cuttingLocationId === loc.id);
+    if (existingRep) {
+      updatedReports.push({
+        ...existingRep,
+        cuttingLocationName: loc.name,
+        clientCompanyName: state.organization?.clientCompanyName || existingRep.clientCompanyName,
+      });
+    } else {
+      updatedReports.push(createReportForLocation(loc, state.organization, i));
+    }
+  }
+
+  // Keep any custom reports only if their location is still active
+  for (const rep of state.reports || []) {
+    if (
+      activeLocIds.has(rep.cuttingLocationId) &&
+      !updatedReports.some((ur) => ur.id === rep.id)
+    ) {
+      updatedReports.push(rep);
+    }
+  }
+
+  state.reports = updatedReports;
+  return state;
+}
+
 /**
  * Resolves the authoritative Kurban state by combining the cloud persistent state (`proposals` table)
  * and relational `kurban_*` tables without EVER re-seeding deleted/edited mock data.
@@ -131,7 +234,7 @@ async function resolveAuthoritativeState(supabase: any): Promise<{
   // `persisted` is the authoritative state and never resurrects deleted mock items!
   if (persisted && persisted.isCustomized) {
     const deletedSet = new Set(persisted.deletedIds || []);
-    const cleanState: KurbanPersistentState = {
+    const cleanState: KurbanPersistentState = syncLocationsWithSlaughterhouseParties({
       ...persisted,
       parties: (persisted.parties || []).filter((p) => !deletedSet.has(p.id)),
       cuttingLocations: (persisted.cuttingLocations || []).filter((l) => !deletedSet.has(l.id)),
@@ -142,7 +245,7 @@ async function resolveAuthoritativeState(supabase: any): Promise<{
       deliveries: (persisted.deliveries || []).filter((d) => !deletedSet.has(d.id)),
       documents: (persisted.documents || []).filter((doc) => !deletedSet.has(doc.id)),
       reports: (persisted.reports || []).filter((rep) => !deletedSet.has(rep.id)),
-    };
+    });
     inMemoryStore = cleanState;
     return { state: cleanState, totalAnimalCount, source: "supabase_persistent_state" };
   }
@@ -239,7 +342,7 @@ async function resolveAuthoritativeState(supabase: any): Promise<{
             ? reportsRes.data.map((r: any) => mapReportFromDb(r, locationsMap))
             : JSON.parse(JSON.stringify(SEED_REPORTS));
 
-        const relationalState: KurbanPersistentState = {
+        const relationalState: KurbanPersistentState = syncLocationsWithSlaughterhouseParties({
           isCustomized: false,
           deletedIds: [],
           organization,
@@ -254,7 +357,7 @@ async function resolveAuthoritativeState(supabase: any): Promise<{
           documents,
           reports,
           updatedAt: new Date().toISOString(),
-        };
+        });
 
         inMemoryStore = relationalState;
         return { state: relationalState, totalAnimalCount, source: "supabase_relational" };
@@ -264,6 +367,7 @@ async function resolveAuthoritativeState(supabase: any): Promise<{
     }
   }
 
+  inMemoryStore = syncLocationsWithSlaughterhouseParties(inMemoryStore);
   return { state: inMemoryStore, totalAnimalCount, source: "default_state" };
 }
 
@@ -711,8 +815,13 @@ export async function POST(request: Request) {
 
       // --- 1. PARTY (Firma / Alıcı Müşteri / Besici / Soğuk Depo / Mezbaha / Lojistik) ---
       if (entityType === "party") {
+        const canonicalPartyId = LEGACY_PARTY_TO_LOCATION_ID[entityId] || entityId;
+        state.deletedIds = (state.deletedIds || []).filter(
+          (id) => id !== canonicalPartyId && id !== LOCATION_TO_LEGACY_PARTY_ID[canonicalPartyId]
+        );
+
         const item: KurbanParty = {
-          id: entityId,
+          id: canonicalPartyId,
           organizationId: orgId,
           partyType: data.partyType || "supplier_seller",
           name: (data.name || "").trim(),
@@ -727,7 +836,7 @@ export async function POST(request: Request) {
           createdAt: data.createdAt || new Date().toISOString(),
         };
 
-        const idx = state.parties.findIndex((p) => p.id === item.id);
+        const idx = state.parties.findIndex((p) => p.id === item.id || p.id === entityId);
         if (idx >= 0) state.parties[idx] = item;
         else state.parties.unshift(item);
 
@@ -764,6 +873,9 @@ export async function POST(request: Request) {
           }
         }
 
+        // Automatically derive/sync Kesim Yerleri (cuttingLocations) from slaughterhouse parties!
+        syncLocationsWithSlaughterhouseParties(state);
+
         if (supabase) {
           const { error: dbErr } = await supabase.from("kurban_parties").upsert({
             id: item.id,
@@ -783,6 +895,28 @@ export async function POST(request: Request) {
           if (dbErr) {
             console.warn("Supabase party upsert warning (saved to persistent state):", dbErr);
           }
+
+          // If this is a slaughterhouse party, also upsert into kurban_cutting_locations
+          if (item.partyType === "slaughterhouse") {
+            const syncedLoc = state.cuttingLocations.find((l) => l.id === item.id);
+            if (syncedLoc) {
+              await supabase.from("kurban_cutting_locations").upsert({
+                id: syncedLoc.id,
+                organization_id: syncedLoc.organizationId,
+                name: syncedLoc.name,
+                location_code: syncedLoc.locationCode,
+                city: syncedLoc.city,
+                address: syncedLoc.address || null,
+                responsible_person: syncedLoc.responsiblePerson || null,
+                responsible_phone: syncedLoc.responsiblePhone || null,
+                official_approval_no: syncedLoc.officialApprovalNo || null,
+                veterinary_name: syncedLoc.veterinaryName || null,
+                daily_capacity: syncedLoc.dailyCapacity,
+                allocated_animal_count: syncedLoc.allocatedAnimalCount,
+                notes: syncedLoc.notes || null,
+              });
+            }
+          }
         }
 
         inMemoryStore = state;
@@ -791,15 +925,23 @@ export async function POST(request: Request) {
         return NextResponse.json({
           success: true,
           party: item,
+          parties: state.parties,
+          cuttingLocations: state.cuttingLocations,
+          reports: state.reports,
           organization: state.organization,
           message: "Paydaş / Firma başarıyla kaydedildi.",
         });
       }
 
-      // --- 2. LOCATION (Kesim Yeri / Mezbaha) ---
+      // --- 2. LOCATION (Kesim Yeri / Mezbaha -> Firma/Müşteri Bilgilerindeki Mezbahalarla Senkron) ---
       if (entityType === "location") {
+        const canonicalLocId = LEGACY_PARTY_TO_LOCATION_ID[entityId] || entityId;
+        state.deletedIds = (state.deletedIds || []).filter(
+          (id) => id !== canonicalLocId && id !== LOCATION_TO_LEGACY_PARTY_ID[canonicalLocId]
+        );
+
         const item: KurbanCuttingLocation = {
-          id: entityId,
+          id: canonicalLocId,
           organizationId: orgId,
           name: (data.name || "").trim(),
           locationCode:
@@ -823,6 +965,47 @@ export async function POST(request: Request) {
           state.cuttingLocations.push(item);
         }
 
+        // Also upsert the corresponding "slaughterhouse" party in Firma / Müşteri Bilgileri (`state.parties`)
+        const existingPartyIdx = state.parties.findIndex((p) => p.id === item.id);
+        const syncedParty: KurbanParty = {
+          id: item.id,
+          organizationId: orgId,
+          partyType: "slaughterhouse",
+          name: item.name,
+          taxId:
+            (existingPartyIdx >= 0 ? state.parties[existingPartyIdx].taxId : "") ||
+            item.officialApprovalNo ||
+            "",
+          taxOffice: existingPartyIdx >= 0 ? state.parties[existingPartyIdx].taxOffice : "",
+          phone:
+            item.responsiblePhone ||
+            (existingPartyIdx >= 0 ? state.parties[existingPartyIdx].phone : "") ||
+            "",
+          email: existingPartyIdx >= 0 ? state.parties[existingPartyIdx].email : "",
+          city: item.city,
+          address: item.address || "",
+          authorizedPerson:
+            item.responsiblePerson ||
+            item.veterinaryName ||
+            (existingPartyIdx >= 0 ? state.parties[existingPartyIdx].authorizedPerson : "") ||
+            "",
+          notes:
+            item.notes ||
+            (item.officialApprovalNo ? `Bakanlık Onay No: ${item.officialApprovalNo}` : ""),
+          createdAt:
+            existingPartyIdx >= 0
+              ? state.parties[existingPartyIdx].createdAt
+              : item.createdAt,
+        };
+
+        if (existingPartyIdx >= 0) {
+          state.parties[existingPartyIdx] = syncedParty;
+        } else {
+          state.parties.push(syncedParty);
+        }
+
+        syncLocationsWithSlaughterhouseParties(state);
+
         // Propagate updated location name to linked entities & ensure an official report exists for this location
         state.shipments = state.shipments.map((s) =>
           s.destinationLocationId === item.id
@@ -838,18 +1021,6 @@ export async function POST(request: Request) {
         state.deliveries = state.deliveries.map((d) =>
           d.cuttingLocationId === item.id ? { ...d, cuttingLocationName: item.name } : d
         );
-
-        const existingRepIdx = state.reports.findIndex((r) => r.cuttingLocationId === item.id);
-        if (existingRepIdx >= 0) {
-          state.reports[existingRepIdx] = {
-            ...state.reports[existingRepIdx],
-            cuttingLocationName: item.name,
-            updatedAt: new Date().toISOString(),
-          };
-        } else {
-          const newRep = createReportForLocation(item, state.organization, state.reports.length);
-          state.reports.push(newRep);
-        }
 
         if (supabase) {
           const { error: dbErr } = await supabase.from("kurban_cutting_locations").upsert({
@@ -871,6 +1042,21 @@ export async function POST(request: Request) {
           if (dbErr) {
             console.warn("Supabase location upsert warning (saved to persistent state):", dbErr);
           }
+
+          await supabase.from("kurban_parties").upsert({
+            id: syncedParty.id,
+            organization_id: syncedParty.organizationId,
+            party_type: syncedParty.partyType,
+            name: syncedParty.name,
+            tax_id: syncedParty.taxId || null,
+            tax_office: syncedParty.taxOffice || null,
+            phone: syncedParty.phone || null,
+            email: syncedParty.email || null,
+            city: syncedParty.city || null,
+            address: syncedParty.address || null,
+            authorized_person: syncedParty.authorizedPerson || null,
+            notes: syncedParty.notes || null,
+          });
         }
 
         inMemoryStore = state;
@@ -878,9 +1064,11 @@ export async function POST(request: Request) {
 
         return NextResponse.json({
           success: true,
-          location: item,
+          location: state.cuttingLocations.find((l) => l.id === item.id) || item,
+          cuttingLocations: state.cuttingLocations,
+          parties: state.parties,
           reports: state.reports,
-          message: "Kesim yeri başarıyla kaydedildi.",
+          message: "Kesim yeri ve mezbaha firma bilgileri başarıyla kaydedildi.",
         });
       }
 
@@ -1316,37 +1504,56 @@ export async function DELETE(request: Request) {
     const supabase = getSupabaseServerClient();
     const { state } = await resolveAuthoritativeState(supabase);
 
+    const canonicalId = LEGACY_PARTY_TO_LOCATION_ID[id] || id;
+    const legacyPartyId = LOCATION_TO_LEGACY_PARTY_ID[canonicalId];
+    const idsToDelete = [id, canonicalId, ...(legacyPartyId ? [legacyPartyId] : [])];
+
     // Record ID as deleted permanently so it never comes back from seed or relational tables
-    state.deletedIds = Array.from(new Set([...(state.deletedIds || []), id]));
+    state.deletedIds = Array.from(new Set([...(state.deletedIds || []), ...idsToDelete]));
 
-    if (entityType === "party") {
-      state.parties = state.parties.filter((p) => p.id !== id);
-      if (supabase && isUUID(id)) {
-        const { error } = await supabase.from("kurban_parties").delete().eq("id", id);
-        if (error) console.warn("Supabase party delete warning:", error);
+    if (entityType === "party" || entityType === "location") {
+      const removedParty = state.parties.find((p) => idsToDelete.includes(p.id));
+      const isSlaughterhouse =
+        entityType === "location" || removedParty?.partyType === "slaughterhouse";
+
+      state.parties = state.parties.filter((p) => !idsToDelete.includes(p.id));
+
+      if (isSlaughterhouse) {
+        const removedReportIds = state.reports
+          .filter((r) => idsToDelete.includes(r.cuttingLocationId))
+          .map((r) => r.id);
+        state.deletedIds = Array.from(new Set([...state.deletedIds, ...removedReportIds]));
+        state.cuttingLocations = state.cuttingLocations.filter(
+          (l) => !idsToDelete.includes(l.id)
+        );
+        state.reports = state.reports.filter(
+          (r) => !idsToDelete.includes(r.cuttingLocationId)
+        );
       }
-      inMemoryStore = state;
-      await saveKurbanPersistentState(state, supabase);
-      return NextResponse.json({ success: true, message: "Paydaş firma silindi." });
-    }
 
-    if (entityType === "location") {
-      const removedReportIds = state.reports
-        .filter((r) => r.cuttingLocationId === id)
-        .map((r) => r.id);
-      state.deletedIds = Array.from(new Set([...state.deletedIds, ...removedReportIds]));
-      state.cuttingLocations = state.cuttingLocations.filter((l) => l.id !== id);
-      state.reports = state.reports.filter((r) => r.cuttingLocationId !== id);
+      syncLocationsWithSlaughterhouseParties(state);
 
-      if (supabase && isUUID(id)) {
-        await safeDeleteLocationFromDb(supabase, id);
+      if (supabase) {
+        for (const delId of idsToDelete) {
+          if (isUUID(delId)) {
+            await supabase.from("kurban_parties").delete().eq("id", delId);
+            if (isSlaughterhouse) {
+              await safeDeleteLocationFromDb(supabase, delId);
+            }
+          }
+        }
       }
+
       inMemoryStore = state;
       await saveKurbanPersistentState(state, supabase);
       return NextResponse.json({
         success: true,
+        parties: state.parties,
+        cuttingLocations: state.cuttingLocations,
         reports: state.reports,
-        message: "Kesim yeri kalıcı olarak silindi.",
+        message: isSlaughterhouse
+          ? "Kesimhane / Mezbaha ve bağlı kesim yeri silindi."
+          : "Paydaş firma silindi.",
       });
     }
 

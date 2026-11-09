@@ -273,20 +273,34 @@ export default function KurbanProcessModuleView() {
     try {
       const res = await saveEntityApi("party", partyData);
       if (res.success && res.party) {
-        setParties((prev) => {
-          const idx = prev.findIndex((p) => p.id === res.party.id);
-          if (idx >= 0) {
-            const updated = [...prev];
-            updated[idx] = res.party;
-            return updated;
-          }
-          return [res.party, ...prev];
-        });
+        if (Array.isArray(res.parties)) {
+          setParties(res.parties);
+        } else {
+          setParties((prev) => {
+            const idx = prev.findIndex((p) => p.id === res.party.id);
+            if (idx >= 0) {
+              const updated = [...prev];
+              updated[idx] = res.party;
+              return updated;
+            }
+            return [res.party, ...prev];
+          });
+        }
+        if (Array.isArray(res.cuttingLocations)) {
+          setCuttingLocations(res.cuttingLocations);
+        }
+        if (Array.isArray(res.reports)) {
+          setReports(res.reports);
+        }
         if (res.organization) {
           setOrganization(res.organization);
         }
         setPartyModalOpen(false);
-        showToast("Paydaş / Firma kaydı başarıyla kaydedildi.");
+        showToast(
+          res.party.partyType === "slaughterhouse"
+            ? "Kesimhane / Mezbaha ve Kesim Yeri bilgisi başarıyla kaydedildi."
+            : "Paydaş / Firma kaydı başarıyla kaydedildi."
+        );
       } else {
         showToast(res.error || "Firma kaydedilemedi.");
       }
@@ -302,7 +316,22 @@ export default function KurbanProcessModuleView() {
     try {
       const res = await deleteEntityApi("party", id);
       if (res.success) {
-        setParties((prev) => prev.filter((p) => p.id !== id));
+        if (Array.isArray(res.parties)) {
+          setParties(res.parties);
+        } else {
+          setParties((prev) => prev.filter((p) => p.id !== id));
+        }
+        if (Array.isArray(res.cuttingLocations)) {
+          setCuttingLocations(res.cuttingLocations);
+        } else {
+          setCuttingLocations((prev) => prev.filter((l) => l.id !== id));
+        }
+        if (Array.isArray(res.reports)) {
+          setReports(res.reports);
+        }
+        if (selectedLocationId === id) {
+          setSelectedLocationId("all");
+        }
         showToast("Firma kaydı kalıcı olarak silindi.");
       } else {
         showToast(res.error || "Firma silinemedi.");
@@ -321,20 +350,27 @@ export default function KurbanProcessModuleView() {
     try {
       const res = await saveEntityApi("location", locData);
       if (res.success && res.location) {
-        setCuttingLocations((prev) => {
-          const idx = prev.findIndex((l) => l.id === res.location.id);
-          if (idx >= 0) {
-            const updated = [...prev];
-            updated[idx] = res.location;
-            return updated;
-          }
-          return [...prev, res.location];
-        });
+        if (Array.isArray(res.cuttingLocations)) {
+          setCuttingLocations(res.cuttingLocations);
+        } else {
+          setCuttingLocations((prev) => {
+            const idx = prev.findIndex((l) => l.id === res.location.id);
+            if (idx >= 0) {
+              const updated = [...prev];
+              updated[idx] = res.location;
+              return updated;
+            }
+            return [...prev, res.location];
+          });
+        }
+        if (Array.isArray(res.parties)) {
+          setParties(res.parties);
+        }
         if (res.reports && Array.isArray(res.reports)) {
           setReports(res.reports);
         }
         setLocationModalOpen(false);
-        showToast("Kesim yeri tesisi başarıyla kaydedildi.");
+        showToast("Kesim yeri ve mezbaha firma kaydı başarıyla kaydedildi.");
       } else {
         showToast(res.error || "Kesim yeri kaydedilemedi.");
       }
@@ -346,18 +382,27 @@ export default function KurbanProcessModuleView() {
   };
 
   const handleDeleteLocation = async (id: string) => {
-    if (!confirm("Bu kesim yerini silmek istediğinize emin misiniz?")) return;
+    if (!confirm("Bu kesim yerini (mezbahayı) silmek istediğinize emin misiniz?")) return;
     try {
       const res = await deleteEntityApi("location", id);
       if (res.success) {
-        setCuttingLocations((prev) => prev.filter((l) => l.id !== id));
+        if (Array.isArray(res.cuttingLocations)) {
+          setCuttingLocations(res.cuttingLocations);
+        } else {
+          setCuttingLocations((prev) => prev.filter((l) => l.id !== id));
+        }
+        if (Array.isArray(res.parties)) {
+          setParties(res.parties);
+        } else {
+          setParties((prev) => prev.filter((p) => p.id !== id));
+        }
         if (selectedLocationId === id) {
           setSelectedLocationId("all");
         }
         if (res.reports && Array.isArray(res.reports)) {
           setReports(res.reports);
         }
-        showToast("Kesim yeri kalıcı olarak silindi.");
+        showToast("Kesim yeri ve mezbaha kaydı kalıcı olarak silindi.");
       } else {
         showToast(res.error || "Kesim yeri silinemedi.");
       }
@@ -1784,7 +1829,7 @@ export default function KurbanProcessModuleView() {
       )}
 
       {/* ========================================================================= */}
-      {/* TAB 3: KESİM YERLERİ                                                       */}
+      {/* TAB 3: KESİM YERLERİ (FİRMA BİLGİLERİNDEKİ MEZBAHALARDAN ALINIR)          */}
       {/* ========================================================================= */}
       {activeTab === "locations" && (
         <div className="space-y-6">
@@ -1795,25 +1840,38 @@ export default function KurbanProcessModuleView() {
                 Yetkili Kesim Tesisleri ve Mezbahalar ({cuttingLocations.length} Tesis)
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
-                Tarım ve Orman Bakanlığı onaylı entegre et kombinaları ve resmi kesimhaneler
+                Bu liste <strong>Firma / Müşteri Bilgileri &rarr; Kesimhane / Mezbaha</strong> kayıtlarından otomatik alınır ve çift yönlü senkronize çalışır
               </p>
             </div>
 
-            <button
-              onClick={() => {
-                setEditingLocation({
-                  city: "İstanbul",
-                  dailyCapacity: 200,
-                  allocatedAnimalCount: 0,
-                  locationCode: `KSM-0${cuttingLocations.length + 1}`,
-                });
-                setLocationModalOpen(true);
-              }}
-              className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shadow-md shadow-rose-600/20 flex items-center gap-1.5 transition-all self-start sm:self-auto active:scale-95"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Yeni Kesim Yeri Ekle</span>
-            </button>
+            <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+              <button
+                onClick={() => {
+                  setPartyTypeFilter("slaughterhouse");
+                  setActiveTab("parties");
+                }}
+                className="px-3.5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs flex items-center gap-1.5 transition-all"
+              >
+                <Building2 className="w-4 h-4 text-rose-500" />
+                <span>Firma Bilgilerinde Mezbahaları Gör</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setEditingLocation({
+                    city: "İstanbul",
+                    dailyCapacity: 200,
+                    allocatedAnimalCount: 0,
+                    locationCode: `KSM-0${cuttingLocations.length + 1}`,
+                  });
+                  setLocationModalOpen(true);
+                }}
+                className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shadow-md shadow-rose-600/20 flex items-center gap-1.5 transition-all active:scale-95"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Yeni Kesimhane / Kesim Yeri Ekle</span>
+              </button>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -4103,6 +4161,59 @@ export default function KurbanProcessModuleView() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[60vh] overflow-y-auto p-1 text-xs">
+              {parties.some((p) => p.partyType === "slaughterhouse") && (
+                <div className="md:col-span-2 p-3 rounded-2xl bg-rose-50/70 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800/60">
+                  <label className="block font-bold text-rose-800 dark:text-rose-300 mb-1">
+                    Firma / Müşteri Bilgilerindeki Kayıtlı Kesimhane / Mezbahadan Seç
+                  </label>
+                  <select
+                    value={editingLocation.id || ""}
+                    onChange={(e) => {
+                      const selectedParty = parties.find(
+                        (p) => p.partyType === "slaughterhouse" && p.id === e.target.value
+                      );
+                      const existingLoc = cuttingLocations.find((l) => l.id === e.target.value);
+                      if (selectedParty) {
+                        setEditingLocation((prev) => ({
+                          ...prev,
+                          id: selectedParty.id,
+                          name: selectedParty.name,
+                          city: selectedParty.city || prev?.city || "İstanbul",
+                          address: selectedParty.address || prev?.address || "",
+                          responsiblePerson:
+                            selectedParty.authorizedPerson || prev?.responsiblePerson || "",
+                          responsiblePhone: selectedParty.phone || prev?.responsiblePhone || "",
+                          officialApprovalNo:
+                            existingLoc?.officialApprovalNo ||
+                            selectedParty.taxId ||
+                            prev?.officialApprovalNo ||
+                            "",
+                          veterinaryName:
+                            existingLoc?.veterinaryName ||
+                            selectedParty.authorizedPerson ||
+                            prev?.veterinaryName ||
+                            "",
+                          dailyCapacity: existingLoc?.dailyCapacity || prev?.dailyCapacity || 200,
+                          allocatedAnimalCount:
+                            existingLoc?.allocatedAnimalCount ?? prev?.allocatedAnimalCount ?? 0,
+                          notes: selectedParty.notes || prev?.notes || "",
+                        }));
+                      }
+                    }}
+                    className="w-full px-3.5 py-2 rounded-xl bg-white dark:bg-slate-900 border border-rose-300 dark:border-rose-700 font-semibold focus:outline-hidden focus:ring-2 focus:ring-rose-500"
+                  >
+                    <option value="">-- Yeni Kesimhane Oluştur veya Kayıtlı Mezbahadan Seç --</option>
+                    {parties
+                      .filter((p) => p.partyType === "slaughterhouse")
+                      .map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} ({p.city || "Şehir Belirtilmedi"})
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              )}
+
               <div className="md:col-span-2">
                 <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
                   Kesim Yeri / Mezbaha Adı <span className="text-rose-500">*</span>

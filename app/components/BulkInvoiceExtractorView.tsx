@@ -261,13 +261,72 @@ export default function BulkInvoiceExtractorView() {
     }
   }, [documents]);
 
-  const readFileAsDataUrl = (file: File): Promise<string> =>
+  const compressImageToDataUrl = (file: File): Promise<string> =>
     new Promise((resolve) => {
       const reader = new FileReader();
-      reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
+      reader.onload = () => {
+        const rawDataUrl = typeof reader.result === "string" ? reader.result : "";
+        if (!rawDataUrl) {
+          resolve("");
+          return;
+        }
+        const img = new window.Image();
+        img.onload = () => {
+          try {
+            const maxDim = 1400;
+            let { width, height } = img;
+            if (width > maxDim || height > maxDim) {
+              const scale = Math.min(maxDim / width, maxDim / height);
+              width = Math.round(width * scale);
+              height = Math.round(height * scale);
+            }
+            const canvas = document.createElement("canvas");
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext("2d");
+            if (!ctx) {
+              resolve(rawDataUrl);
+              return;
+            }
+            ctx.drawImage(img, 0, 0, width, height);
+            const compressed = canvas.toDataURL("image/jpeg", 0.78);
+            resolve(compressed || rawDataUrl);
+          } catch {
+            resolve(rawDataUrl);
+          }
+        };
+        img.onerror = () => resolve(rawDataUrl);
+        img.src = rawDataUrl;
+      };
       reader.onerror = () => resolve("");
       reader.readAsDataURL(file);
     });
+
+  const safeParseApiResponse = async (
+    response: Response,
+    fileName: string
+  ): Promise<{
+    documents?: InvoiceDocumentRecord[];
+    errors?: { fileName: string; message: string }[];
+    error?: string;
+  }> => {
+    const rawText = await response.text();
+    try {
+      return JSON.parse(rawText);
+    } catch {
+      if (
+        response.status === 413 ||
+        rawText.toLowerCase().includes("request entity too large")
+      ) {
+        throw new Error(
+          `"${fileName}" dosya boyutu sunucu limitini (4.5 MB) aşıyor. Lütfen daha küçük boyutlu PDF yükleyin.`
+        );
+      }
+      throw new Error(
+        `"${fileName}" işlenirken sunucudan geçersiz yanıt alındı (HTTP ${response.status}).`
+      );
+    }
+  };
 
   const handleFilesUpload = async (fileList: FileList | File[]) => {
     const filesArray = Array.from(fileList);
@@ -276,49 +335,141 @@ export default function BulkInvoiceExtractorView() {
     setIsUploading(true);
     setStatusBanner({
       type: "info",
-      message: `${filesArray.length} adet dosya (XML / PDF / Fotoğraf) işleniyor...`,
+      message: `${filesArray.length} adet dosya (XML / PDF / Fotoğraf) tek tek işleniyor...`,
     });
 
+    const newDocs: InvoiceDocumentRecord[] = [];
+    const allErrors: { fileName: string; message: string }[] = [];
+
     try {
-      // Pre-generate local preview URLs for image files
-      const imagePreviewsMap: Record<string, string> = {};
-      for (const file of filesArray) {
-        if (
-          file.type.startsWith("image/") ||
-          /\.(jpg|jpeg|png|webp)$/i.test(file.name)
-        ) {
-          imagePreviewsMap[file.name] = await readFileAsDataUrl(file);
+      for (let i = 0; i < filesArray.length; i++) {
+        const file = filesArray[i];
+        const lowerName = file.name.toLowerCase();
+
+        setStatusBanner({
+          type: "info",
+          message: `İşleniyor (${i + 1}/${filesArray.length}): ${file.name}`,
+        });
+
+        try {
+          if (lowerName.endsWith(".xml") || file.type.includes("xml")) {
+            // Send only lightweight XML text as JSON (avoids multipart overhead)
+            const xmlText = await file.text();
+            const response = await fetch("/api/parse-invoices", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                rawText: xmlText,
+                fileName: file.name,
+                fileType: "xml",
+              }),
+            });
+            const data = await safeParseApiResponse(response, file.name);
+            if (!response.ok) {
+              throw new Error(data.error || "XML ayrıştırılamadı.");
+            }
+            if (Array.isArray(data.documents)) {
+              newDocs.push(...data.documents);
+            }
+            if (Array.isArray(data.errors)) {
+              allErrors.push(...data.errors);
+            }
+          } else if (
+            file.type.startsWith("image/") ||
+            /\.(jpg|jpeg|png|webp|heic)$/i.test(lowerName)
+          ) {
+            // Process image directly on client with compressed preview (0 MB server upload, prevents 413 Request Entity Too Large)
+            const compressedPreview = await compressImageToDataUrl(file);
+            const baseName = file.name.replace(/\.[^.]+$/, "");
+            const dateInName = baseName.match(
+              /(20\d{2}[-_.]\d{2}[-_.]\d{2}|\d{2}[-_.]\d{2}[-_.]20\d{2})/
+            );
+            const invNoInName = baseName.match(
+              /([A-Z0-9]{3}20\d{11}|FAT[-_]?\d+|\d{6,16})/i
+            );
+
+            newDocs.push({
+              id: `inv-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+              fileName: file.name,
+              fileType: "image",
+              buyerName: "Fotoğraf Fatura Alıcısı (Düzenleyiniz)",
+              buyerTaxId: "",
+              sellerName: "",
+              invoiceDate: dateInName
+                ? dateInName[1].replace(/[._]/g, "-")
+                : new Date().toISOString().slice(0, 10),
+              invoiceNo: invNoInName
+                ? invNoInName[1].toUpperCase()
+                : `FOTO-${Math.floor(100000 + Math.random() * 900000)}`,
+              currency: "TRY",
+              items: [
+                {
+                  id: `${Date.now()}-img-0`,
+                  productName: `${baseName} - Fatura Kalemi`,
+                  quantity: 1,
+                  unit: "Adet",
+                  unitPrice: 0,
+                  vatRate: 20,
+                  vatAmount: 0,
+                  netAmount: 0,
+                  totalAmount: 0,
+                },
+              ],
+              subtotalAmount: 0,
+              totalVatAmount: 0,
+              grandTotalAmount: 0,
+              imagePreviewUrl: compressedPreview,
+              parseNote:
+                "Fotoğraf sıkıştırılarak yüklendi. Göz (Önizleme) ikonuna tıklayıp fotoğrafa bakarak kalemleri hızlıca düzenleyebilirsiniz.",
+            });
+          } else if (
+            lowerName.endsWith(".pdf") ||
+            file.type === "application/pdf"
+          ) {
+            // Upload each PDF individually so batch uploads never exceed Vercel's 4.5MB limit
+            const singleFormData = new FormData();
+            singleFormData.append("files", file);
+
+            const response = await fetch("/api/parse-invoices", {
+              method: "POST",
+              body: singleFormData,
+            });
+            const data = await safeParseApiResponse(response, file.name);
+            if (!response.ok) {
+              throw new Error(data.error || "PDF ayrıştırılamadı.");
+            }
+            if (Array.isArray(data.documents)) {
+              newDocs.push(...data.documents);
+            }
+            if (Array.isArray(data.errors)) {
+              allErrors.push(...data.errors);
+            }
+          } else {
+            allErrors.push({
+              fileName: file.name,
+              message: "Desteklenmeyen dosya formatı (XML, PDF veya Fotoğraf seçiniz).",
+            });
+          }
+        } catch (singleErr: unknown) {
+          allErrors.push({
+            fileName: file.name,
+            message:
+              singleErr instanceof Error
+                ? singleErr.message
+                : "Dosya işlenemedi.",
+          });
         }
       }
 
-      const formData = new FormData();
-      filesArray.forEach((f) => formData.append("files", f));
-
-      const response = await fetch("/api/parse-invoices", {
-        method: "POST",
-        body: formData,
-      });
-
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || "Faturalar ayrıştırılamadı.");
+      if (newDocs.length > 0) {
+        setDocuments((prev) => [...newDocs, ...prev]);
       }
 
-      const newDocs: InvoiceDocumentRecord[] = (data.documents || []).map(
-        (doc: InvoiceDocumentRecord) => ({
-          ...doc,
-          imagePreviewUrl: imagePreviewsMap[doc.fileName] || doc.imagePreviewUrl,
-        })
-      );
-
-      setDocuments((prev) => [...newDocs, ...prev]);
-
-      const errCount = Array.isArray(data.errors) ? data.errors.length : 0;
-      if (errCount > 0) {
+      if (allErrors.length > 0) {
         setStatusBanner({
           type: "error",
-          message: `${newDocs.length} dosya başarıyla eklendi, ${errCount} dosyada uyarı oluştu: ${data.errors
-            .map((e: { fileName: string; message: string }) => `${e.fileName} (${e.message})`)
+          message: `${newDocs.length} dosya başarıyla eklendi, ${allErrors.length} dosyada uyarı oluştu: ${allErrors
+            .map((e) => `${e.fileName} (${e.message})`)
             .join(", ")}`,
         });
       } else {

@@ -66,7 +66,7 @@ if (typeof globalThis.DOMMatrix === "undefined") {
 
 if (typeof globalThis.Path2D === "undefined") {
   // @ts-expect-error polyfill for pdfjs in node runtime
-  globalThis.Path2D = class Path2DPolyfill { };
+  globalThis.Path2D = class Path2DPolyfill {};
 }
 
 if (typeof globalThis.ImageData === "undefined") {
@@ -179,9 +179,7 @@ function normalizeUnit(codeOrText?: string): string {
 
 function parseFlexibleNumber(val?: string | null): number {
   if (!val) return 0;
-  let cleaned = val
-    .replace(/[^\d.,\-]/g, "")
-    .trim();
+  let cleaned = val.replace(/[^\d.,\-]/g, "").trim();
   if (!cleaned) return 0;
 
   const lastComma = cleaned.lastIndexOf(",");
@@ -189,14 +187,11 @@ function parseFlexibleNumber(val?: string | null): number {
 
   if (lastComma > -1 && lastDot > -1) {
     if (lastComma > lastDot) {
-      // Turkish format: 1.234,56
       cleaned = cleaned.replace(/\./g, "").replace(",", ".");
     } else {
-      // US/XML format: 1,234.56
       cleaned = cleaned.replace(/,/g, "");
     }
   } else if (lastComma > -1) {
-    // Only comma present: 1234,56
     cleaned = cleaned.replace(",", ".");
   }
   const num = parseFloat(cleaned);
@@ -257,7 +252,6 @@ function parseXmlPartyName(partyBlock: string): { name: string; taxId: string } 
 }
 
 function parseInvoiceXml(xmlText: string, fileName: string): ExtractedInvoiceDocument {
-  // Strip embedded <cac:AdditionalDocumentReference> binary objects so they don't bloat regexes or shadow <cbc:ID>
   const strippedHeaderXml = xmlText
     .replace(
       /<(?:[a-zA-Z0-9_]+:)?AdditionalDocumentReference[\s\S]*?<\/(?:[a-zA-Z0-9_]+:)?AdditionalDocumentReference>/gi,
@@ -268,8 +262,9 @@ function parseInvoiceXml(xmlText: string, fileName: string): ExtractedInvoiceDoc
       ""
     );
 
-  // Top-level Invoice No & IssueDate (before Party blocks)
-  const beforeSupplier = strippedHeaderXml.split(/<(?:[a-zA-Z0-9_]+:)?AccountingSupplierParty/i)[0] || strippedHeaderXml;
+  const beforeSupplier =
+    strippedHeaderXml.split(/<(?:[a-zA-Z0-9_]+:)?AccountingSupplierParty/i)[0] ||
+    strippedHeaderXml;
   const invoiceNo =
     extractXmlTagValue(beforeSupplier, "ID") ||
     extractXmlTagValue(strippedHeaderXml, "InvoiceNumber") ||
@@ -311,7 +306,6 @@ function parseInvoiceXml(xmlText: string, fileName: string): ExtractedInvoiceDoc
         ? `${itemName} (${itemDesc})`
         : itemName;
 
-    // Quantity & unitCode attribute
     const qtyMatch = lineXml.match(
       /<(?:[a-zA-Z0-9_]+:)?(?:InvoicedQuantity|Quantity)([^>]*)>([\s\S]*?)<\/(?:[a-zA-Z0-9_]+:)?(?:InvoicedQuantity|Quantity)>/i
     );
@@ -362,14 +356,13 @@ function parseInvoiceXml(xmlText: string, fileName: string): ExtractedInvoiceDoc
   const monetaryBlock = extractXmlTagValue(strippedHeaderXml, "LegalMonetaryTotal");
   const xmlSubtotal = parseFlexibleNumber(
     extractXmlTagValue(monetaryBlock, "LineExtensionAmount") ||
-    extractXmlTagValue(monetaryBlock, "TaxExclusiveAmount")
+      extractXmlTagValue(monetaryBlock, "TaxExclusiveAmount")
   );
   const xmlPayable = parseFlexibleNumber(
     extractXmlTagValue(monetaryBlock, "PayableAmount") ||
-    extractXmlTagValue(monetaryBlock, "TaxInclusiveAmount")
+      extractXmlTagValue(monetaryBlock, "TaxInclusiveAmount")
   );
 
-  // Header TaxTotal (outside InvoiceLine)
   const withoutLines = strippedHeaderXml.replace(
     /<(?:[a-zA-Z0-9_]+:)?InvoiceLine[\s\S]*?<\/(?:[a-zA-Z0-9_]+:)?InvoiceLine>/gi,
     ""
@@ -403,14 +396,12 @@ function parseInvoiceXml(xmlText: string, fileName: string): ExtractedInvoiceDoc
 
 function normalizeDateString(raw: string): string {
   const trimmed = raw.trim();
-  // Match DD.MM.YYYY or DD/MM/YYYY or DD-MM-YYYY
   const dmy = trimmed.match(/^(\d{1,2})[./\-](\d{1,2})[./\-](\d{4})$/);
   if (dmy) {
     const d = dmy[1].padStart(2, "0");
     const m = dmy[2].padStart(2, "0");
     return `${dmy[3]}-${m}-${d}`;
   }
-  // Match YYYY-MM-DD
   const ymd = trimmed.match(/^(\d{4})[./\-](\d{1,2})[./\-](\d{1,2})/);
   if (ymd) {
     return `${ymd[1]}-${ymd[2].padStart(2, "0")}-${ymd[3].padStart(2, "0")}`;
@@ -418,20 +409,23 @@ function normalizeDateString(raw: string): string {
   return trimmed;
 }
 
-function parseInvoicePdfText(rawText: string, fileName: string): ExtractedInvoiceDocument {
+function parseInvoicePdfText(
+  rawText: string,
+  fileName: string,
+  fileType: "pdf" | "image" = "pdf"
+): ExtractedInvoiceDocument {
   const lines = rawText
     .split(/\r?\n/)
     .map((l) => l.replace(/\s+/g, " ").trim())
     .filter(Boolean);
 
-  // 1. Extract Invoice No (e.g., 16-char GIB number or "Fatura No: ...")
   let invoiceNo = "";
   const gibMatch = rawText.match(/\b([A-Z0-9]{3}20\d{11})\b/);
   if (gibMatch) {
     invoiceNo = gibMatch[1];
   } else {
     const fnMatch = rawText.match(
-      /(?:Fatura\s*No|Fatura\s*Numaras[ıi]|Belge\s*No)\s*[:.]?\s*([A-Z0-9\-/]{5,24})/i
+      /(?:Fatura\s*No|Fatura\s*Numaras[ıi]|Belge\s*No|Fiş\s*No)\s*[:.]?\s*([A-Z0-9\-/]{4,24})/i
     );
     if (fnMatch) invoiceNo = fnMatch[1].trim();
   }
@@ -439,7 +433,6 @@ function parseInvoicePdfText(rawText: string, fileName: string): ExtractedInvoic
     invoiceNo = fileName.replace(/\.[^.]+$/, "").slice(0, 20).toUpperCase();
   }
 
-  // 2. Extract Invoice Date
   let invoiceDate = "";
   const dateLabelMatch = rawText.match(
     /(?:Fatura\s*Tarihi|D[üu]zenleme\s*Tarihi|Tarih)\s*[:.]?\s*(\d{1,2}[./\-]\d{1,2}[./\-]\d{4}|\d{4}[./\-]\d{1,2}[./\-]\d{1,2})/i
@@ -456,7 +449,6 @@ function parseInvoicePdfText(rawText: string, fileName: string): ExtractedInvoic
     invoiceDate = new Date().toISOString().slice(0, 10);
   }
 
-  // 3. Extract Buyer (Alıcı Firma / Kişi) & Seller
   let buyerName = "";
   let buyerTaxId = "";
   let sellerName = "";
@@ -482,10 +474,11 @@ function parseInvoicePdfText(rawText: string, fileName: string): ExtractedInvoic
         }
       }
     }
-    // Look for VKN/TCKN near SAYIN
     for (let i = sayinIdx; i < Math.min(sayinIdx + 10, lines.length); i++) {
-      const vknMatch = lines[i].match(/(?:VKN|TCKN|Vergi\s*No|T\.?C\.?\s*Kimlik)\s*[:./]?\s*(\d{10,11})/i) ||
-        lines[i].match(/\b(\d{10,11})\b/);
+      const vknMatch =
+        lines[i].match(
+          /(?:VKN|TCKN|Vergi\s*No|T\.?C\.?\s*Kimlik)\s*[:./]?\s*(\d{10,11})/i
+        ) || lines[i].match(/\b(\d{10,11})\b/);
       if (vknMatch) {
         buyerTaxId = vknMatch[1];
         break;
@@ -493,7 +486,6 @@ function parseInvoicePdfText(rawText: string, fileName: string): ExtractedInvoic
     }
   }
 
-  // Seller is usually in the first 10 lines (company title with A.Ş., LTD., ŞTİ., etc.)
   for (let i = 0; i < Math.min(12, lines.length); i++) {
     if (sayinIdx !== -1 && i >= sayinIdx) break;
     if (
@@ -507,7 +499,6 @@ function parseInvoicePdfText(rawText: string, fileName: string): ExtractedInvoic
   }
 
   if (!buyerName) {
-    // Fallback: look for company names in text
     const companyLines = lines.filter((l) =>
       /(A\.?\s*Ş\.?|LTD\.?|ŞTİ\.?|SAN\.?|TİC\.?)/i.test(l)
     );
@@ -517,16 +508,17 @@ function parseInvoicePdfText(rawText: string, fileName: string): ExtractedInvoic
     } else if (companyLines.length === 1) {
       buyerName = companyLines[0];
     } else {
-      buyerName = "PDF Fatura Alıcısı";
+      buyerName =
+        fileType === "image"
+          ? "Fotoğraf Fatura Alıcısı (Düzenleyiniz)"
+          : "PDF Fatura Alıcısı";
     }
   }
 
-  // 4. Extract Line Items from PDF text
   const items: ExtractedInvoiceItem[] = [];
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    // Skip summary/footer lines
     if (
       /^(Mal\s*Hizmet\s*Toplam|Toplam\s*İskonto|Hesaplanan\s*KDV|Vergiler\s*Dahil|Ödenecek\s*Tutar|Genel\s*Toplam|Ara\s*Toplam|Yalnız|Not\s*:|IBAN|TR\d{2})/i.test(
         line
@@ -535,8 +527,6 @@ function parseInvoicePdfText(rawText: string, fileName: string): ExtractedInvoic
       continue;
     }
 
-    // Pattern A: Standard Turkish e-Fatura table row
-    // e.g. "1 DANA KARKAS ET 250 Adet 420,00 TL %1 1.050,00 TL 105.000,00 TL" or similar
     const efaturaRowMatch = line.match(
       /^(?:(\d{1,3})\s+)?(.+?)\s+(\d+(?:[.,]\d+)?)\s*(Adet|Kg|KGM|Lt|LTR|Mt|Koli|Paket|Kutu|Ton|Gr|m2|m²|Set|Çift|Gün|Saat|Ay|C62|NIU)?\s+(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2,4})|\d+(?:[.,]\d{2,4}))\s*(?:TL|TRY|₺|USD|EUR)?\s+(?:%?\s*(\d{1,2}(?:[.,]\d{1,2})?)\s*%?\s+)?(?:(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})|\d+(?:[.,]\d{2}))\s*(?:TL|TRY|₺|USD|EUR)?\s+)?(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})|\d+(?:[.,]\d{2}))\s*(?:TL|TRY|₺|USD|EUR)?$/i
     );
@@ -572,7 +562,6 @@ function parseInvoicePdfText(rawText: string, fileName: string): ExtractedInvoic
     }
   }
 
-  // Extract summary totals from PDF text if present
   const subtotalMatch = rawText.match(
     /(?:Mal\s*Hizmet\s*Toplam\s*Tutar[ıi]|Ara\s*Toplam|Matrah)\s*[:.]?\s*([\d.,]+)\s*(?:TL|TRY|₺)?/i
   );
@@ -580,24 +569,29 @@ function parseInvoicePdfText(rawText: string, fileName: string): ExtractedInvoic
     /(?:Hesaplanan\s*KDV|Toplam\s*KDV|KDV\s*Tutar[ıi])\s*(?:\([^)]*\))?\s*[:.]?\s*([\d.,]+)\s*(?:TL|TRY|₺)?/i
   );
   const grandTotalMatch = rawText.match(
-    /(?:Ödenecek\s*Tutar|Vergiler\s*Dahil\s*Toplam\s*Tutar|Genel\s*Toplam)\s*[:.]?\s*([\d.,]+)\s*(?:TL|TRY|₺)?/i
+    /(?:Ödenecek\s*Tutar|Vergiler\s*Dahil\s*Toplam\s*Tutar|Genel\s*Toplam|TOPLAM)\s*[:.]?\s*([\d.,]+)\s*(?:TL|TRY|₺)?/i
   );
 
   const pdfSubtotal = subtotalMatch ? parseFlexibleNumber(subtotalMatch[1]) : 0;
   const pdfVatTotal = vatTotalMatch ? parseFlexibleNumber(vatTotalMatch[1]) : 0;
   const pdfGrandTotal = grandTotalMatch ? parseFlexibleNumber(grandTotalMatch[1]) : 0;
 
-  // If no individual rows matched, create a fallback item from summary totals so user sees values and can edit
   if (items.length === 0) {
-    const net = pdfSubtotal || (pdfGrandTotal > 0 && pdfVatTotal > 0 ? pdfGrandTotal - pdfVatTotal : pdfGrandTotal);
+    const net =
+      pdfSubtotal ||
+      (pdfGrandTotal > 0 && pdfVatTotal > 0
+        ? pdfGrandTotal - pdfVatTotal
+        : pdfGrandTotal);
     const vat = pdfVatTotal || 0;
     const total = pdfGrandTotal || net + vat;
-    const inferredRate =
-      net > 0 && vat > 0 ? Math.round((vat / net) * 100) : 20;
+    const inferredRate = net > 0 && vat > 0 ? Math.round((vat / net) * 100) : 20;
 
     items.push({
       id: `${Date.now()}-0`,
-      productName: "Fatura Genel Kalemi (PDF'den Aktarıldı)",
+      productName:
+        fileType === "image"
+          ? `${fileName.replace(/\.[^.]+$/, "")} - Fatura Kalemi`
+          : "Fatura Genel Kalemi (PDF'den Aktarıldı)",
       quantity: 1,
       unit: "Adet",
       unitPrice: Number(net.toFixed(2)),
@@ -615,7 +609,7 @@ function parseInvoicePdfText(rawText: string, fileName: string): ExtractedInvoic
   return {
     id: `inv-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     fileName,
-    fileType: "pdf",
+    fileType,
     buyerName,
     buyerTaxId,
     sellerName,
@@ -626,13 +620,34 @@ function parseInvoicePdfText(rawText: string, fileName: string): ExtractedInvoic
     subtotalAmount: Number((computedSubtotal || pdfSubtotal).toFixed(2)),
     totalVatAmount: Number((computedVat || pdfVatTotal).toFixed(2)),
     grandTotalAmount: Number((computedGrand || pdfGrandTotal).toFixed(2)),
-    rawTextSnippet: lines.slice(0, 30).join("\n"),
-    parseNote: "PDF fatura metni ayrıştırıldı. Kalemleri tablodan kontrol edip düzenleyebilirsiniz.",
+    rawTextSnippet: lines.slice(0, 35).join("\n"),
+    parseNote:
+      fileType === "image"
+        ? "Fotoğraf metni ayrıştırıldı. Kalemleri kontrol edip düzenleyebilirsiniz."
+        : "PDF fatura metni ayrıştırıldı. Kalemleri tablodan kontrol edip düzenleyebilirsiniz.",
   };
 }
 
 export async function POST(request: NextRequest) {
   try {
+    const contentType = request.headers.get("content-type") || "";
+
+    // Support lightweight JSON payload (e.g. OCR text from image or XML text)
+    if (contentType.includes("application/json")) {
+      const body = await request.json();
+      const { rawText = "", fileName = "belge.txt", fileType = "pdf" } = body;
+      if (fileType === "xml") {
+        return NextResponse.json({
+          documents: [parseInvoiceXml(rawText, fileName)],
+          errors: [],
+        });
+      }
+      return NextResponse.json({
+        documents: [parseInvoicePdfText(rawText, fileName, fileType)],
+        errors: [],
+      });
+    }
+
     const formData = await request.formData();
     const files = formData.getAll("files") as File[];
 
@@ -663,16 +678,19 @@ export async function POST(request: NextRequest) {
           const parser = new PDFParseClass({ data: buffer, verbosity: 0 });
           const result = await parser.getText();
           const rawText: string = result?.text || "";
-          const doc = parseInvoicePdfText(rawText, file.name);
+          const doc = parseInvoicePdfText(rawText, file.name, "pdf");
           documents.push(doc);
         } else if (
           /\.(jpg|jpeg|png|webp|heic)$/i.test(lowerName) ||
           file.type.startsWith("image/")
         ) {
-          // Image / Photo Invoice handling
           const baseName = file.name.replace(/\.[^.]+$/, "");
-          const dateInName = baseName.match(/(20\d{2}[-_.]\d{2}[-_.]\d{2}|\d{2}[-_.]\d{2}[-_.]20\d{2})/);
-          const invNoInName = baseName.match(/([A-Z0-9]{3}20\d{11}|FAT[-_]?\d+|\d{6,16})/i);
+          const dateInName = baseName.match(
+            /(20\d{2}[-_.]\d{2}[-_.]\d{2}|\d{2}[-_.]\d{2}[-_.]20\d{2})/
+          );
+          const invNoInName = baseName.match(
+            /([A-Z0-9]{3}20\d{11}|FAT[-_]?\d+|\d{6,16})/i
+          );
 
           documents.push({
             id: `inv-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -705,12 +723,13 @@ export async function POST(request: NextRequest) {
             totalVatAmount: 0,
             grandTotalAmount: 0,
             parseNote:
-              "Fotoğraf yüklendi. Görsel önizleme penceresinden bakarak veya OCR ile değerleri hızlıca girebilirsiniz.",
+              "Fotoğraf yüklendi. Görsel önizleme penceresinden bakarak değerleri hızlıca girebilirsiniz.",
           });
         } else {
           errors.push({
             fileName: file.name,
-            message: "Desteklenmeyen dosya formatı (Sadece XML, PDF ve Fotoğraf kabul edilir).",
+            message:
+              "Desteklenmeyen dosya formatı (Sadece XML, PDF ve Fotoğraf kabul edilir).",
           });
         }
       } catch (fileErr: unknown) {
@@ -741,4 +760,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-

@@ -41,6 +41,7 @@ import WhatsAppShareModal from "./WhatsAppShareModal";
 import { WhatsAppProposalData, sharePdfViaWhatsApp } from "../utils/whatsapp";
 import { renderElementToPdf } from "../utils/pdfGenerator";
 import { useAuth } from "../context/AuthContext";
+import teklifLogo from "../logo.jpg";
 
 export interface QuoteItem {
   id: string;
@@ -282,7 +283,7 @@ export default function PriceQuoteView({
     name: "İSTANBUL ANADOLU GIDA YAPI TEKNOLOJİ SANAYİ VE TİCARET ANONİM ŞİRKETİ",
     address: "Esenevler Mah.Talatpaşa Cad. İkiz Sokak No:2A Dükkan 1 Akyıldız İş Merkezi Ümraniye İstanbul Türkiye",
     phone: "(0216) 316 37 44",
-    logoUrl: "/logo.jpg", // From app/logo.jpg
+    logoUrl: teklifLogo.src, // From app/logo.jpg
   });
 
   const [showCompanySettings, setShowCompanySettings] = useState<boolean>(false);
@@ -637,7 +638,7 @@ export default function PriceQuoteView({
               parsed.companyInfo.phone && !parsed.companyInfo.phone.includes("0284")
                 ? parsed.companyInfo.phone
                 : "(0216) 316 37 44",
-            logoUrl: "/logo.jpg",
+            logoUrl: teklifLogo.src,
           }));
         }
       }

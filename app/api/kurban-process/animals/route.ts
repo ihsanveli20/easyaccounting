@@ -10,6 +10,7 @@ import {
   ensureLocationsExistInDb,
   loadKurbanPersistentState,
   saveKurbanPersistentState,
+  createDefaultPersistentState,
 } from "../../../utils/kurbanProcessDb";
 import { KurbanAnimal } from "../../../types/kurbanProcess";
 
@@ -238,10 +239,25 @@ export async function POST(request: Request) {
       memoryAnimals = Array.from(byTagMap.values());
 
       // Save to Persistent State in Supabase (`proposals` table + local file)
-      if (persisted) {
-        persisted.animals = memoryAnimals;
-        await saveKurbanPersistentState(persisted, supabase);
-      }
+      const stateToSave = persisted || createDefaultPersistentState();
+      stateToSave.animals = memoryAnimals;
+      stateToSave.shipments = (stateToSave.shipments || []).filter(
+        (s) => !s.id.startsWith("40000000-0000-4000-a000-")
+      );
+      stateToSave.slaughterBatches = (stateToSave.slaughterBatches || []).filter(
+        (b) => !b.id.startsWith("50000000-0000-4000-a000-")
+      );
+      stateToSave.storageRecords = (stateToSave.storageRecords || []).filter(
+        (sr) => !sr.id.startsWith("60000000-0000-4000-a000-")
+      );
+      stateToSave.deliveries = (stateToSave.deliveries || []).filter(
+        (d) => !d.id.startsWith("70000000-0000-4000-a000-")
+      );
+      stateToSave.organization = {
+        ...stateToSave.organization,
+        targetAnimalCount: memoryAnimals.length,
+      };
+      await saveKurbanPersistentState(stateToSave, supabase);
 
       // Bulk upsert to Supabase `kurban_animals` table
       let supabaseSavedCount = 0;

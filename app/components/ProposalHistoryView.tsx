@@ -38,6 +38,7 @@ import {
 } from "../utils/whatsapp";
 import { renderElementToPdf } from "../utils/pdfGenerator";
 import { useAuth } from "../context/AuthContext";
+import teklifLogo from "../logo.jpg";
 
 interface ProposalHistoryViewProps {
   onNewProposal?: () => void;
@@ -172,7 +173,7 @@ export default function ProposalHistoryView({
     name: "İSTANBUL ANADOLU GIDA YAPI TEKNOLOJİ SANAYİ VE TİCARET ANONİM ŞİRKETİ",
     address: "Esenevler Mah.Talatpaşa Cad. İkiz Sokak No:2A Dükkan 1 Akyıldız İş Merkezi Ümraniye İstanbul Türkiye",
     phone: "(0216) 316 37 44",
-    logoUrl: "/logo.jpg",
+    logoUrl: teklifLogo.src,
   });
 
   useEffect(() => {
@@ -181,7 +182,11 @@ export default function ProposalHistoryView({
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed.companyInfo) {
-          setCompanyInfo((prev) => ({ ...prev, ...parsed.companyInfo }));
+          setCompanyInfo((prev) => ({
+            ...prev,
+            ...parsed.companyInfo,
+            logoUrl: teklifLogo.src,
+          }));
         }
       }
     } catch { }
@@ -1142,9 +1147,9 @@ export default function ProposalHistoryView({
               {/* Logo & Company Name */}
               <div className="flex items-center gap-3">
                 <img
-                  src={companyInfo.logoUrl || "/logo.jpg"}
+                  src={companyInfo.logoUrl || teklifLogo.src}
                   alt="Logo"
-                  className="w-16 h-16 object-contain shrink-0"
+                  className="h-14 w-auto max-w-[220px] object-contain shrink-0"
                 />
                 <div className="font-extrabold text-xs sm:text-sm uppercase text-slate-900 tracking-tight leading-snug max-w-sm">
                   {companyInfo.name}

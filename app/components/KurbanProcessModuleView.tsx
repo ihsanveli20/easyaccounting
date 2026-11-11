@@ -1315,7 +1315,7 @@ export default function KurbanProcessModuleView() {
               </button>
 
               <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-bold font-mono">
-                {organization?.targetAnimalCount || totalAnimalCount || 350} Hayvan •{" "}
+                {stats?.totalPurchasedAnimals ?? totalAnimalCount} Hayvan •{" "}
                 {cuttingLocations.length} Kesimhane
               </span>
             </div>
@@ -1402,10 +1402,10 @@ export default function KurbanProcessModuleView() {
               Satın Alınan
             </div>
             <div className="text-2xl font-black text-white font-mono mt-1">
-              {stats?.totalPurchasedAnimals || 350} <span className="text-xs text-slate-400 font-normal">Adet</span>
+              {stats?.totalPurchasedAnimals ?? totalAnimalCount} <span className="text-xs text-slate-400 font-normal">Adet</span>
             </div>
             <div className="text-[10px] text-emerald-400 font-semibold mt-0.5">
-              1. Sınıf Besi Tosunu
+              {totalAnimalCount > 0 ? "Excel / Kayıtlı Hayvanlar" : "Henüz kayıt yüklenmedi"}
             </div>
           </div>
 
@@ -1414,10 +1414,12 @@ export default function KurbanProcessModuleView() {
               Sevk Edilen
             </div>
             <div className="text-2xl font-black text-sky-400 font-mono mt-1">
-              {stats?.totalShippedAnimals || 350} <span className="text-xs text-slate-400 font-normal">Adet</span>
+              {stats?.totalShippedAnimals ?? 0} <span className="text-xs text-slate-400 font-normal">Adet</span>
             </div>
             <div className="text-[10px] text-slate-300 mt-0.5">
-              8 Tır Sevkiyatı (Tam)
+              {stats && stats.totalShipments > 0
+                ? `${stats.totalShipments} Tır Sevkiyatı`
+                : "Sevk & Excel Durum Takibi"}
             </div>
           </div>
 
@@ -1426,7 +1428,7 @@ export default function KurbanProcessModuleView() {
               Kesilen Hayvan
             </div>
             <div className="text-2xl font-black text-rose-400 font-mono mt-1">
-              {stats?.totalSlaughteredAnimals || 350} <span className="text-xs text-slate-400 font-normal">Adet</span>
+              {stats?.totalSlaughteredAnimals ?? 0} <span className="text-xs text-slate-400 font-normal">Adet</span>
             </div>
             <div className="text-[10px] text-emerald-400 font-semibold mt-0.5">
               Veteriner Kontrollü Kesim
@@ -1438,7 +1440,7 @@ export default function KurbanProcessModuleView() {
               Net Karkas Et
             </div>
             <div className="text-2xl font-black text-amber-400 font-mono mt-1">
-              {stats ? Math.round(stats.totalCarcassWeightKg).toLocaleString("tr-TR") : "118.660"}{" "}
+              {stats ? Math.round(stats.totalCarcassWeightKg).toLocaleString("tr-TR") : "0"}{" "}
               <span className="text-xs text-slate-400 font-normal">Kg</span>
             </div>
             <div className="text-[10px] text-slate-300 mt-0.5">
@@ -1451,11 +1453,11 @@ export default function KurbanProcessModuleView() {
               Müşteriye Teslim
             </div>
             <div className="text-2xl font-black text-emerald-400 font-mono mt-1">
-              {stats ? Math.round(stats.totalDeliveredQuantityKg).toLocaleString("tr-TR") : "118.660"}{" "}
+              {stats ? Math.round(stats.totalDeliveredQuantityKg).toLocaleString("tr-TR") : "0"}{" "}
               <span className="text-xs text-slate-400 font-normal">Kg</span>
             </div>
             <div className="text-[10px] text-emerald-300 font-semibold mt-0.5">
-              %100 Eksiksiz Teslim
+              {stats && stats.totalDeliveredQuantityKg > 0 ? "Teslimat Kayıtları" : "Teslimat Bekleniyor"}
             </div>
           </div>
 
@@ -1464,11 +1466,13 @@ export default function KurbanProcessModuleView() {
               Süreç Mutabakatı
             </div>
             <div className="text-2xl font-black text-teal-300 font-mono mt-1">
-              %100 <span className="text-xs text-slate-400 font-normal">Fire: 0</span>
+              {stats && stats.totalPurchasedAnimals > 0
+                ? `%${Math.min(100, Math.round((stats.totalShippedAnimals / stats.totalPurchasedAnimals) * 100))}`
+                : "%0"}
             </div>
             <div className="text-[10px] text-teal-400 font-bold mt-0.5 flex items-center gap-1">
               <CheckCircle2 className="w-3 h-3" />
-              Sıfır Tutarsızlık
+              {stats ? `${stats.totalPurchasedAnimals} Alınan / ${stats.totalShippedAnimals} Sevk` : "Kayıt Bekleniyor"}
             </div>
           </div>
         </div>
@@ -1610,10 +1614,10 @@ export default function KurbanProcessModuleView() {
                 </div>
                 <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100">Alım & Sözleşme</h4>
                 <p className="text-xs text-slate-500 mt-1">
-                  350 hayvan satın alma sözleşmesi, pasaport ve TÜRKVET kayıtları onaylandı.
+                  {stats?.totalPurchasedAnimals ?? totalAnimalCount} adet hayvan kaydı, pasaport ve TÜRKVET kayıtları takip ediliyor.
                 </p>
                 <div className="mt-3 text-[11px] font-bold text-emerald-600 flex items-center gap-1">
-                  <CheckCircle2 className="w-3.5 h-3.5" /> Tamamlandı
+                  <CheckCircle2 className="w-3.5 h-3.5" /> {stats?.totalPurchasedAnimals ?? totalAnimalCount} Adet Kayıtlı
                 </div>
               </div>
 
@@ -1626,10 +1630,10 @@ export default function KurbanProcessModuleView() {
                 </div>
                 <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100">Sevk & Lojistik</h4>
                 <p className="text-xs text-slate-500 mt-1">
-                  Kars ve Erzurum'dan 8 tır ile 2 ayrı kesimhaneye nakliye yapıldı.
+                  {shipments.length} tır sevkiyatı ve {cuttingLocations.length} kesimhaneye sevk planı izleniyor.
                 </p>
                 <div className="mt-3 text-[11px] font-bold text-emerald-600 flex items-center gap-1">
-                  <CheckCircle2 className="w-3.5 h-3.5" /> 8 Tır Vardı (Fire: 0)
+                  <CheckCircle2 className="w-3.5 h-3.5" /> {stats?.totalShippedAnimals ?? 0} Adet Sevk Edildi
                 </div>
               </div>
 
@@ -1642,10 +1646,12 @@ export default function KurbanProcessModuleView() {
                 </div>
                 <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100">Kesim & Mezbaha</h4>
                 <p className="text-xs text-slate-500 mt-1">
-                  Tuzla (180 adet) ve Kartepe (170 adet) tesislerinde veterinerli kesim.
+                  {cuttingLocations.length > 0
+                    ? cuttingLocations.map((l) => `${l.name} (${l.allocatedAnimalCount} adet)`).join(", ")
+                    : "Kayıtlı kesimhaneler üzerinden veteriner kontrollü kesim."}
                 </p>
                 <div className="mt-3 text-[11px] font-bold text-emerald-600 flex items-center gap-1">
-                  <CheckCircle2 className="w-3.5 h-3.5" /> 350 Hayvan Kesildi
+                  <CheckCircle2 className="w-3.5 h-3.5" /> {stats?.totalSlaughteredAnimals ?? 0} Hayvan Kesildi
                 </div>
               </div>
 
@@ -1658,10 +1664,10 @@ export default function KurbanProcessModuleView() {
                 </div>
                 <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100">Soğuk Depo</h4>
                 <p className="text-xs text-slate-500 mt-1">
-                  118.660 Kg karkas et +4°C dinlendirildi ve hijyenik çeyreklendi.
+                  {stats ? Math.round(stats.totalCarcassWeightKg).toLocaleString("tr-TR") : "0"} Kg karkas et +4°C dinlendirme ve stok takibi.
                 </p>
                 <div className="mt-3 text-[11px] font-bold text-emerald-600 flex items-center gap-1">
-                  <CheckCircle2 className="w-3.5 h-3.5" /> Dinlendirme Tam
+                  <CheckCircle2 className="w-3.5 h-3.5" /> {stats ? Math.round(stats.totalStoredQuantityKg).toLocaleString("tr-TR") : "0"} Kg Depoda
                 </div>
               </div>
 
@@ -1674,7 +1680,7 @@ export default function KurbanProcessModuleView() {
                 </div>
                 <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100">Resmî Raporlar</h4>
                 <p className="text-xs text-slate-500 mt-1">
-                  Her kesim yeri için birbirinden bağımsız 2 resmi denetim raporu hazırlandı.
+                  Her kesim yeri için birbirinden bağımsız {reports.length} resmi denetim raporu.
                 </p>
                 <div className="mt-3 text-[11px] font-bold text-emerald-600 flex items-center gap-1">
                   <CheckCircle2 className="w-3.5 h-3.5" /> PDF Çıktı Hazır

@@ -35,7 +35,6 @@ import {
   mapInvoiceFromDb,
   mapDocumentFromDb,
   mapReportFromDb,
-  mapAnimalFromDb,
 } from "../../utils/kurbanProcessDb";
 import {
   KurbanProcessOrganization,
@@ -48,7 +47,6 @@ import {
   KurbanInvoice,
   KurbanDocument,
   KurbanReport,
-  KurbanAnimal,
 } from "../../types/kurbanProcess";
 
 const NO_STORE_HEADERS = {
@@ -207,51 +205,114 @@ function syncLocationsWithSlaughterhouseParties(state: KurbanPersistentState): K
   return state;
 }
 
+function isLegacyMockAnimalId(id?: string | null): boolean {
+  if (!id) return false;
+  return (
+    id.startsWith("10000000-0000-4000-a000-") ||
+    id.startsWith("20000000-0000-4000-a000-")
+  );
+}
+
+function isMockSeedProcessId(id: string | undefined | null, prefix: string): boolean {
+  return typeof id === "string" && id.startsWith(prefix);
+}
+
+interface AnimalSummaryRow {
+  id: string;
+  cuttingLocationId?: string;
+  status: string;
+  liveWeightKg: number;
+  carcassWeightKg: number;
+}
+
 /**
  * Resolves the authoritative Kurban state by combining the cloud persistent state (`proposals` table)
  * and relational `kurban_*` tables without EVER re-seeding deleted/edited mock data.
  */
 async function resolveAuthoritativeState(supabase: any): Promise<{
   state: KurbanPersistentState;
+  animals: AnimalSummaryRow[];
   totalAnimalCount: number;
   source: string;
 }> {
   // 1. Load persistent state from Supabase `proposals` table (or /tmp file fallback)
   const persisted = await loadKurbanPersistentState(supabase);
 
-  let totalAnimalCount = Array.isArray(persisted?.animals) ? persisted.animals.length : 0;
+  let animals: AnimalSummaryRow[] = (persisted?.animals || [])
+    .filter((a) => !isLegacyMockAnimalId(a.id))
+    .map((a) => ({
+      id: a.id,
+      cuttingLocationId: a.cuttingLocationId,
+      status: a.status || "purchased",
+      liveWeightKg: Number(a.liveWeightKg) || 0,
+      carcassWeightKg: Number(a.carcassWeightKg) || 0,
+    }));
+
   if (supabase) {
     await cleanupLegacyMockAnimals(supabase);
     try {
-      const { count, error } = await supabase
+      const { data: animalRows, error } = await supabase
         .from("kurban_animals")
-        .select("id", { count: "exact", head: true });
-      if (!error && typeof count === "number") {
-        totalAnimalCount = count > 0 ? count : totalAnimalCount;
+        .select("id, cutting_location_id, status, live_weight_kg, carcass_weight_kg");
+      if (!error && Array.isArray(animalRows)) {
+        const dbRealAnimals: AnimalSummaryRow[] = animalRows
+          .filter((r: any) => !isLegacyMockAnimalId(r.id))
+          .map((r: any) => ({
+            id: r.id,
+            cuttingLocationId: r.cutting_location_id || undefined,
+            status: r.status || "purchased",
+            liveWeightKg: Number(r.live_weight_kg) || 0,
+            carcassWeightKg: Number(r.carcass_weight_kg) || 0,
+          }));
+        if (dbRealAnimals.length > 0 || animals.length === 0) {
+          animals = dbRealAnimals;
+        }
       }
     } catch {
       // ignore
     }
   }
 
+  const totalAnimalCount = animals.length;
+
+  // Strip unedited legacy mock shipment/slaughter/storage/delivery records (40000000-*, 50000000-*, 60000000-*, 70000000-*)
+  // so mock 350 counts never leak into Excel/real animal statistics.
+  const stripMockProcessRows = (st: KurbanPersistentState): KurbanPersistentState => ({
+    ...st,
+    shipments: (st.shipments || []).filter(
+      (s) => !isMockSeedProcessId(s.id, "40000000-0000-4000-a000-")
+    ),
+    slaughterBatches: (st.slaughterBatches || []).filter(
+      (b) => !isMockSeedProcessId(b.id, "50000000-0000-4000-a000-")
+    ),
+    storageRecords: (st.storageRecords || []).filter(
+      (sr) => !isMockSeedProcessId(sr.id, "60000000-0000-4000-a000-")
+    ),
+    deliveries: (st.deliveries || []).filter(
+      (d) => !isMockSeedProcessId(d.id, "70000000-0000-4000-a000-")
+    ),
+  });
+
   // If the user has already customized state (saved/edited/deleted any record),
   // `persisted` is the authoritative state and never resurrects deleted mock items!
   if (persisted && persisted.isCustomized) {
     const deletedSet = new Set(persisted.deletedIds || []);
-    const cleanState: KurbanPersistentState = syncLocationsWithSlaughterhouseParties({
-      ...persisted,
-      parties: (persisted.parties || []).filter((p) => !deletedSet.has(p.id)),
-      cuttingLocations: (persisted.cuttingLocations || []).filter((l) => !deletedSet.has(l.id)),
-      shipments: (persisted.shipments || []).filter((s) => !deletedSet.has(s.id)),
-      slaughterBatches: (persisted.slaughterBatches || []).filter((b) => !deletedSet.has(b.id)),
-      storageRecords: (persisted.storageRecords || []).filter((st) => !deletedSet.has(st.id)),
-      invoices: (persisted.invoices || []).filter((inv) => !deletedSet.has(inv.id)),
-      deliveries: (persisted.deliveries || []).filter((d) => !deletedSet.has(d.id)),
-      documents: (persisted.documents || []).filter((doc) => !deletedSet.has(doc.id)),
-      reports: (persisted.reports || []).filter((rep) => !deletedSet.has(rep.id)),
-    });
+    const cleanState: KurbanPersistentState = syncLocationsWithSlaughterhouseParties(
+      stripMockProcessRows({
+        ...persisted,
+        parties: (persisted.parties || []).filter((p) => !deletedSet.has(p.id)),
+        cuttingLocations: (persisted.cuttingLocations || []).filter((l) => !deletedSet.has(l.id)),
+        shipments: (persisted.shipments || []).filter((s) => !deletedSet.has(s.id)),
+        slaughterBatches: (persisted.slaughterBatches || []).filter((b) => !deletedSet.has(b.id)),
+        storageRecords: (persisted.storageRecords || []).filter((st) => !deletedSet.has(st.id)),
+        invoices: (persisted.invoices || []).filter((inv) => !deletedSet.has(inv.id)),
+        deliveries: (persisted.deliveries || []).filter((d) => !deletedSet.has(d.id)),
+        documents: (persisted.documents || []).filter((doc) => !deletedSet.has(doc.id)),
+        reports: (persisted.reports || []).filter((rep) => !deletedSet.has(rep.id)),
+      })
+    );
     inMemoryStore = cleanState;
-    return { state: cleanState, totalAnimalCount, source: "supabase_persistent_state" };
+    return { state: cleanState, animals, totalAnimalCount, source: "supabase_persistent_state" };
   }
 
   // 2. Otherwise, check relational `kurban_*` tables in Supabase (WITHOUT calling auto-seeding!)
@@ -300,14 +361,14 @@ async function resolveAuthoritativeState(supabase: any): Promise<{
               clientContact: activeOrgRow.client_contact || "",
               startDate: activeOrgRow.start_date || SEED_ORGANIZATION.startDate,
               endDate: activeOrgRow.end_date || SEED_ORGANIZATION.endDate,
-              targetAnimalCount: Number(activeOrgRow.target_animal_count) || 350,
+              targetAnimalCount: totalAnimalCount > 0 ? totalAnimalCount : Number(activeOrgRow.target_animal_count) || 0,
               status: activeOrgRow.status || "in_progress",
               description: activeOrgRow.description || "",
               generalNotes: activeOrgRow.general_notes || "",
               createdAt: activeOrgRow.created_at || new Date().toISOString(),
               updatedAt: activeOrgRow.updated_at || new Date().toISOString(),
             }
-          : { ...SEED_ORGANIZATION };
+          : { ...SEED_ORGANIZATION, targetAnimalCount: totalAnimalCount };
 
         const locationsMap = new Map<string, string>();
         const cuttingLocations: KurbanCuttingLocation[] = (locsRes.data || []).map((row: any) => {
@@ -319,20 +380,28 @@ async function resolveAuthoritativeState(supabase: any): Promise<{
         const parties: KurbanParty[] = (partiesRes.data || []).map(mapPartyFromDb);
         const shipments: KurbanShipment[] =
           shipmentsRes.data && shipmentsRes.data.length > 0
-            ? shipmentsRes.data.map((r: any) => mapShipmentFromDb(r, locationsMap))
-            : [...SEED_SHIPMENTS];
+            ? shipmentsRes.data
+                .map((r: any) => mapShipmentFromDb(r, locationsMap))
+                .filter((s: KurbanShipment) => !isMockSeedProcessId(s.id, "40000000-0000-4000-a000-"))
+            : [];
         const slaughterBatches: KurbanSlaughterBatch[] =
           slaughtersRes.data && slaughtersRes.data.length > 0
-            ? slaughtersRes.data.map((r: any) => mapSlaughterBatchFromDb(r, locationsMap))
-            : [...SEED_SLAUGHTER_BATCHES];
+            ? slaughtersRes.data
+                .map((r: any) => mapSlaughterBatchFromDb(r, locationsMap))
+                .filter((b: KurbanSlaughterBatch) => !isMockSeedProcessId(b.id, "50000000-0000-4000-a000-"))
+            : [];
         const storageRecords: KurbanStorageRecord[] =
           storagesRes.data && storagesRes.data.length > 0
-            ? storagesRes.data.map((r: any) => mapStorageRecordFromDb(r, locationsMap))
-            : [...SEED_STORAGE_RECORDS];
+            ? storagesRes.data
+                .map((r: any) => mapStorageRecordFromDb(r, locationsMap))
+                .filter((sr: KurbanStorageRecord) => !isMockSeedProcessId(sr.id, "60000000-0000-4000-a000-"))
+            : [];
         const deliveries: KurbanDelivery[] =
           deliveriesRes.data && deliveriesRes.data.length > 0
-            ? deliveriesRes.data.map((r: any) => mapDeliveryFromDb(r, locationsMap))
-            : [...SEED_DELIVERIES];
+            ? deliveriesRes.data
+                .map((r: any) => mapDeliveryFromDb(r, locationsMap))
+                .filter((d: KurbanDelivery) => !isMockSeedProcessId(d.id, "70000000-0000-4000-a000-"))
+            : [];
         const invoices: KurbanInvoice[] =
           invoicesRes.data && invoicesRes.data.length > 0
             ? invoicesRes.data.map((r: any) => mapInvoiceFromDb(r, locationsMap))
@@ -351,7 +420,7 @@ async function resolveAuthoritativeState(supabase: any): Promise<{
           deletedIds: [],
           organization,
           parties,
-          contracts: [{ ...SEED_CONTRACT }],
+          contracts: [{ ...SEED_CONTRACT, animalCount: totalAnimalCount }],
           cuttingLocations,
           shipments,
           slaughterBatches,
@@ -364,15 +433,15 @@ async function resolveAuthoritativeState(supabase: any): Promise<{
         });
 
         inMemoryStore = relationalState;
-        return { state: relationalState, totalAnimalCount, source: "supabase_relational" };
+        return { state: relationalState, animals, totalAnimalCount, source: "supabase_relational" };
       }
     } catch (err) {
       console.warn("Supabase relational fetch warning:", err);
     }
   }
 
-  inMemoryStore = syncLocationsWithSlaughterhouseParties(inMemoryStore);
-  return { state: inMemoryStore, totalAnimalCount, source: "default_state" };
+  inMemoryStore = syncLocationsWithSlaughterhouseParties(stripMockProcessRows(inMemoryStore));
+  return { state: inMemoryStore, animals, totalAnimalCount, source: "default_state" };
 }
 
 /**
@@ -381,13 +450,29 @@ async function resolveAuthoritativeState(supabase: any): Promise<{
 function buildOverviewResponse(
   state: KurbanPersistentState,
   locationId: string | null,
-  totalAnimalCount: number,
+  animals: AnimalSummaryRow[],
   source: string
 ) {
   const locationsMap = new Map<string, string>();
   for (const loc of state.cuttingLocations) {
     locationsMap.set(loc.id, loc.name);
   }
+
+  // Dynamically compute allocatedAnimalCount per location from actual animals in DB/Excel
+  const animalCountByLocation = new Map<string, number>();
+  for (const a of animals) {
+    if (a.cuttingLocationId) {
+      animalCountByLocation.set(
+        a.cuttingLocationId,
+        (animalCountByLocation.get(a.cuttingLocationId) || 0) + 1
+      );
+    }
+  }
+
+  const cuttingLocationsWithCounts = state.cuttingLocations.map((loc) => ({
+    ...loc,
+    allocatedAnimalCount: animalCountByLocation.get(loc.id) ?? 0,
+  }));
 
   // Ensure location names stay synchronized
   const shipments = state.shipments.map((s) => ({
@@ -425,6 +510,7 @@ function buildOverviewResponse(
       rep.cuttingLocationName,
   }));
 
+  let filteredAnimals = animals;
   let filteredShipments = shipments;
   let filteredSlaughters = slaughterBatches;
   let filteredStorage = storageRecords;
@@ -433,6 +519,7 @@ function buildOverviewResponse(
   let filteredReports = reports;
 
   if (locationId && locationId !== "all") {
+    filteredAnimals = animals.filter((a) => a.cuttingLocationId === locationId);
     filteredShipments = shipments.filter((s) => s.destinationLocationId === locationId);
     filteredSlaughters = slaughterBatches.filter((b) => b.cuttingLocationId === locationId);
     filteredStorage = storageRecords.filter((st) => st.cuttingLocationId === locationId);
@@ -446,28 +533,55 @@ function buildOverviewResponse(
     }
   }
 
-  const totalShipped = filteredShipments.reduce((acc, s) => acc + (Number(s.animalCount) || 0), 0);
-  const totalSlaughtered = filteredSlaughters.reduce(
+  const filteredAnimalCount = filteredAnimals.length;
+  const shippedFromAnimals = filteredAnimals.filter((a) =>
+    ["in_transit", "arrived_at_slaughterhouse", "slaughtered", "in_storage", "delivered"].includes(
+      a.status
+    )
+  ).length;
+  const slaughteredFromAnimals = filteredAnimals.filter((a) =>
+    ["slaughtered", "in_storage", "delivered"].includes(a.status)
+  ).length;
+  const carcassFromAnimals = filteredAnimals
+    .filter((a) => ["slaughtered", "in_storage", "delivered"].includes(a.status))
+    .reduce((acc, a) => acc + (Number(a.carcassWeightKg) || 0), 0);
+  const deliveredFromAnimalsKg = filteredAnimals
+    .filter((a) => a.status === "delivered")
+    .reduce((acc, a) => acc + (Number(a.carcassWeightKg) || 0), 0);
+  const deliveredAnimalsFromStatus = filteredAnimals.filter(
+    (a) => a.status === "delivered"
+  ).length;
+
+  const shipmentsAnimalSum = filteredShipments.reduce(
+    (acc, s) => acc + (Number(s.animalCount) || 0),
+    0
+  );
+  const slaughterBatchAnimalSum = filteredSlaughters.reduce(
     (acc, b) => acc + (Number(b.animalCount) || 0),
     0
   );
-  const totalCarcass = filteredSlaughters.reduce(
-    (acc, b) => acc + (Number(b.totalCarcassWeightKg) || 0),
-    0
+  const totalShipped = Math.max(shipmentsAnimalSum, shippedFromAnimals);
+  const totalSlaughtered = Math.max(slaughterBatchAnimalSum, slaughteredFromAnimals);
+  const totalCarcass = Math.max(
+    filteredSlaughters.reduce((acc, b) => acc + (Number(b.totalCarcassWeightKg) || 0), 0),
+    carcassFromAnimals
   );
   const totalStoredKg = filteredStorage.reduce(
     (acc, st) => acc + (Number(st.storedQuantityKg) || 0),
     0
   );
-  const totalDeliveredKg = filteredDeliveries.reduce(
-    (acc, d) => acc + (Number(d.deliveredQuantityKg) || 0),
-    0
+  const totalDeliveredKg = Math.max(
+    filteredDeliveries.reduce((acc, d) => acc + (Number(d.deliveredQuantityKg) || 0), 0),
+    deliveredFromAnimalsKg
   );
   const totalInvoiceAmount = filteredInvoices.reduce(
     (acc, inv) => acc + (Number(inv.totalAmount) || 0),
     0
   );
-  const targetCount = state.organization?.targetAnimalCount || 350;
+  const targetCount =
+    filteredAnimalCount > 0
+      ? filteredAnimalCount
+      : state.organization?.targetAnimalCount || 0;
 
   return {
     success: true,
@@ -475,7 +589,7 @@ function buildOverviewResponse(
     isCustomized: state.isCustomized,
     organization: state.organization,
     organizations: [state.organization],
-    cuttingLocations: state.cuttingLocations,
+    cuttingLocations: cuttingLocationsWithCounts,
     parties: state.parties,
     contracts: state.contracts || [SEED_CONTRACT],
     shipments: filteredShipments,
@@ -486,10 +600,10 @@ function buildOverviewResponse(
     documents: state.documents,
     reports: filteredReports,
     allReports: reports,
-    totalAnimalCount,
+    totalAnimalCount: animals.length,
     stats: {
       totalTargetAnimals: targetCount,
-      totalPurchasedAnimals: totalAnimalCount,
+      totalPurchasedAnimals: filteredAnimalCount,
       totalShipments: filteredShipments.length,
       totalShippedAnimals: totalShipped,
       totalSlaughterBatches: filteredSlaughters.length,
@@ -499,13 +613,16 @@ function buildOverviewResponse(
       totalStoredQuantityKg: totalStoredKg,
       totalDeliveries: filteredDeliveries.length,
       totalDeliveredQuantityKg: totalDeliveredKg,
-      totalDeliveredAnimals: totalSlaughtered,
+      totalDeliveredAnimals: Math.max(
+        filteredDeliveries.reduce((acc, d) => acc + (Number(d.deliveredAnimalCount) || 0), 0),
+        deliveredAnimalsFromStatus
+      ),
       totalInvoicesCount: filteredInvoices.length,
       totalInvoiceAmount,
       totalDocumentsCount: state.documents.length,
       missingDocumentsCount: 0,
       discrepancies: {
-        unshippedAnimals: Math.max(0, totalAnimalCount - totalShipped),
+        unshippedAnimals: Math.max(0, filteredAnimalCount - totalShipped),
         unslaughteredShippedAnimals: Math.max(0, totalShipped - totalSlaughtered),
         unstoredOrUndeliveredKg: Math.max(0, totalCarcass - totalDeliveredKg),
       },
@@ -522,10 +639,10 @@ export async function GET(request: Request) {
   const locationId = searchParams.get("locationId");
 
   const supabase = getSupabaseServerClient();
-  const { state, totalAnimalCount, source } = await resolveAuthoritativeState(supabase);
+  const { state, animals, source } = await resolveAuthoritativeState(supabase);
 
   return NextResponse.json(
-    buildOverviewResponse(state, locationId, totalAnimalCount, source),
+    buildOverviewResponse(state, locationId, animals, source),
     { headers: NO_STORE_HEADERS }
   );
 }

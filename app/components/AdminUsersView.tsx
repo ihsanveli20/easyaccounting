@@ -37,6 +37,7 @@ import {
   ArrowLeftRight,
   Truck,
   ScrollText,
+  GitCompareArrows,
 } from "lucide-react";
 import { getSupabaseClient } from "../utils/supabase";
 import {
@@ -59,6 +60,7 @@ const MENU_ICONS: Record<AppMenuId, React.ComponentType<{ className?: string }>>
   calculator: Calculator,
   reconciliation: Scale,
   "invoice-extractor": FileSpreadsheet,
+  "invoice-comparison": GitCompareArrows,
   quote: FileText,
   "proposal-history": History,
   "proposal-comparison": ArrowLeftRight,

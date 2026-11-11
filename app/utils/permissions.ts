@@ -44,6 +44,13 @@ export const SYSTEM_MENUS: MenuItemDefinition[] = [
     category: "accounting",
   },
   {
+    id: "invoice-comparison",
+    name: "Fatura Karşılaştırma ve Analiz",
+    shortName: "Fatura Analiz",
+    description: "Gelen-giden faturaları geçici yükleyerek anlamsal ürün eşleştirme, birim normalizasyonu ve raporlama",
+    category: "accounting",
+  },
+  {
     id: "quote",
     name: "Fiyat Teklifi",
     shortName: "Fiyat Teklifi",
@@ -94,6 +101,7 @@ export const DEFAULT_ROLE_PERMISSIONS: RoleMenuPermissions = {
     "calculator",
     "reconciliation",
     "invoice-extractor",
+    "invoice-comparison",
     "quote",
     "proposal-history",
     "proposal-comparison",
@@ -108,6 +116,7 @@ export const DEFAULT_ROLE_PERMISSIONS: RoleMenuPermissions = {
     "stock-tracking",
     "kurban-reporting",
     "invoice-extractor",
+    "invoice-comparison",
     "details",
     "calculator",
   ],
@@ -115,6 +124,7 @@ export const DEFAULT_ROLE_PERMISSIONS: RoleMenuPermissions = {
     "summary",
     "details",
     "invoice-extractor",
+    "invoice-comparison",
     "proposal-history",
     "proposal-comparison",
     "kurban-reporting",
@@ -124,6 +134,7 @@ export const DEFAULT_ROLE_PERMISSIONS: RoleMenuPermissions = {
     "proposal-comparison",
     "kurban-reporting",
     "invoice-extractor",
+    "invoice-comparison",
     "summary",
     "calculator",
   ],
@@ -131,6 +142,7 @@ export const DEFAULT_ROLE_PERMISSIONS: RoleMenuPermissions = {
     "summary",
     "details",
     "invoice-extractor",
+    "invoice-comparison",
     "proposal-comparison",
     "kurban-reporting",
     "calculator",
@@ -221,6 +233,9 @@ export function resolveUserAllowedMenus(
   let finalMenus = [...roleMenus];
   if (!finalMenus.includes("invoice-extractor")) {
     finalMenus.push("invoice-extractor");
+  }
+  if (!finalMenus.includes("invoice-comparison")) {
+    finalMenus.push("invoice-comparison");
   }
   if (isAdmin && !finalMenus.includes("admin-users")) {
     finalMenus.push("admin-users");

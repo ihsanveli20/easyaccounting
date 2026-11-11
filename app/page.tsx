@@ -39,6 +39,7 @@ import {
   ArrowLeftRight,
   Truck,
   ScrollText,
+  GitCompareArrows,
 } from "lucide-react";
 import {
   AccountRecord,
@@ -67,6 +68,7 @@ import ProductManagementView, { DEFAULT_SAMPLE_PRODUCTS } from "./components/Pro
 import KurbanReportingView from "./components/KurbanReportingView";
 import KurbanProcessModuleView from "./components/KurbanProcessModuleView";
 import BulkInvoiceExtractorView from "./components/BulkInvoiceExtractorView";
+import InvoiceComparisonModuleView from "./components/InvoiceComparisonModuleView";
 import LoginView from "./components/LoginView";
 import AdminUsersView from "./components/AdminUsersView";
 import { useAuth } from "./context/AuthContext";
@@ -90,7 +92,7 @@ export default function Home() {
 
   // Navigation Tab: "summary" = Hesap Planı / Bakiye Listesi, "details" = Firma Detay Hareketleri, "calculator" = Ayrıntılı Hesap Makinesi, "reconciliation" = Ekstre & Luca Mutabakat, "invoice-extractor" = Toplu Fatura -> Excel, "quote" = Fiyat Teklifi, "proposal-history" = Teklif Geçmişi, "proposal-comparison" = Teklif Karşılaştırma, "stock-tracking" = Ürün Stok Takibi, "kurban-reporting" = Kurban Raporlama & Takip, "admin-users" = Kullanıcı & Yetki Yönetimi
   const [activeTab, setActiveTab] = useState<
-    "summary" | "details" | "calculator" | "reconciliation" | "invoice-extractor" | "quote" | "proposal-history" | "proposal-comparison" | "stock-tracking" | "kurban-reporting" | "admin-users"
+    "summary" | "details" | "calculator" | "reconciliation" | "invoice-extractor" | "invoice-comparison" | "quote" | "proposal-history" | "proposal-comparison" | "stock-tracking" | "kurban-reporting" | "admin-users"
   >("summary");
 
   // State for proposal editing when navigating from history to editor
@@ -672,6 +674,17 @@ export default function Home() {
       tag: "YENİ",
     },
     {
+      id: "invoice-comparison" as const,
+      name: "Fatura Karşılaştırma ve Analiz",
+      shortName: "Fatura Analiz",
+      description: "Gelen-Giden Anlamsal Ürün Analizi",
+      icon: GitCompareArrows,
+      activeBg: "bg-indigo-700 text-white shadow-md shadow-indigo-700/25",
+      badge: null,
+      badgeStyle: "bg-white/20 text-white",
+      tag: "ANALİZ",
+    },
+    {
       id: "quote" as const,
       name: "Fiyat Teklifi",
       shortName: "Fiyat Teklifi",
@@ -1214,7 +1227,9 @@ export default function Home() {
                         ? "bg-gradient-to-tr from-rose-600 to-amber-500 shadow-rose-500/20"
                         : activeTab === "invoice-extractor"
                           ? "bg-gradient-to-tr from-indigo-600 to-emerald-500 shadow-indigo-500/20"
-                          : activeTab === "quote"
+                          : activeTab === "invoice-comparison"
+                            ? "bg-gradient-to-tr from-indigo-700 to-blue-600 shadow-indigo-600/20"
+                            : activeTab === "quote"
                           ? "bg-gradient-to-tr from-blue-600 to-cyan-500 shadow-blue-500/20"
                           : activeTab === "proposal-history"
                             ? "bg-gradient-to-tr from-indigo-600 to-purple-500 shadow-indigo-500/20"
@@ -1237,6 +1252,8 @@ export default function Home() {
                   <Scale className="w-4 h-4 sm:w-5 sm:h-5" />
                 ) : activeTab === "invoice-extractor" ? (
                   <UploadCloud className="w-4 h-4 sm:w-5 sm:h-5" />
+                ) : activeTab === "invoice-comparison" ? (
+                  <GitCompareArrows className="w-4 h-4 sm:w-5 sm:h-5" />
                 ) : activeTab === "quote" ? (
                   <FileText className="w-4 h-4 sm:w-5 sm:h-5" />
                 ) : activeTab === "proposal-history" ? (
@@ -1265,7 +1282,9 @@ export default function Home() {
                             ? "Ekstre & Luca Karşılaştırma"
                             : activeTab === "invoice-extractor"
                               ? "Toplu Fatura Aktarım & Excel Merkezi"
-                              : activeTab === "quote"
+                              : activeTab === "invoice-comparison"
+                                ? "Fatura Karşılaştırma ve Analiz"
+                                : activeTab === "quote"
                               ? "Fiyat Teklifi"
                               : activeTab === "proposal-history"
                                 ? "Teklif Geçmişi"
@@ -1311,7 +1330,9 @@ export default function Home() {
                             ? "Mutabakat"
                             : activeTab === "invoice-extractor"
                               ? "XML / PDF / Foto → Excel"
-                              : activeTab === "quote"
+                              : activeTab === "invoice-comparison"
+                                ? "Alış vs Satış Analiz"
+                                : activeTab === "quote"
                               ? "Teklif & Yazdır"
                               : activeTab === "proposal-history"
                                 ? "Kayıtlı Teklifler"
@@ -1335,7 +1356,9 @@ export default function Home() {
                           ? "Firma PDF ekstreleri ile Luca mizanını karşılaştırın, eksik ve uyuşmayanları bulun"
                           : activeTab === "invoice-extractor"
                             ? "XML, PDF ve Fotoğraf faturaları toplu yükleyin; Alıcı, Tarih/No ve Kalemleri görüntüleyip Excel'e indirin"
-                            : activeTab === "quote"
+                            : activeTab === "invoice-comparison"
+                              ? "Gelen ve giden faturaları geçici olarak yükleyin; ürünleri anlamsal olarak eşleştirin, birimleri normalize edin ve Excel/PDF/JSON raporu alın"
+                              : activeTab === "quote"
                             ? "Fiyat teklifi oluşturun, otomatik KDV ve toplamlar hesaplayıp yazdırın"
                             : activeTab === "proposal-history"
                               ? "Supabase bulutunda kayıtlı teklifleri görüntüleyin, düzenleyin ve durumlarını takip edin"
@@ -2137,6 +2160,13 @@ export default function Home() {
           {/* ========================================================================= */}
           {activeTab === "invoice-extractor" && (
             <BulkInvoiceExtractorView />
+          )}
+
+          {/* ========================================================================= */}
+          {/* TAB 4.6: EPHEMERAL INVOICE COMPARISON & PRODUCT ANALYTICS                 */}
+          {/* ========================================================================= */}
+          {activeTab === "invoice-comparison" && hasMenuAccess("invoice-comparison") && (
+            <InvoiceComparisonModuleView />
           )}
 
           {/* ========================================================================= */}

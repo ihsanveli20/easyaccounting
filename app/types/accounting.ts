@@ -137,6 +137,7 @@ export type AppMenuId =
   | "calculator"
   | "reconciliation"
   | "invoice-extractor"
+  | "invoice-comparison"
   | "quote"
   | "proposal-history"
   | "proposal-comparison"

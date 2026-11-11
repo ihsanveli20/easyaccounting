@@ -67,7 +67,8 @@ import ProposalComparisonView from "./components/ProposalComparisonView";
 import ProductManagementView, { DEFAULT_SAMPLE_PRODUCTS } from "./components/ProductManagementView";
 import KurbanReportingView from "./components/KurbanReportingView";
 import KurbanProcessModuleView from "./components/KurbanProcessModuleView";
-import BulkInvoiceExtractorView from "./components/BulkInvoiceExtractorView";
+// Geçici olarak devre dışı:
+// import BulkInvoiceExtractorView from "./components/BulkInvoiceExtractorView";
 import InvoiceComparisonModuleView from "./components/InvoiceComparisonModuleView";
 import LoginView from "./components/LoginView";
 import AdminUsersView from "./components/AdminUsersView";
@@ -175,7 +176,7 @@ export default function Home() {
           return;
         }
       }
-    } catch {}
+    } catch { }
 
     setProducts(DEFAULT_SAMPLE_PRODUCTS);
     setProductSource("local");
@@ -662,17 +663,17 @@ export default function Home() {
       badgeStyle: "",
       tag: "MUTABAKAT",
     },
-    {
-      id: "invoice-extractor" as const,
-      name: "Toplu Fatura → Excel",
-      shortName: "Fatura Aktarım",
-      description: "XML, PDF & Fotoğraf Fatura Okuma",
-      icon: UploadCloud,
-      activeBg: "bg-indigo-600 text-white shadow-md shadow-indigo-600/25",
-      badge: null,
-      badgeStyle: "bg-white/20 text-white",
-      tag: "YENİ",
-    },
+    /*     {
+          id: "invoice-extractor" as const,
+          name: "Toplu Fatura → Excel",
+          shortName: "Fatura Aktarım",
+          description: "XML, PDF & Fotoğraf Fatura Okuma",
+          icon: UploadCloud,
+          activeBg: "bg-indigo-600 text-white shadow-md shadow-indigo-600/25",
+          badge: null,
+          badgeStyle: "bg-white/20 text-white",
+          tag: "YENİ",
+        }, */
     {
       id: "invoice-comparison" as const,
       name: "Fatura Karşılaştırma ve Analiz",
@@ -741,18 +742,18 @@ export default function Home() {
     },
     ...(isAdmin
       ? [
-          {
-            id: "admin-users" as const,
-            name: "Kullanıcı & Yetki Yönetimi",
-            shortName: "Yetki Paneli",
-            description: "Roller & Kullanıcı İzinleri",
-            icon: UserCheck,
-            activeBg: "bg-purple-600 text-white shadow-md shadow-purple-600/25",
-            badge: null,
-            badgeStyle: "bg-white/20 text-white",
-            tag: "ADMIN",
-          },
-        ]
+        {
+          id: "admin-users" as const,
+          name: "Kullanıcı & Yetki Yönetimi",
+          shortName: "Yetki Paneli",
+          description: "Roller & Kullanıcı İzinleri",
+          icon: UserCheck,
+          activeBg: "bg-purple-600 text-white shadow-md shadow-purple-600/25",
+          badge: null,
+          badgeStyle: "bg-white/20 text-white",
+          tag: "ADMIN",
+        },
+      ]
       : []),
   ];
 
@@ -761,9 +762,10 @@ export default function Home() {
     return navItems.filter((item) => hasMenuAccess(item.id));
   }, [navItems, hasMenuAccess]);
 
-  // Auto-switch to first allowed tab if current tab is not accessible
+  // Auto-switch to first allowed tab if current tab is not accessible or hidden
   useEffect(() => {
-    if (visibleNavItems.length > 0 && !hasMenuAccess(activeTab)) {
+    const currentItem = visibleNavItems.find((item) => item.id === activeTab);
+    if (visibleNavItems.length > 0 && (!hasMenuAccess(activeTab) || !currentItem)) {
       setActiveTab(visibleNavItems[0].id);
     }
   }, [visibleNavItems, hasMenuAccess, activeTab]);
@@ -893,8 +895,8 @@ export default function Home() {
                         className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider ${isActive
                           ? "bg-white/20 text-white"
                           : item.tag === "ÇOK YAKINDA"
-                          ? "bg-amber-100 text-amber-800 border border-amber-300 font-extrabold"
-                          : "bg-slate-100 text-slate-600 border border-slate-200"
+                            ? "bg-amber-100 text-amber-800 border border-amber-300 font-extrabold"
+                            : "bg-slate-100 text-slate-600 border border-slate-200"
                           }`}
                       >
                         {item.tag}
@@ -1094,8 +1096,8 @@ export default function Home() {
                         className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider ${isActive
                           ? "bg-white/20 text-white"
                           : item.tag === "ÇOK YAKINDA"
-                          ? "bg-amber-100 text-amber-800 border border-amber-300 font-extrabold"
-                          : "bg-slate-100 text-slate-600 border border-slate-200"
+                            ? "bg-amber-100 text-amber-800 border border-amber-300 font-extrabold"
+                            : "bg-slate-100 text-slate-600 border border-slate-200"
                           }`}
                       >
                         {item.tag}
@@ -1230,16 +1232,16 @@ export default function Home() {
                           : activeTab === "invoice-comparison"
                             ? "bg-gradient-to-tr from-indigo-700 to-blue-600 shadow-indigo-600/20"
                             : activeTab === "quote"
-                          ? "bg-gradient-to-tr from-blue-600 to-cyan-500 shadow-blue-500/20"
-                          : activeTab === "proposal-history"
-                            ? "bg-gradient-to-tr from-indigo-600 to-purple-500 shadow-indigo-500/20"
-                            : activeTab === "proposal-comparison"
-                              ? "bg-gradient-to-tr from-purple-700 via-indigo-600 to-purple-900 shadow-purple-600/20"
-                              : activeTab === "stock-tracking"
-                                ? "bg-gradient-to-tr from-amber-600 to-orange-500 shadow-amber-500/20"
-                                : activeTab === "kurban-reporting"
-                                  ? "bg-gradient-to-tr from-amber-600 via-emerald-600 to-teal-700 shadow-amber-600/20"
-                                  : "bg-gradient-to-tr from-purple-600 to-indigo-600 shadow-purple-500/20"
+                              ? "bg-gradient-to-tr from-blue-600 to-cyan-500 shadow-blue-500/20"
+                              : activeTab === "proposal-history"
+                                ? "bg-gradient-to-tr from-indigo-600 to-purple-500 shadow-indigo-500/20"
+                                : activeTab === "proposal-comparison"
+                                  ? "bg-gradient-to-tr from-purple-700 via-indigo-600 to-purple-900 shadow-purple-600/20"
+                                  : activeTab === "stock-tracking"
+                                    ? "bg-gradient-to-tr from-amber-600 to-orange-500 shadow-amber-500/20"
+                                    : activeTab === "kurban-reporting"
+                                      ? "bg-gradient-to-tr from-amber-600 via-emerald-600 to-teal-700 shadow-amber-600/20"
+                                      : "bg-gradient-to-tr from-purple-600 to-indigo-600 shadow-purple-500/20"
                   }`}
               >
                 {activeTab === "summary" ? (
@@ -1285,16 +1287,16 @@ export default function Home() {
                               : activeTab === "invoice-comparison"
                                 ? "Fatura Karşılaştırma ve Analiz"
                                 : activeTab === "quote"
-                              ? "Fiyat Teklifi"
-                              : activeTab === "proposal-history"
-                                ? "Teklif Geçmişi"
-                                : activeTab === "proposal-comparison"
-                                  ? "Fiyat & Tedarikçi Kıyaslama"
-                                  : activeTab === "stock-tracking"
-                                    ? "Ürün Stok Takibi"
-                                    : activeTab === "kurban-reporting"
-                                      ? "Kurban Kesim ve Süreç Takip Raporu"
-                                      : "Kullanıcı & Yetki Yönetimi"}
+                                  ? "Fiyat Teklifi"
+                                  : activeTab === "proposal-history"
+                                    ? "Teklif Geçmişi"
+                                    : activeTab === "proposal-comparison"
+                                      ? "Fiyat & Tedarikçi Kıyaslama"
+                                      : activeTab === "stock-tracking"
+                                        ? "Ürün Stok Takibi"
+                                        : activeTab === "kurban-reporting"
+                                          ? "Kurban Kesim ve Süreç Takip Raporu"
+                                          : "Kullanıcı & Yetki Yönetimi"}
                   </span>
                   <span
                     className={`hidden sm:inline-block text-xs font-semibold px-2 py-0.5 rounded-full border ${activeTab === "summary"
@@ -1308,16 +1310,16 @@ export default function Home() {
                             : activeTab === "invoice-extractor"
                               ? "bg-indigo-50 text-indigo-700 border-indigo-200 font-bold"
                               : activeTab === "quote"
-                              ? "bg-blue-50 text-blue-700 border-blue-200"
-                              : activeTab === "proposal-history"
-                                ? "bg-purple-50 text-purple-700 border-purple-200"
-                                : activeTab === "proposal-comparison"
-                                  ? "bg-emerald-100 text-emerald-900 border-emerald-300 font-extrabold"
-                                  : activeTab === "stock-tracking"
-                                    ? "bg-blue-50 text-blue-700 border-blue-200"
-                                    : activeTab === "kurban-reporting"
-                                      ? "bg-amber-100 text-amber-900 border-amber-300 font-extrabold"
-                                      : "bg-purple-50 text-purple-700 border-purple-200"
+                                ? "bg-blue-50 text-blue-700 border-blue-200"
+                                : activeTab === "proposal-history"
+                                  ? "bg-purple-50 text-purple-700 border-purple-200"
+                                  : activeTab === "proposal-comparison"
+                                    ? "bg-emerald-100 text-emerald-900 border-emerald-300 font-extrabold"
+                                    : activeTab === "stock-tracking"
+                                      ? "bg-blue-50 text-blue-700 border-blue-200"
+                                      : activeTab === "kurban-reporting"
+                                        ? "bg-amber-100 text-amber-900 border-amber-300 font-extrabold"
+                                        : "bg-purple-50 text-purple-700 border-purple-200"
                       }`}
                   >
                     {activeTab === "summary"
@@ -1333,16 +1335,16 @@ export default function Home() {
                               : activeTab === "invoice-comparison"
                                 ? "Alış vs Satış Analiz"
                                 : activeTab === "quote"
-                              ? "Teklif & Yazdır"
-                              : activeTab === "proposal-history"
-                                ? "Kayıtlı Teklifler"
-                                : activeTab === "proposal-comparison"
-                                  ? "En Uygun Fiyat"
-                                  : activeTab === "stock-tracking"
-                                    ? "Ürün Kataloğu"
-                                    : activeTab === "kurban-reporting"
-                                      ? "Resmî Denetim Raporu"
-                                      : "Admin Paneli"}
+                                  ? "Teklif & Yazdır"
+                                  : activeTab === "proposal-history"
+                                    ? "Kayıtlı Teklifler"
+                                    : activeTab === "proposal-comparison"
+                                      ? "En Uygun Fiyat"
+                                      : activeTab === "stock-tracking"
+                                        ? "Ürün Kataloğu"
+                                        : activeTab === "kurban-reporting"
+                                          ? "Resmî Denetim Raporu"
+                                          : "Admin Paneli"}
                   </span>
                 </h1>
                 <p className="text-xs text-slate-500 hidden md:block truncate">
@@ -1359,16 +1361,16 @@ export default function Home() {
                             : activeTab === "invoice-comparison"
                               ? "Gelen ve giden faturaları geçici olarak yükleyin; ürünleri anlamsal olarak eşleştirin, birimleri normalize edin ve Excel/PDF/JSON raporu alın"
                               : activeTab === "quote"
-                            ? "Fiyat teklifi oluşturun, otomatik KDV ve toplamlar hesaplayıp yazdırın"
-                            : activeTab === "proposal-history"
-                              ? "Supabase bulutunda kayıtlı teklifleri görüntüleyin, düzenleyin ve durumlarını takip edin"
-                              : activeTab === "proposal-comparison"
-                                ? "Ürün bazında farklı tedarikçi ve internet fiyatlarını çekin, en uygun maliyeti bulun"
-                                : activeTab === "stock-tracking"
-                                  ? "Excel ile ürün listenizi içe aktarın, kaydedin ve teklif hazırlarken anında çekin"
-                                  : activeTab === "kurban-reporting"
-                                    ? "350 canlı hayvan alımı, 8 tır sevkiyatı, 2 kesimhanede kesim, soğuk depolama ve iki ayrı resmî denetim raporu"
-                                    : "Kullanıcıları görüntüleyin, rolleri güncelleyin ve yetki matrisini yönetin"}
+                                ? "Fiyat teklifi oluşturun, otomatik KDV ve toplamlar hesaplayıp yazdırın"
+                                : activeTab === "proposal-history"
+                                  ? "Supabase bulutunda kayıtlı teklifleri görüntüleyin, düzenleyin ve durumlarını takip edin"
+                                  : activeTab === "proposal-comparison"
+                                    ? "Ürün bazında farklı tedarikçi ve internet fiyatlarını çekin, en uygun maliyeti bulun"
+                                    : activeTab === "stock-tracking"
+                                      ? "Excel ile ürün listenizi içe aktarın, kaydedin ve teklif hazırlarken anında çekin"
+                                      : activeTab === "kurban-reporting"
+                                        ? "350 canlı hayvan alımı, 8 tır sevkiyatı, 2 kesimhanede kesim, soğuk depolama ve iki ayrı resmî denetim raporu"
+                                        : "Kullanıcıları görüntüleyin, rolleri güncelleyin ve yetki matrisini yönetin"}
                 </p>
               </div>
             </div>
@@ -2158,9 +2160,11 @@ export default function Home() {
           {/* ========================================================================= */}
           {/* TAB 4.5: BULK INVOICE EXTRACTOR (TOPLU FATURA XML/PDF/FOTO -> EXCEL)      */}
           {/* ========================================================================= */}
+          {/* Geçici olarak devre dışı bırakıldı
           {activeTab === "invoice-extractor" && (
             <BulkInvoiceExtractorView />
           )}
+          */}
 
           {/* ========================================================================= */}
           {/* TAB 4.6: EPHEMERAL INVOICE COMPARISON & PRODUCT ANALYTICS                 */}

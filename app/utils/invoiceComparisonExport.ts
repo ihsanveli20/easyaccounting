@@ -104,10 +104,11 @@ export function exportComparisonToExcel(
   ];
 
   // Sheet 2: 2. Ürün Karşılaştırma
-  const wsCompare = XLSX.utils.aoa_to_sheet([
-    comparisonHeader,
-    ...report.comparisonRows.map(rowToAoA),
-  ]);
+  const compareRowsAoA: unknown[][] = [comparisonHeader];
+  for (const r of report.comparisonRows) {
+    compareRowsAoA.push(rowToAoA(r));
+  }
+  const wsCompare = XLSX.utils.aoa_to_sheet(compareRowsAoA);
   wsCompare["!cols"] = [
     { wch: 28 },
     { wch: 16 },
@@ -129,11 +130,11 @@ export function exportComparisonToExcel(
   XLSX.utils.book_append_sheet(wb, wsCompare, "2. Ürün Karşılaştırma");
 
   // Sheet 3: 3. Eşleşen Ürünler
-  const matchedRows = report.comparisonRows.filter((r) => r.status === "matched");
-  const wsMatched = XLSX.utils.aoa_to_sheet([
-    comparisonHeader,
-    ...matchedRows.map(rowToAoA),
-  ]);
+  const matchedAoA: unknown[][] = [comparisonHeader];
+  for (const r of report.comparisonRows) {
+    if (r.status === "matched") matchedAoA.push(rowToAoA(r));
+  }
+  const wsMatched = XLSX.utils.aoa_to_sheet(matchedAoA);
   wsMatched["!cols"] = wsCompare["!cols"];
   XLSX.utils.book_append_sheet(wb, wsMatched, "3. Eşleşen Ürünler");
 
@@ -153,22 +154,25 @@ export function exportComparisonToExcel(
     "Merkezi Kart / Durum",
     "Neden",
   ];
-  const unmatchedAoA = report.unmatchedLines.map(({ line, invoice, assignment }) => [
-    line.direction === "incoming" ? "Gelen (Alış)" : "Giden (Satış)",
-    invoice.invoiceNo || invoice.fileName,
-    invoice.invoiceDate || "",
-    line.direction === "incoming" ? invoice.sellerName : invoice.buyerName,
-    line.originalProductName,
-    line.originalDescription,
-    line.quantity ?? "",
-    line.unit,
-    line.measurement?.normalizedQuantity ?? "",
-    line.measurement?.normalizedBaseUnit ?? "",
-    line.lineTotal ?? "",
-    assignment.centralProductName,
-    assignment.matchReason,
-  ]);
-  const wsUnmatched = XLSX.utils.aoa_to_sheet([unmatchedHeader, ...unmatchedAoA]);
+  const unmatchedAoA: unknown[][] = [unmatchedHeader];
+  for (const { line, invoice, assignment } of report.unmatchedLines) {
+    unmatchedAoA.push([
+      line.direction === "incoming" ? "Gelen (Alış)" : "Giden (Satış)",
+      invoice.invoiceNo || invoice.fileName,
+      invoice.invoiceDate || "",
+      line.direction === "incoming" ? invoice.sellerName : invoice.buyerName,
+      line.originalProductName,
+      line.originalDescription,
+      line.quantity ?? "",
+      line.unit,
+      line.measurement?.normalizedQuantity ?? "",
+      line.measurement?.normalizedBaseUnit ?? "",
+      line.lineTotal ?? "",
+      assignment.centralProductName,
+      assignment.matchReason,
+    ]);
+  }
+  const wsUnmatched = XLSX.utils.aoa_to_sheet(unmatchedAoA);
   wsUnmatched["!cols"] = [
     { wch: 14 },
     { wch: 20 },
@@ -197,8 +201,9 @@ export function exportComparisonToExcel(
     "Uyarılar",
     "Eşleştirme Nedeni",
   ];
-  const suspiciousAoA = report.suspiciousAssignments.map(
-    ({ line, invoice, assignment }) => [
+  const suspiciousAoA: unknown[][] = [suspiciousHeader];
+  for (const { line, invoice, assignment } of report.suspiciousAssignments) {
+    suspiciousAoA.push([
       line.direction === "incoming" ? "Gelen (Alış)" : "Giden (Satış)",
       invoice.invoiceNo || invoice.fileName,
       line.originalProductName,
@@ -207,12 +212,9 @@ export function exportComparisonToExcel(
       assignment.confidenceScore,
       assignment.conflictWarnings.join(" | "),
       assignment.matchReason,
-    ]
-  );
-  const wsSuspicious = XLSX.utils.aoa_to_sheet([
-    suspiciousHeader,
-    ...suspiciousAoA,
-  ]);
+    ]);
+  }
+  const wsSuspicious = XLSX.utils.aoa_to_sheet(suspiciousAoA);
   wsSuspicious["!cols"] = [
     { wch: 14 },
     { wch: 20 },
@@ -249,12 +251,16 @@ export function exportComparisonToExcel(
     "Karar Kaynağı",
     "Eşleşme Nedeni",
   ];
-  const detailRows: unknown[][] = [];
+  const detailRows: unknown[][] = [detailHeader];
   for (const row of report.comparisonRows) {
+    const assignmentMap = new Map<string, (typeof row.assignments)[number]>();
+    for (const a of row.assignments) {
+      assignmentMap.set(a.lineId, a);
+    }
     const allLines = [...row.incomingLines, ...row.outgoingLines];
     for (const line of allLines) {
       const inv = invoiceMap.get(line.invoiceId);
-      const assignment = row.assignments.find((a) => a.lineId === line.id);
+      const assignment = assignmentMap.get(line.id);
       detailRows.push([
         row.productName,
         line.direction === "incoming" ? "Gelen (Alış)" : "Giden (Satış)",
@@ -280,7 +286,7 @@ export function exportComparisonToExcel(
       ]);
     }
   }
-  const wsDetail = XLSX.utils.aoa_to_sheet([detailHeader, ...detailRows]);
+  const wsDetail = XLSX.utils.aoa_to_sheet(detailRows);
   wsDetail["!cols"] = [
     { wch: 24 },
     { wch: 14 },

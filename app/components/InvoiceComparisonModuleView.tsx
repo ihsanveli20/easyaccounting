@@ -29,10 +29,13 @@ import {
   Layers,
   Info,
   ArrowRightLeft,
+  FolderOpen,
+  ChevronLeft,
 } from "lucide-react";
 import {
   CentralProductCard,
   ComparisonFileFormat,
+  ComparisonReportPayload,
   InvoiceDirection,
   LearnedMappingRule,
   ProductComparisonRow,
@@ -46,11 +49,85 @@ import {
   runInvoiceProductComparison,
 } from "../utils/productMatchingEngine";
 import {
+  detectFileFormat,
+  MAX_INVOICE_FILE_BYTES,
+  parseInvoiceJsonSecure,
+  parseInvoiceXmlSecure,
+} from "../utils/invoiceFileParser";
+import type {
+  WorkerRequestMessage,
+  WorkerResponseMessage,
+} from "../workers/invoiceComparison.worker";
+import {
   exportComparisonDomToPdf,
   exportComparisonToExcel,
   exportComparisonToJson,
 } from "../utils/invoiceComparisonExport";
 import { useAuth } from "../context/AuthContext";
+
+const COMPARISON_PAGE_SIZE = 50;
+const REVIEW_PAGE_SIZE = 50;
+const PREVIEW_INVOICE_CAP = 100;
+const SESSION_STORAGE_MAX_INVOICES = 200;
+const WORKER_LINE_THRESHOLD = 400;
+
+async function collectFilesFromDataTransfer(dataTransfer: DataTransfer): Promise<File[]> {
+  const items = dataTransfer.items;
+  if (!items || items.length === 0) {
+    return Array.from(dataTransfer.files || []);
+  }
+
+  const collected: File[] = [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const readEntry = async (entry: any): Promise<void> => {
+    if (!entry) return;
+    if (entry.isFile) {
+      await new Promise<void>((resolve) => {
+        entry.file(
+          (f: File) => {
+            collected.push(f);
+            resolve();
+          },
+          () => resolve()
+        );
+      });
+    } else if (entry.isDirectory) {
+      const reader = entry.createReader();
+      await new Promise<void>((resolve) => {
+        const readBatch = () => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          reader.readEntries(async (entries: any[]) => {
+            if (!entries || entries.length === 0) {
+              resolve();
+              return;
+            }
+            for (const sub of entries) {
+              await readEntry(sub);
+            }
+            readBatch();
+          }, () => resolve());
+        };
+        readBatch();
+      });
+    }
+  };
+
+  let usedEntries = false;
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const entry = (item as any).webkitGetAsEntry?.();
+    if (entry) {
+      usedEntries = true;
+      await readEntry(entry);
+    }
+  }
+
+  if (usedEntries && collected.length > 0) {
+    return collected;
+  }
+  return Array.from(dataTransfer.files || []);
+}
 
 function formatTL(val: number | null | undefined): string {
   if (val === null || val === undefined || !Number.isFinite(val)) return "-";
@@ -335,13 +412,24 @@ export default function InvoiceComparisonModuleView() {
 
   // Upload & export status
   const [uploadingSide, setUploadingSide] = useState<InvoiceDirection | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<{
+    side: InvoiceDirection;
+    done: number;
+    total: number;
+  } | null>(null);
+  const [isComparing, setIsComparing] = useState<boolean>(false);
+  const [compareProgress, setCompareProgress] = useState<{
+    processed: number;
+    total: number;
+  } | null>(null);
+  const [workerReport, setWorkerReport] = useState<ComparisonReportPayload | null>(null);
   const [isExportingPdf, setIsExportingPdf] = useState<boolean>(false);
   const [banner, setBanner] = useState<{
     type: "info" | "success" | "error";
     text: string;
   } | null>(null);
 
-  // Filters & navigation state inside module
+  // Filters, pagination & navigation state inside module
   const [activeSubTab, setActiveSubTab] = useState<
     "comparison" | "review" | "learned_rules"
   >("comparison");
@@ -354,6 +442,8 @@ export default function InvoiceComparisonModuleView() {
   const [companyFilter, setCompanyFilter] = useState<string>("all");
   const [familyFilter, setFamilyFilter] = useState<string>("all");
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
+  const [comparisonPage, setComparisonPage] = useState<number>(1);
+  const [reviewPage, setReviewPage] = useState<number>(1);
 
   // Modal state for creating new central card or manual pairing
   const [newCardModalOpen, setNewCardModalOpen] = useState<boolean>(false);
@@ -365,10 +455,17 @@ export default function InvoiceComparisonModuleView() {
   const [pairIncomingLineId, setPairIncomingLineId] = useState<string>("");
   const [pairOutgoingLineId, setPairOutgoingLineId] = useState<string>("");
   const [pairTargetCardName, setPairTargetCardName] = useState<string>("");
+  const [pairIncomingSearch, setPairIncomingSearch] = useState<string>("");
+  const [pairOutgoingSearch, setPairOutgoingSearch] = useState<string>("");
 
   const incomingInputRef = useRef<HTMLInputElement | null>(null);
   const outgoingInputRef = useRef<HTMLInputElement | null>(null);
+  const incomingFolderInputRef = useRef<HTMLInputElement | null>(null);
+  const outgoingFolderInputRef = useRef<HTMLInputElement | null>(null);
   const pdfReportRef = useRef<HTMLDivElement | null>(null);
+  const workerRef = useRef<Worker | null>(null);
+  const workerReqIdRef = useRef<number>(0);
+  const compareReqIdRef = useRef<number>(0);
 
   // Restore transient session workspace & user-scoped learned rules asynchronously
   useEffect(() => {
@@ -415,6 +512,11 @@ export default function InvoiceComparisonModuleView() {
 
   useEffect(() => {
     try {
+      const totalDocs = incomingInvoices.length + outgoingInvoices.length;
+      if (totalDocs > SESSION_STORAGE_MAX_INVOICES) {
+        sessionStorage.removeItem(makeSessionStorageKey(userId));
+        return;
+      }
       sessionStorage.setItem(
         makeSessionStorageKey(userId),
         JSON.stringify({
@@ -436,6 +538,30 @@ export default function InvoiceComparisonModuleView() {
     userCreatedCards,
     userId,
   ]);
+
+  // Cleanup Web Worker on unmount
+  useEffect(() => {
+    return () => {
+      if (workerRef.current) {
+        workerRef.current.terminate();
+        workerRef.current = null;
+      }
+    };
+  }, []);
+
+  const getOrCreateWorker = (): Worker | null => {
+    if (typeof Worker === "undefined") return null;
+    if (!workerRef.current) {
+      try {
+        workerRef.current = new Worker(
+          new URL("../workers/invoiceComparison.worker.ts", import.meta.url)
+        );
+      } catch {
+        return null;
+      }
+    }
+    return workerRef.current;
+  };
 
   const showMessage = (type: "info" | "success" | "error", text: string) => {
     setBanner({ type, text });
@@ -515,88 +641,219 @@ export default function InvoiceComparisonModuleView() {
     }
   };
 
+  // Parse XML/JSON files locally inside Web Worker (handles 10,000+ XML files without freezing UI or server)
+  const parseLocalFilesWithWorker = (
+    localFiles: File[],
+    direction: InvoiceDirection
+  ): Promise<{
+    documents: StandardInvoiceDocument[];
+    errors: Array<{ fileName: string; message: string }>;
+  }> => {
+    return new Promise((resolve, reject) => {
+      const worker = getOrCreateWorker();
+      if (!worker) {
+        // Fallback: chunked async on main thread
+        (async () => {
+          const docs: StandardInvoiceDocument[] = [];
+          const errs: Array<{ fileName: string; message: string }> = [];
+          const CHUNK = 25;
+          for (let i = 0; i < localFiles.length; i += CHUNK) {
+            const slice = localFiles.slice(i, i + CHUNK);
+            await Promise.all(
+              slice.map(async (file) => {
+                const fmt = detectFileFormat(file.name, file.type);
+                if (!fmt || fmt === "pdf") return;
+                if (file.size > MAX_INVOICE_FILE_BYTES) {
+                  errs.push({ fileName: file.name, message: "Dosya boyutu 4 MB sınırını aşıyor." });
+                  return;
+                }
+                try {
+                  const text = await file.text();
+                  if (fmt === "xml") {
+                    docs.push(parseInvoiceXmlSecure(text, file.name, direction, file.size));
+                  } else {
+                    docs.push(...parseInvoiceJsonSecure(text, file.name, direction, file.size));
+                  }
+                } catch (e: unknown) {
+                  errs.push({
+                    fileName: file.name,
+                    message: e instanceof Error ? e.message : "Ayrıştırma hatası.",
+                  });
+                }
+              })
+            );
+            setUploadProgress({
+              side: direction,
+              done: Math.min(localFiles.length, i + slice.length),
+              total: localFiles.length,
+            });
+            await new Promise((r) => setTimeout(r, 0));
+          }
+          resolve({ documents: docs, errors: errs });
+        })().catch(reject);
+        return;
+      }
+
+      const requestId = ++workerReqIdRef.current;
+      const handleMsg = (event: MessageEvent<WorkerResponseMessage>) => {
+        const msg = event.data;
+        if (msg.requestId !== requestId) return;
+        if (msg.type === "parse_progress") {
+          setUploadProgress({ side: direction, done: msg.done, total: msg.total });
+        } else if (msg.type === "parse_done") {
+          worker.removeEventListener("message", handleMsg);
+          worker.removeEventListener("error", handleErr);
+          resolve({ documents: msg.documents, errors: msg.errors });
+        } else if (msg.type === "error") {
+          worker.removeEventListener("message", handleMsg);
+          worker.removeEventListener("error", handleErr);
+          reject(new Error(msg.message));
+        }
+      };
+      const handleErr = (err: ErrorEvent) => {
+        worker.removeEventListener("message", handleMsg);
+        worker.removeEventListener("error", handleErr);
+        reject(new Error(err.message || "Worker hatası"));
+      };
+
+      worker.addEventListener("message", handleMsg);
+      worker.addEventListener("error", handleErr);
+      worker.postMessage({
+        type: "parse_files",
+        requestId,
+        files: localFiles,
+        direction,
+      } satisfies WorkerRequestMessage);
+    });
+  };
+
   // Handle batch file uploads per side (Incoming / Outgoing)
   const handleUploadFiles = async (
     filesList: FileList | File[],
     direction: InvoiceDirection
   ) => {
-    const files = Array.from(filesList);
-    if (files.length === 0) return;
+    const rawFiles = Array.from(filesList);
+    if (rawFiles.length === 0) return;
+
+    const localFiles: File[] = [];
+    const pdfFiles: File[] = [];
+    const errorMessages: string[] = [];
+
+    for (const f of rawFiles) {
+      const fmt = detectFileFormat(f.name, f.type);
+      if (fmt === "xml" || fmt === "json") {
+        localFiles.push(f);
+      } else if (fmt === "pdf") {
+        pdfFiles.push(f);
+      } else if (!f.name.startsWith(".")) {
+        errorMessages.push(`${f.name}: Desteklenmeyen dosya türü.`);
+      }
+    }
+
+    const totalCount = localFiles.length + pdfFiles.length;
+    if (totalCount === 0) {
+      if (errorMessages.length > 0) {
+        showMessage("error", errorMessages.slice(0, 3).join(" | "));
+      }
+      return;
+    }
 
     setUploadingSide(direction);
+    setUploadProgress({ side: direction, done: 0, total: totalCount });
     showMessage(
       "info",
-      `${files.length} dosya (${direction === "incoming" ? "Gelen" : "Giden"}) geçici olarak okunuyor...`
+      `${totalCount.toLocaleString("tr-TR")} dosya (${direction === "incoming" ? "Gelen" : "Giden"}) okunuyor...`
     );
 
     const parsedDocs: StandardInvoiceDocument[] = [];
-    const errorMessages: string[] = [];
 
     try {
-      for (const file of files) {
-        const fd = new FormData();
-        fd.append("files", file);
-        fd.append("direction", direction);
-
-        const res = await fetch("/api/invoice-comparison/parse", {
-          method: "POST",
-          body: fd,
-        });
-        const raw = await res.text();
-        let data: {
-          documents?: StandardInvoiceDocument[];
-          errors?: Array<{ fileName: string; message: string }>;
-          error?: string;
-        };
-        try {
-          data = JSON.parse(raw);
-        } catch {
-          errorMessages.push(`${file.name}: Sunucudan geçersiz yanıt (HTTP ${res.status}).`);
-          continue;
+      // 1. Parse all XML & JSON files locally in Web Worker (super fast for 13,000+ XMLs)
+      if (localFiles.length > 0) {
+        const localRes = await parseLocalFilesWithWorker(localFiles, direction);
+        for (const d of localRes.documents) parsedDocs.push(d);
+        for (const e of localRes.errors) {
+          errorMessages.push(`${e.fileName}: ${e.message}`);
         }
+      }
 
-        if (!res.ok) {
-          errorMessages.push(`${file.name}: ${data.error || "Yükleme hatası"}`);
-          continue;
-        }
+      // 2. Parse PDF files (if any) via server endpoint in concurrent batches of 4
+      if (pdfFiles.length > 0) {
+        const PDF_BATCH = 4;
+        for (let i = 0; i < pdfFiles.length; i += PDF_BATCH) {
+          const slice = pdfFiles.slice(i, i + PDF_BATCH);
+          await Promise.all(
+            slice.map(async (file) => {
+              const fd = new FormData();
+              fd.append("files", file);
+              fd.append("direction", direction);
 
-        if (Array.isArray(data.errors) && data.errors.length > 0) {
-          data.errors.forEach((e) => errorMessages.push(`${e.fileName}: ${e.message}`));
-        }
+              const res = await fetch("/api/invoice-comparison/parse", {
+                method: "POST",
+                body: fd,
+              });
+              const raw = await res.text();
+              let data: {
+                documents?: StandardInvoiceDocument[];
+                errors?: Array<{ fileName: string; message: string }>;
+                error?: string;
+              };
+              try {
+                data = JSON.parse(raw);
+              } catch {
+                errorMessages.push(`${file.name}: Sunucudan geçersiz yanıt (HTTP ${res.status}).`);
+                return;
+              }
 
-        if (Array.isArray(data.documents)) {
-          for (const doc of data.documents) {
-            if (doc.needsClientOcr && doc.fileFormat === "pdf") {
-              showMessage(
-                "info",
-                `"${file.name}" taranmış PDF olarak algılandı; OCR uygulanıyor...`
-              );
-              const ocrDoc = await tryClientPdfOcr(file, direction);
-              parsedDocs.push(ocrDoc || doc);
-            } else {
-              parsedDocs.push(doc);
-            }
-          }
+              if (!res.ok) {
+                errorMessages.push(`${file.name}: ${data.error || "Yükleme hatası"}`);
+                return;
+              }
+
+              if (Array.isArray(data.errors) && data.errors.length > 0) {
+                data.errors.forEach((e) => errorMessages.push(`${e.fileName}: ${e.message}`));
+              }
+
+              if (Array.isArray(data.documents)) {
+                for (const doc of data.documents) {
+                  if (doc.needsClientOcr && doc.fileFormat === "pdf") {
+                    const ocrDoc = await tryClientPdfOcr(file, direction);
+                    parsedDocs.push(ocrDoc || doc);
+                  } else {
+                    parsedDocs.push(doc);
+                  }
+                }
+              }
+            })
+          );
+          setUploadProgress({
+            side: direction,
+            done: localFiles.length + Math.min(pdfFiles.length, i + slice.length),
+            total: totalCount,
+          });
         }
       }
 
       if (parsedDocs.length > 0) {
         if (direction === "incoming") {
-          setIncomingInvoices((prev) => [...prev, ...parsedDocs]);
+          setIncomingInvoices((prev) => prev.concat(parsedDocs));
         } else {
-          setOutgoingInvoices((prev) => [...prev, ...parsedDocs]);
+          setOutgoingInvoices((prev) => prev.concat(parsedDocs));
         }
       }
 
       if (errorMessages.length > 0) {
+        const previewErrs = errorMessages.slice(0, 3).join(" | ");
+        const extra =
+          errorMessages.length > 3 ? ` (+${errorMessages.length - 3} diğer hata)` : "";
         showMessage(
           "error",
-          `${parsedDocs.length} fatura okundu. Hatalar: ${errorMessages.join(" | ")}`
+          `${parsedDocs.length.toLocaleString("tr-TR")} fatura okundu. Hatalar (${errorMessages.length}): ${previewErrs}${extra}`
         );
       } else {
         showMessage(
           "success",
-          `${parsedDocs.length} ${direction === "incoming" ? "Gelen (Alış)" : "Giden (Satış)"} fatura geçici analiz alanına yüklendi.`
+          `${parsedDocs.length.toLocaleString("tr-TR")} ${direction === "incoming" ? "Gelen (Alış)" : "Giden (Satış)"} fatura analiz alanına yüklendi.`
         );
       }
     } catch (err: unknown) {
@@ -606,11 +863,14 @@ export default function InvoiceComparisonModuleView() {
       );
     } finally {
       setUploadingSide(null);
-      if (direction === "incoming" && incomingInputRef.current) {
-        incomingInputRef.current.value = "";
+      setUploadProgress(null);
+      if (direction === "incoming") {
+        if (incomingInputRef.current) incomingInputRef.current.value = "";
+        if (incomingFolderInputRef.current) incomingFolderInputRef.current.value = "";
       }
-      if (direction === "outgoing" && outgoingInputRef.current) {
-        outgoingInputRef.current.value = "";
+      if (direction === "outgoing") {
+        if (outgoingInputRef.current) outgoingInputRef.current.value = "";
+        if (outgoingFolderInputRef.current) outgoingFolderInputRef.current.value = "";
       }
     }
   };
@@ -698,17 +958,17 @@ export default function InvoiceComparisonModuleView() {
     });
   }, [outgoingInvoices, dateFrom, dateTo, companyFilter]);
 
-  // Run multi-layer comparison engine cleanly whenever inputs or user approvals change
-  const report = useMemo(() => {
-    if (
-      !analysisStarted &&
-      incomingInvoices.length === 0 &&
-      outgoingInvoices.length === 0
-    ) {
+  const totalFilteredLines = useMemo(() => {
+    let total = 0;
+    for (const inv of filteredIncomingInvoices) total += inv.items.length;
+    for (const inv of filteredOutgoingInvoices) total += inv.items.length;
+    return total;
+  }, [filteredIncomingInvoices, filteredOutgoingInvoices]);
+
+  const syncReport = useMemo(() => {
+    if (!analysisStarted || totalFilteredLines > WORKER_LINE_THRESHOLD) {
       return null;
     }
-    if (!analysisStarted) return null;
-
     return runInvoiceProductComparison({
       incomingInvoices: filteredIncomingInvoices,
       outgoingInvoices: filteredOutgoingInvoices,
@@ -718,14 +978,115 @@ export default function InvoiceComparisonModuleView() {
     });
   }, [
     analysisStarted,
+    totalFilteredLines,
     filteredIncomingInvoices,
     filteredOutgoingInvoices,
-    incomingInvoices.length,
-    outgoingInvoices.length,
     learnedRules,
     manualOverrides,
     userCreatedCards,
   ]);
+
+  // Run multi-layer comparison engine in Web Worker for large (10,000+ invoice) sets
+  useEffect(() => {
+    if (!analysisStarted || totalFilteredLines <= WORKER_LINE_THRESHOLD) {
+      return;
+    }
+
+    const reqId = ++compareReqIdRef.current;
+    const worker = getOrCreateWorker();
+    if (!worker) {
+      const result = runInvoiceProductComparison({
+        incomingInvoices: filteredIncomingInvoices,
+        outgoingInvoices: filteredOutgoingInvoices,
+        learnedRules,
+        manualOverrides,
+        userCreatedCards,
+      });
+      const fallbackTimer = window.setTimeout(() => {
+        if (compareReqIdRef.current === reqId) {
+          setWorkerReport(result);
+          setIsComparing(false);
+          setCompareProgress(null);
+        }
+      }, 0);
+      return () => window.clearTimeout(fallbackTimer);
+    }
+
+    const startTimer = window.setTimeout(() => {
+      if (compareReqIdRef.current === reqId) {
+        setIsComparing(true);
+        setCompareProgress({ processed: 0, total: totalFilteredLines });
+      }
+    }, 0);
+
+    const workerReqId = ++workerReqIdRef.current;
+    const handleMsg = (event: MessageEvent<WorkerResponseMessage>) => {
+      const msg = event.data;
+      if (msg.requestId !== workerReqId) return;
+      if (compareReqIdRef.current !== reqId) {
+        worker.removeEventListener("message", handleMsg);
+        worker.removeEventListener("error", handleErr);
+        return;
+      }
+      if (msg.type === "compare_progress") {
+        setCompareProgress({ processed: msg.processed, total: msg.total });
+      } else if (msg.type === "compare_done") {
+        window.clearTimeout(startTimer);
+        worker.removeEventListener("message", handleMsg);
+        worker.removeEventListener("error", handleErr);
+        setWorkerReport(msg.report);
+        setIsComparing(false);
+        setCompareProgress(null);
+      } else if (msg.type === "error") {
+        window.clearTimeout(startTimer);
+        worker.removeEventListener("message", handleMsg);
+        worker.removeEventListener("error", handleErr);
+        setIsComparing(false);
+        setCompareProgress(null);
+        showMessage("error", msg.message);
+      }
+    };
+    const handleErr = (err: ErrorEvent) => {
+      window.clearTimeout(startTimer);
+      worker.removeEventListener("message", handleMsg);
+      worker.removeEventListener("error", handleErr);
+      setIsComparing(false);
+      setCompareProgress(null);
+      showMessage("error", err.message || "Karşılaştırma sırasında worker hatası.");
+    };
+
+    worker.addEventListener("message", handleMsg);
+    worker.addEventListener("error", handleErr);
+    worker.postMessage({
+      type: "compare",
+      requestId: workerReqId,
+      incomingInvoices: filteredIncomingInvoices,
+      outgoingInvoices: filteredOutgoingInvoices,
+      learnedRules,
+      manualOverrides,
+      userCreatedCards,
+    } satisfies WorkerRequestMessage);
+
+    return () => {
+      window.clearTimeout(startTimer);
+      worker.removeEventListener("message", handleMsg);
+      worker.removeEventListener("error", handleErr);
+    };
+  }, [
+    analysisStarted,
+    totalFilteredLines,
+    filteredIncomingInvoices,
+    filteredOutgoingInvoices,
+    learnedRules,
+    manualOverrides,
+    userCreatedCards,
+  ]);
+
+  const report = useMemo(() => {
+    if (!analysisStarted) return null;
+    if (totalFilteredLines <= WORKER_LINE_THRESHOLD) return syncReport;
+    return workerReport;
+  }, [analysisStarted, totalFilteredLines, syncReport, workerReport]);
 
   const uniqueFamilies = useMemo(() => {
     if (!report) return [];
@@ -758,6 +1119,69 @@ export default function InvoiceComparisonModuleView() {
       return true;
     });
   }, [report, statusFilter, familyFilter, searchQuery]);
+
+  const totalComparisonPages = Math.max(
+    1,
+    Math.ceil(filteredComparisonRows.length / COMPARISON_PAGE_SIZE)
+  );
+  const paginatedComparisonRows = useMemo(() => {
+    const safePage = Math.min(comparisonPage, totalComparisonPages);
+    const start = (safePage - 1) * COMPARISON_PAGE_SIZE;
+    return filteredComparisonRows.slice(start, start + COMPARISON_PAGE_SIZE);
+  }, [filteredComparisonRows, comparisonPage, totalComparisonPages]);
+
+  const allReviewItems = useMemo(() => {
+    if (!report) return [];
+    return [...report.suspiciousAssignments, ...report.unmatchedLines];
+  }, [report]);
+
+  const totalReviewPages = Math.max(
+    1,
+    Math.ceil(allReviewItems.length / REVIEW_PAGE_SIZE)
+  );
+  const paginatedReviewItems = useMemo(() => {
+    const safePage = Math.min(reviewPage, totalReviewPages);
+    const start = (safePage - 1) * REVIEW_PAGE_SIZE;
+    return allReviewItems.slice(start, start + REVIEW_PAGE_SIZE);
+  }, [allReviewItems, reviewPage, totalReviewPages]);
+
+  const filteredPairingIncomingOptions = useMemo(() => {
+    if (activeSubTab !== "review") return [];
+    const q = normalizeTurkishAscii(pairIncomingSearch.trim());
+    const result: Array<{ id: string; label: string }> = [];
+    for (const inv of incomingInvoices) {
+      const invRef = inv.invoiceNo || inv.fileName;
+      for (const l of inv.items) {
+        const text = l.originalProductName || l.originalDescription || "";
+        if (q) {
+          const hay = normalizeTurkishAscii(`${invRef} ${text}`);
+          if (!hay.includes(q)) continue;
+        }
+        result.push({ id: l.id, label: `[${invRef}] ${text}` });
+        if (result.length >= 200) return result;
+      }
+    }
+    return result;
+  }, [activeSubTab, incomingInvoices, pairIncomingSearch]);
+
+  const filteredPairingOutgoingOptions = useMemo(() => {
+    if (activeSubTab !== "review") return [];
+    const q = normalizeTurkishAscii(pairOutgoingSearch.trim());
+    const result: Array<{ id: string; label: string }> = [];
+    for (const inv of outgoingInvoices) {
+      const invRef = inv.invoiceNo || inv.fileName;
+      for (const l of inv.items) {
+        const text = l.originalProductName || l.originalDescription || "";
+        if (q) {
+          const hay = normalizeTurkishAscii(`${invRef} ${text}`);
+          if (!hay.includes(q)) continue;
+        }
+        result.push({ id: l.id, label: `[${invRef}] ${text}` });
+        if (result.length >= 200) return result;
+      }
+    }
+    return result;
+  }, [activeSubTab, outgoingInvoices, pairOutgoingSearch]);
 
   // Save a learned mapping rule from a user decision
   const recordLearnedRule = (
@@ -949,9 +1373,15 @@ export default function InvoiceComparisonModuleView() {
   };
 
   const handleDownloadPdf = async () => {
-    if (!pdfReportRef.current || !report) return;
+    if (!report) return;
     setIsExportingPdf(true);
     try {
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+      );
+      if (!pdfReportRef.current) {
+        throw new Error("PDF şablonu oluşturulamadı.");
+      }
       await exportComparisonDomToPdf(pdfReportRef.current);
       showMessage("success", "PDF karşılaştırma raporu indirildi.");
     } catch (err: unknown) {
@@ -1096,10 +1526,11 @@ export default function InvoiceComparisonModuleView() {
 
           <div
             onDragOver={(e) => e.preventDefault()}
-            onDrop={(e) => {
+            onDrop={async (e) => {
               e.preventDefault();
-              if (e.dataTransfer.files?.length) {
-                handleUploadFiles(e.dataTransfer.files, "incoming");
+              const droppedFiles = await collectFilesFromDataTransfer(e.dataTransfer);
+              if (droppedFiles.length > 0) {
+                handleUploadFiles(droppedFiles, "incoming");
               }
             }}
             onClick={() => incomingInputRef.current?.click()}
@@ -1115,10 +1546,40 @@ export default function InvoiceComparisonModuleView() {
               }
               className="hidden"
             />
+            <input
+              ref={incomingFolderInputRef}
+              type="file"
+              {...({
+                webkitdirectory: "",
+                directory: "",
+              } as React.InputHTMLAttributes<HTMLInputElement>)}
+              onChange={(e) =>
+                e.target.files && handleUploadFiles(e.target.files, "incoming")
+              }
+              className="hidden"
+            />
             {uploadingSide === "incoming" ? (
-              <div className="flex flex-col items-center gap-2 text-blue-700">
+              <div className="flex flex-col items-center gap-2 text-blue-700 w-full max-w-xs mx-auto">
                 <Loader2 className="w-7 h-7 animate-spin" />
-                <span className="text-xs font-bold">Gelen faturalar ayrıştırılıyor...</span>
+                <span className="text-xs font-bold">
+                  Gelen faturalar ayrıştırılıyor...
+                  {uploadProgress?.side === "incoming"
+                    ? ` (${uploadProgress.done.toLocaleString("tr-TR")} / ${uploadProgress.total.toLocaleString("tr-TR")})`
+                    : ""}
+                </span>
+                {uploadProgress?.side === "incoming" && uploadProgress.total > 0 && (
+                  <div className="w-full h-2 bg-blue-100 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-blue-600 transition-all duration-150"
+                      style={{
+                        width: `${Math.min(
+                          100,
+                          Math.round((uploadProgress.done / uploadProgress.total) * 100)
+                        )}%`,
+                      }}
+                    />
+                  </div>
+                )}
               </div>
             ) : (
               <div className="flex flex-col items-center gap-2">
@@ -1126,7 +1587,7 @@ export default function InvoiceComparisonModuleView() {
                   <UploadCloud className="w-6 h-6" />
                 </div>
                 <div className="text-xs font-bold text-slate-800">
-                  Gelen Fatura Dosyalarını Seçin veya Sürükleyin
+                  Gelen Fatura Dosyalarını veya Klasörünü Sürükleyin
                 </div>
                 <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
                   <span className="inline-flex items-center gap-1">
@@ -1142,13 +1603,30 @@ export default function InvoiceComparisonModuleView() {
                   </span>
                   <span>(Max 4 MB / Dosya)</span>
                 </div>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    incomingFolderInputRef.current?.click();
+                  }}
+                  className="mt-1 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-blue-200 hover:bg-blue-50 text-blue-700 text-[11px] font-bold shadow-2xs"
+                >
+                  <FolderOpen className="w-3.5 h-3.5" />
+                  <span>Klasör Seç (10.000+ XML)</span>
+                </button>
               </div>
             )}
           </div>
 
           {incomingInvoices.length > 0 && (
-            <div className="max-h-48 overflow-y-auto divide-y divide-slate-100 border border-slate-200 rounded-xl">
-              {incomingInvoices.map((inv) => (
+            <div className="space-y-1.5">
+              {incomingInvoices.length > PREVIEW_INVOICE_CAP && (
+                <div className="text-[11px] text-blue-800 bg-blue-50 border border-blue-200 px-3 py-1.5 rounded-lg font-medium">
+                  Toplam <strong>{incomingInvoices.length.toLocaleString("tr-TR")}</strong> gelen fatura yüklendi (performans için ilk {PREVIEW_INVOICE_CAP} gösteriliyor).
+                </div>
+              )}
+              <div className="max-h-48 overflow-y-auto divide-y divide-slate-100 border border-slate-200 rounded-xl">
+                {incomingInvoices.slice(0, PREVIEW_INVOICE_CAP).map((inv) => (
                 <div
                   key={inv.id}
                   className="px-3 py-2 flex items-center justify-between gap-2 text-xs hover:bg-slate-50"
@@ -1176,6 +1654,7 @@ export default function InvoiceComparisonModuleView() {
                   </button>
                 </div>
               ))}
+              </div>
             </div>
           )}
         </div>
@@ -1196,7 +1675,7 @@ export default function InvoiceComparisonModuleView() {
             </div>
             <div className="text-right">
               <div className="text-lg font-black text-emerald-700 font-mono">
-                {outgoingInvoices.length}
+                {outgoingInvoices.length.toLocaleString("tr-TR")}
               </div>
               <div className="text-[10px] text-slate-400 font-semibold">Fatura Yüklendi</div>
             </div>
@@ -1204,10 +1683,11 @@ export default function InvoiceComparisonModuleView() {
 
           <div
             onDragOver={(e) => e.preventDefault()}
-            onDrop={(e) => {
+            onDrop={async (e) => {
               e.preventDefault();
-              if (e.dataTransfer.files?.length) {
-                handleUploadFiles(e.dataTransfer.files, "outgoing");
+              const droppedFiles = await collectFilesFromDataTransfer(e.dataTransfer);
+              if (droppedFiles.length > 0) {
+                handleUploadFiles(droppedFiles, "outgoing");
               }
             }}
             onClick={() => outgoingInputRef.current?.click()}
@@ -1223,10 +1703,40 @@ export default function InvoiceComparisonModuleView() {
               }
               className="hidden"
             />
+            <input
+              ref={outgoingFolderInputRef}
+              type="file"
+              {...({
+                webkitdirectory: "",
+                directory: "",
+              } as React.InputHTMLAttributes<HTMLInputElement>)}
+              onChange={(e) =>
+                e.target.files && handleUploadFiles(e.target.files, "outgoing")
+              }
+              className="hidden"
+            />
             {uploadingSide === "outgoing" ? (
-              <div className="flex flex-col items-center gap-2 text-emerald-700">
+              <div className="flex flex-col items-center gap-2 text-emerald-700 w-full max-w-xs mx-auto">
                 <Loader2 className="w-7 h-7 animate-spin" />
-                <span className="text-xs font-bold">Giden faturalar ayrıştırılıyor...</span>
+                <span className="text-xs font-bold">
+                  Giden faturalar ayrıştırılıyor...
+                  {uploadProgress?.side === "outgoing"
+                    ? ` (${uploadProgress.done.toLocaleString("tr-TR")} / ${uploadProgress.total.toLocaleString("tr-TR")})`
+                    : ""}
+                </span>
+                {uploadProgress?.side === "outgoing" && uploadProgress.total > 0 && (
+                  <div className="w-full h-2 bg-emerald-100 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-emerald-600 transition-all duration-150"
+                      style={{
+                        width: `${Math.min(
+                          100,
+                          Math.round((uploadProgress.done / uploadProgress.total) * 100)
+                        )}%`,
+                      }}
+                    />
+                  </div>
+                )}
               </div>
             ) : (
               <div className="flex flex-col items-center gap-2">
@@ -1234,7 +1744,7 @@ export default function InvoiceComparisonModuleView() {
                   <UploadCloud className="w-6 h-6" />
                 </div>
                 <div className="text-xs font-bold text-slate-800">
-                  Giden Fatura Dosyalarını Seçin veya Sürükleyin
+                  Giden Fatura Dosyalarını veya Klasörünü Sürükleyin
                 </div>
                 <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
                   <span className="inline-flex items-center gap-1">
@@ -1250,13 +1760,30 @@ export default function InvoiceComparisonModuleView() {
                   </span>
                   <span>(Max 4 MB / Dosya)</span>
                 </div>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    outgoingFolderInputRef.current?.click();
+                  }}
+                  className="mt-1 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-emerald-200 hover:bg-emerald-50 text-emerald-700 text-[11px] font-bold shadow-2xs"
+                >
+                  <FolderOpen className="w-3.5 h-3.5" />
+                  <span>Klasör Seç (10.000+ XML)</span>
+                </button>
               </div>
             )}
           </div>
 
           {outgoingInvoices.length > 0 && (
-            <div className="max-h-48 overflow-y-auto divide-y divide-slate-100 border border-slate-200 rounded-xl">
-              {outgoingInvoices.map((inv) => (
+            <div className="space-y-1.5">
+              {outgoingInvoices.length > PREVIEW_INVOICE_CAP && (
+                <div className="text-[11px] text-emerald-800 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-lg font-medium">
+                  Toplam <strong>{outgoingInvoices.length.toLocaleString("tr-TR")}</strong> giden fatura yüklendi (performans için ilk {PREVIEW_INVOICE_CAP} gösteriliyor).
+                </div>
+              )}
+              <div className="max-h-48 overflow-y-auto divide-y divide-slate-100 border border-slate-200 rounded-xl">
+                {outgoingInvoices.slice(0, PREVIEW_INVOICE_CAP).map((inv) => (
                 <div
                   key={inv.id}
                   className="px-3 py-2 flex items-center justify-between gap-2 text-xs hover:bg-slate-50"
@@ -1284,6 +1811,7 @@ export default function InvoiceComparisonModuleView() {
                   </button>
                 </div>
               ))}
+              </div>
             </div>
           )}
         </div>
@@ -1292,31 +1820,51 @@ export default function InvoiceComparisonModuleView() {
       {/* Start / Re-run Comparison Action Bar */}
       <div className="bg-white rounded-2xl border border-slate-200 px-5 py-4 shadow-xs flex flex-wrap items-center justify-between gap-3">
         <div className="text-xs text-slate-600 flex items-center gap-2">
-          <Layers className="w-4 h-4 text-indigo-600" />
+          <Layers className="w-4 h-4 text-indigo-600 shrink-0" />
           <span>
             Yüklenen dosyalar:{" "}
-            <strong>{incomingInvoices.length} Gelen</strong> /{" "}
-            <strong>{outgoingInvoices.length} Giden</strong> •{" "}
+            <strong>{incomingInvoices.length.toLocaleString("tr-TR")} Gelen</strong> /{" "}
+            <strong>{outgoingInvoices.length.toLocaleString("tr-TR")} Giden</strong> •{" "}
             <strong>{learnedRules.length}</strong> öğrenilmiş eşleştirme kuralı aktif.
           </span>
+          {isComparing && compareProgress && compareProgress.total > 0 && (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold">
+              <Loader2 className="w-3 h-3 animate-spin" />
+              Eşleştiriliyor:{" "}
+              {Math.min(
+                100,
+                Math.round((compareProgress.processed / compareProgress.total) * 100)
+              )}
+              %
+            </span>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            disabled={incomingInvoices.length === 0 && outgoingInvoices.length === 0}
+            disabled={
+              isComparing ||
+              (incomingInvoices.length === 0 && outgoingInvoices.length === 0)
+            }
             onClick={() => {
               setAnalysisStarted(true);
               showMessage(
-                "success",
-                "Çok katmanlı semantik eşleştirme ve ölçü birimi analizi tamamlandı."
+                "info",
+                "Çok katmanlı semantik eşleştirme ve ölçü birimi analizi başlatıldı..."
               );
             }}
             className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 disabled:opacity-40 text-white text-xs font-bold shadow-md transition-all"
           >
-            <GitCompareArrows className="w-4 h-4" />
+            {isComparing ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <GitCompareArrows className="w-4 h-4" />
+            )}
             <span>
-              {analysisStarted
+              {isComparing
+                ? "Analiz Çalışıyor..."
+                : analysisStarted
                 ? "Karşılaştırmayı Yeniden Çalıştır"
                 : "Karşılaştırmayı Başlat"}
             </span>
@@ -1522,7 +2070,11 @@ export default function InvoiceComparisonModuleView() {
                     <button
                       key={chip.id}
                       type="button"
-                      onClick={() => setStatusFilter(chip.id)}
+                      onClick={() => {
+                        setStatusFilter(chip.id);
+                        setComparisonPage(1);
+                        setExpandedRowId(null);
+                      }}
                       className={`px-3 py-1.5 rounded-xl font-semibold transition-colors ${
                         statusFilter === chip.id
                           ? "bg-indigo-600 text-white"
@@ -1540,7 +2092,11 @@ export default function InvoiceComparisonModuleView() {
                     <input
                       type="text"
                       value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
+                      onChange={(e) => {
+                        setSearchQuery(e.target.value);
+                        setComparisonPage(1);
+                        setExpandedRowId(null);
+                      }}
                       placeholder="Ürün adı, açıklama veya çeşit ara..."
                       className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:border-indigo-500"
                     />
@@ -1548,21 +2104,30 @@ export default function InvoiceComparisonModuleView() {
                   <input
                     type="date"
                     value={dateFrom}
-                    onChange={(e) => setDateFrom(e.target.value)}
+                    onChange={(e) => {
+                      setDateFrom(e.target.value);
+                      setComparisonPage(1);
+                    }}
                     title="Başlangıç Fatura Tarihi"
                     className="px-3 py-2 text-xs rounded-xl border border-slate-200 bg-slate-50 focus:outline-none"
                   />
                   <input
                     type="date"
                     value={dateTo}
-                    onChange={(e) => setDateTo(e.target.value)}
+                    onChange={(e) => {
+                      setDateTo(e.target.value);
+                      setComparisonPage(1);
+                    }}
                     title="Bitiş Fatura Tarihi"
                     className="px-3 py-2 text-xs rounded-xl border border-slate-200 bg-slate-50 focus:outline-none"
                   />
                   <div className="flex items-center gap-1.5">
                     <select
                       value={companyFilter}
-                      onChange={(e) => setCompanyFilter(e.target.value)}
+                      onChange={(e) => {
+                        setCompanyFilter(e.target.value);
+                        setComparisonPage(1);
+                      }}
                       className="w-full px-2.5 py-2 text-xs rounded-xl border border-slate-200 bg-slate-50 focus:outline-none"
                     >
                       <option value="all">Tüm Firmalar ({uniqueCompanies.length})</option>
@@ -1575,7 +2140,10 @@ export default function InvoiceComparisonModuleView() {
                     {uniqueFamilies.length > 0 && (
                       <select
                         value={familyFilter}
-                        onChange={(e) => setFamilyFilter(e.target.value)}
+                        onChange={(e) => {
+                          setFamilyFilter(e.target.value);
+                          setComparisonPage(1);
+                        }}
                         className="px-2.5 py-2 text-xs rounded-xl border border-slate-200 bg-slate-50 focus:outline-none"
                         title="Ürün Çeşidine / Ailesine Göre Filtrele"
                       >
@@ -1617,7 +2185,7 @@ export default function InvoiceComparisonModuleView() {
                           </td>
                         </tr>
                       ) : (
-                        filteredComparisonRows.map((row: ProductComparisonRow) => {
+                        paginatedComparisonRows.map((row: ProductComparisonRow) => {
                           const isExpanded = expandedRowId === row.centralProductId;
                           return (
                             <React.Fragment key={row.centralProductId}>
@@ -1757,8 +2325,9 @@ export default function InvoiceComparisonModuleView() {
                                             </tr>
                                           </thead>
                                           <tbody className="divide-y divide-slate-100">
-                                            {[...row.incomingLines, ...row.outgoingLines].map(
-                                              (line) => {
+                                            {[...row.incomingLines, ...row.outgoingLines]
+                                              .slice(0, 200)
+                                              .map((line) => {
                                                 const inv = invoiceById.get(line.invoiceId);
                                                 const asg = row.assignments.find(
                                                   (a) => a.lineId === line.id
@@ -1895,6 +2464,49 @@ export default function InvoiceComparisonModuleView() {
                     </tbody>
                   </table>
                 </div>
+                {filteredComparisonRows.length > COMPARISON_PAGE_SIZE && (
+                  <div className="px-4 py-3 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <span className="text-slate-600">
+                      Toplam{" "}
+                      <strong>{filteredComparisonRows.length.toLocaleString("tr-TR")}</strong>{" "}
+                      ürün kartından{" "}
+                      <strong>
+                        {((comparisonPage - 1) * COMPARISON_PAGE_SIZE + 1).toLocaleString("tr-TR")}
+                        –
+                        {Math.min(
+                          comparisonPage * COMPARISON_PAGE_SIZE,
+                          filteredComparisonRows.length
+                        ).toLocaleString("tr-TR")}
+                      </strong>{" "}
+                      arası gösteriliyor
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        disabled={comparisonPage <= 1}
+                        onClick={() => setComparisonPage((p) => Math.max(1, p - 1))}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 disabled:opacity-40 font-semibold"
+                      >
+                        <ChevronLeft className="w-3.5 h-3.5" />
+                        <span>Önceki</span>
+                      </button>
+                      <span className="px-2 font-mono font-bold text-slate-800">
+                        {comparisonPage} / {totalComparisonPages}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={comparisonPage >= totalComparisonPages}
+                        onClick={() =>
+                          setComparisonPage((p) => Math.min(totalComparisonPages, p + 1))
+                        }
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 disabled:opacity-40 font-semibold"
+                      >
+                        <span>Sonraki</span>
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -1917,40 +2529,48 @@ export default function InvoiceComparisonModuleView() {
                     <label className="block text-[11px] font-semibold text-slate-600 mb-1">
                       Gelen Fatura Kalemi
                     </label>
+                    <input
+                      type="text"
+                      value={pairIncomingSearch}
+                      onChange={(e) => setPairIncomingSearch(e.target.value)}
+                      placeholder="Gelen kalem filtrele..."
+                      className="w-full px-2.5 py-1.5 mb-1 text-[11px] rounded-lg border border-slate-200 bg-white focus:outline-none focus:border-indigo-400"
+                    />
                     <select
                       value={pairIncomingLineId}
                       onChange={(e) => setPairIncomingLineId(e.target.value)}
                       className="w-full px-2.5 py-2 text-xs rounded-xl border border-slate-200 bg-slate-50"
                     >
-                      <option value="">Seçiniz...</option>
-                      {incomingInvoices.flatMap((inv) =>
-                        inv.items.map((l) => (
-                          <option key={l.id} value={l.id}>
-                            [{inv.invoiceNo || inv.fileName}]{" "}
-                            {l.originalProductName || l.originalDescription}
-                          </option>
-                        ))
-                      )}
+                      <option value="">Seçiniz... (İlk {filteredPairingIncomingOptions.length})</option>
+                      {filteredPairingIncomingOptions.map((opt) => (
+                        <option key={opt.id} value={opt.id}>
+                          {opt.label}
+                        </option>
+                      ))}
                     </select>
                   </div>
                   <div>
                     <label className="block text-[11px] font-semibold text-slate-600 mb-1">
                       Giden Fatura Kalemi
                     </label>
+                    <input
+                      type="text"
+                      value={pairOutgoingSearch}
+                      onChange={(e) => setPairOutgoingSearch(e.target.value)}
+                      placeholder="Giden kalem filtrele..."
+                      className="w-full px-2.5 py-1.5 mb-1 text-[11px] rounded-lg border border-slate-200 bg-white focus:outline-none focus:border-indigo-400"
+                    />
                     <select
                       value={pairOutgoingLineId}
                       onChange={(e) => setPairOutgoingLineId(e.target.value)}
                       className="w-full px-2.5 py-2 text-xs rounded-xl border border-slate-200 bg-slate-50"
                     >
-                      <option value="">Seçiniz...</option>
-                      {outgoingInvoices.flatMap((inv) =>
-                        inv.items.map((l) => (
-                          <option key={l.id} value={l.id}>
-                            [{inv.invoiceNo || inv.fileName}]{" "}
-                            {l.originalProductName || l.originalDescription}
-                          </option>
-                        ))
-                      )}
+                      <option value="">Seçiniz... (İlk {filteredPairingOutgoingOptions.length})</option>
+                      {filteredPairingOutgoingOptions.map((opt) => (
+                        <option key={opt.id} value={opt.id}>
+                          {opt.label}
+                        </option>
+                      ))}
                     </select>
                   </div>
                   <div>
@@ -1989,13 +2609,12 @@ export default function InvoiceComparisonModuleView() {
                 </div>
 
                 <div className="divide-y divide-slate-200">
-                  {report.suspiciousAssignments.length + report.unmatchedLines.length ===
-                  0 ? (
+                  {allReviewItems.length === 0 ? (
                     <div className="p-8 text-center text-xs text-slate-500">
                       Tüm kalemler yüksek güvenle eşleştirildi veya onaylandı.
                     </div>
                   ) : (
-                    [...report.suspiciousAssignments, ...report.unmatchedLines].map(
+                    paginatedReviewItems.map(
                       ({ line, invoice, assignment }) => (
                         <div
                           key={line.id}
@@ -2089,7 +2708,7 @@ export default function InvoiceComparisonModuleView() {
                               className="px-2 py-1.5 text-[11px] rounded-lg border border-slate-200 bg-white"
                             >
                               <option value="">Farklı Karta Bağla...</option>
-                              {report.centralProducts.map((c) => (
+                              {report.centralProducts.slice(0, 300).map((c) => (
                                 <option key={c.id} value={c.id}>
                                   {c.canonicalName}
                                 </option>
@@ -2102,6 +2721,49 @@ export default function InvoiceComparisonModuleView() {
                     )
                   )}
                 </div>
+                {allReviewItems.length > REVIEW_PAGE_SIZE && (
+                  <div className="px-4 py-3 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <span className="text-slate-600">
+                      Toplam{" "}
+                      <strong>{allReviewItems.length.toLocaleString("tr-TR")}</strong>{" "}
+                      inceleme kaleminden{" "}
+                      <strong>
+                        {((reviewPage - 1) * REVIEW_PAGE_SIZE + 1).toLocaleString("tr-TR")}
+                        –
+                        {Math.min(
+                          reviewPage * REVIEW_PAGE_SIZE,
+                          allReviewItems.length
+                        ).toLocaleString("tr-TR")}
+                      </strong>{" "}
+                      arası gösteriliyor
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        disabled={reviewPage <= 1}
+                        onClick={() => setReviewPage((p) => Math.max(1, p - 1))}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 disabled:opacity-40 font-semibold"
+                      >
+                        <ChevronLeft className="w-3.5 h-3.5" />
+                        <span>Önceki</span>
+                      </button>
+                      <span className="px-2 font-mono font-bold text-slate-800">
+                        {reviewPage} / {totalReviewPages}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={reviewPage >= totalReviewPages}
+                        onClick={() =>
+                          setReviewPage((p) => Math.min(totalReviewPages, p + 1))
+                        }
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 disabled:opacity-40 font-semibold"
+                      >
+                        <span>Sonraki</span>
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -2182,8 +2844,9 @@ export default function InvoiceComparisonModuleView() {
             </div>
           )}
 
-          {/* Hidden Printable DOM for High-Resolution Turkish PDF Export */}
-          <div className="fixed -left-[9999px] top-0 w-[210mm] bg-white z-[-1]">
+          {/* Hidden Printable DOM for High-Resolution Turkish PDF Export (rendered only during PDF export, max 500 rows) */}
+          {isExportingPdf && (
+            <div className="fixed -left-[9999px] top-0 w-[210mm] bg-white z-[-1]">
             <div ref={pdfReportRef} className="p-8 bg-white text-slate-900 font-sans space-y-5">
               <div className="border-b-2 border-slate-900 pb-3 flex justify-between items-end">
                 <div>
@@ -2237,7 +2900,7 @@ export default function InvoiceComparisonModuleView() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredComparisonRows.map((row) => (
+                  {filteredComparisonRows.slice(0, 500).map((row) => (
                     <tr key={row.centralProductId}>
                       <td className="border border-slate-300 p-1.5 font-semibold">
                         {row.productName}
@@ -2270,8 +2933,15 @@ export default function InvoiceComparisonModuleView() {
                   ))}
                 </tbody>
               </table>
+              {filteredComparisonRows.length > 500 && (
+                <p className="text-[10px] text-slate-500 mt-2">
+                  Not: PDF çıktısı performans amacıyla ilk 500 ürünü içerir; tüm{" "}
+                  {filteredComparisonRows.length.toLocaleString("tr-TR")} satır için Excel İndir seçeneğini kullanın.
+                </p>
+              )}
             </div>
           </div>
+          )}
         </div>
       )}
 

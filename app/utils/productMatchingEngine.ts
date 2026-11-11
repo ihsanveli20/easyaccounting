@@ -807,6 +807,7 @@ export function runInvoiceProductComparison(params: {
   learnedRules: LearnedMappingRule[];
   manualOverrides?: ManualOverrideMap;
   userCreatedCards?: CentralProductCard[];
+  onProgress?: (processed: number, total: number) => void;
 }): ComparisonReportPayload {
   const {
     incomingInvoices,
@@ -814,21 +815,40 @@ export function runInvoiceProductComparison(params: {
     learnedRules,
     manualOverrides = {},
     userCreatedCards = [],
+    onProgress,
   } = params;
 
   const allInvoices = [...incomingInvoices, ...outgoingInvoices];
   const invoiceMap = new Map<string, StandardInvoiceDocument>();
-  allInvoices.forEach((inv) => invoiceMap.set(inv.id, inv));
+  for (const inv of allInvoices) {
+    invoiceMap.set(inv.id, inv);
+  }
+
+  // Feature extraction cache (many invoice lines share identical product name + description)
+  const featureCache = new Map<string, ExtractedProductFeatures>();
+  const getCachedFeatures = (line: StandardInvoiceLine): ExtractedProductFeatures => {
+    const key = `${line.originalProductName || ""}||${line.originalDescription || ""}`;
+    let feat = featureCache.get(key);
+    if (!feat) {
+      feat = extractProductFeatures(line);
+      featureCache.set(key, feat);
+    }
+    return feat;
+  };
 
   // Enrich every line with non-destructive features and normalized measurements
   const enrichedLines: StandardInvoiceLine[] = [];
+  let totalIncomingLineCount = 0;
+  let totalOutgoingLineCount = 0;
   for (const inv of allInvoices) {
     for (const line of inv.items) {
-      const features = extractProductFeatures(line);
+      const features = getCachedFeatures(line);
       const measurement = normalizeLineMeasurement(
         line,
         `${line.originalProductName} ${line.originalDescription}`.trim()
       );
+      if (line.direction === "incoming") totalIncomingLineCount += 1;
+      else totalOutgoingLineCount += 1;
       enrichedLines.push({
         ...line,
         features,
@@ -837,14 +857,59 @@ export function runInvoiceProductComparison(params: {
     }
   }
 
-  // Seed central product cards map with user-created cards first
+  // Seed central product cards map + inverted indexes for fast O(N) candidate lookup
   const centralCards: CentralProductCard[] = userCreatedCards.map((c) => ({ ...c }));
   const cardById = new Map<string, CentralProductCard>();
+  const cardByNormName = new Map<string, CentralProductCard>();
   const cardFeatures = new Map<string, ExtractedProductFeatures>();
+  const cardsByFamily = new Map<string, string[]>();
+  const cardsByToken = new Map<string, string[]>();
+  const cardsByAnchor = new Map<string, string[]>();
+  const cardByExactCoreSig = new Map<string, string>();
+
+  const buildExactCoreSignature = (f: ExtractedProductFeatures): string => {
+    const core = f.tokens.filter((t) => !PACKAGING_WORDS.has(t)).sort().join(" ");
+    const vars = [...f.varietyTokens].sort().join(",");
+    const packs = [...f.packagingTokens].sort().join(",");
+    return `${f.canonicalFamily}|${vars}|${packs}|${core}`;
+  };
+
+  const addToIndex = (map: Map<string, string[]>, key: string, cardId: string) => {
+    if (!key) return;
+    let arr = map.get(key);
+    if (!arr) {
+      arr = [cardId];
+      map.set(key, arr);
+    } else if (arr[arr.length - 1] !== cardId && !arr.includes(cardId)) {
+      arr.push(cardId);
+    }
+  };
+
+  const indexCard = (card: CentralProductCard, feat: ExtractedProductFeatures) => {
+    cardById.set(card.id, card);
+    cardByNormName.set(normalizeTurkishAscii(card.canonicalName), card);
+    cardFeatures.set(card.id, feat);
+
+    const exactSig = buildExactCoreSignature(feat);
+    if (exactSig && !cardByExactCoreSig.has(exactSig)) {
+      cardByExactCoreSig.set(exactSig, card.id);
+    }
+    if (feat.canonicalFamily) {
+      addToIndex(cardsByFamily, feat.canonicalFamily, card.id);
+    }
+    for (const t of feat.tokens) {
+      if (PACKAGING_WORDS.has(t)) continue;
+      addToIndex(cardsByToken, t, card.id);
+      if (t.length >= 4) {
+        addToIndex(cardsByAnchor, t.slice(0, 2), card.id);
+        addToIndex(cardsByAnchor, t.slice(-2), card.id);
+      }
+    }
+  };
+
   for (const c of centralCards) {
-    cardById.set(c.id, c);
-    cardFeatures.set(
-      c.id,
+    indexCard(
+      c,
       extractProductFeatures({
         id: c.id,
         invoiceId: "",
@@ -878,25 +943,24 @@ export function runInvoiceProductComparison(params: {
   ): CentralProductCard => {
     if (preferredId && cardById.has(preferredId)) {
       const existing = cardById.get(preferredId)!;
-      if (!existing.aliases.includes(features.effectiveName) && features.effectiveName) {
+      if (features.effectiveName && !existing.aliases.includes(features.effectiveName)) {
         existing.aliases.push(features.effectiveName);
       }
       return existing;
     }
 
-    const byNormName = centralCards.find(
-      (c) => normalizeTurkishAscii(c.canonicalName) === normalizeTurkishAscii(canonicalName)
-    );
+    const normCanonical = normalizeTurkishAscii(canonicalName);
+    const byNormName = cardByNormName.get(normCanonical);
     if (byNormName) {
-      if (!byNormName.aliases.includes(features.effectiveName) && features.effectiveName) {
+      if (features.effectiveName && !byNormName.aliases.includes(features.effectiveName)) {
         byNormName.aliases.push(features.effectiveName);
       }
       return byNormName;
     }
 
-    const normSlug = normalizeTurkishAscii(canonicalName)
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "") || `card-${centralCards.length + 1}`;
+    const normSlug =
+      normCanonical.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") ||
+      `card-${centralCards.length + 1}`;
     const deterministicAutoId = `card-auto-${normSlug}`;
     const resolvedNewId =
       preferredId ||
@@ -916,18 +980,31 @@ export function runInvoiceProductComparison(params: {
       isSpecialVariety: features.varietyTokens.length > 0,
     };
     centralCards.push(newCard);
-    cardById.set(newCard.id, newCard);
-    cardFeatures.set(newCard.id, features);
+    indexCard(newCard, features);
     return newCard;
   };
 
   // Process incoming lines first so central catalog forms naturally, then outgoing lines
-  const orderedLines = [
-    ...enrichedLines.filter((l) => l.direction === "incoming"),
-    ...enrichedLines.filter((l) => l.direction === "outgoing"),
-  ];
+  const orderedLines: StandardInvoiceLine[] = [];
+  for (const l of enrichedLines) {
+    if (l.direction === "incoming") orderedLines.push(l);
+  }
+  const hasAnyIncoming = orderedLines.length > 0;
+  for (const l of enrichedLines) {
+    if (l.direction === "outgoing") orderedLines.push(l);
+  }
 
-  for (const line of orderedLines) {
+  // Cache best auto-match by exact feature signature + centralCards length invalidation?
+  // Inverted index keeps candidate evaluation tiny (typically 1-20 cards instead of thousands).
+  const MAX_CANDIDATES_PER_LINE = 60;
+  const totalLinesToProcess = orderedLines.length;
+
+  for (let lineIdx = 0; lineIdx < totalLinesToProcess; lineIdx++) {
+    if (onProgress && (lineIdx % 1000 === 0 || lineIdx === totalLinesToProcess - 1)) {
+      onProgress(lineIdx + 1, totalLinesToProcess);
+    }
+
+    const line = orderedLines[lineIdx];
     const features = line.features!;
     const measurement = line.measurement!;
     const override = manualOverrides[line.id];
@@ -1020,17 +1097,89 @@ export function runInvoiceProductComparison(params: {
       continue;
     }
 
-    // 3. Compare against existing central product cards
+    // 3. Compare against existing central product cards (fast O(1) exact path + inverted index)
     let bestCard: CentralProductCard | null = null;
     let bestEval: PairScoreEvaluation | null = null;
 
-    for (const card of centralCards) {
-      const cFeat = cardFeatures.get(card.id);
-      if (!cFeat) continue;
-      const evalRes = evaluateFeatureSimilarity(features, cFeat);
-      if (!bestEval || evalRes.score > bestEval.score) {
-        bestEval = evalRes;
-        bestCard = card;
+    const lineExactSig = buildExactCoreSignature(features);
+    const exactCardId = lineExactSig ? cardByExactCoreSig.get(lineExactSig) : undefined;
+    if (exactCardId) {
+      const exactCard = cardById.get(exactCardId);
+      const exactFeat = cardFeatures.get(exactCardId);
+      if (exactCard && exactFeat) {
+        const evalRes = evaluateFeatureSimilarity(features, exactFeat);
+        if (evalRes.canAutoMerge && evalRes.score >= 80) {
+          bestCard = exactCard;
+          bestEval = evalRes;
+        }
+      }
+    }
+
+    if (!bestCard) {
+      if (centralCards.length <= MAX_CANDIDATES_PER_LINE) {
+        for (const card of centralCards) {
+          const cFeat = cardFeatures.get(card.id);
+          if (!cFeat) continue;
+          const evalRes = evaluateFeatureSimilarity(features, cFeat);
+          if (!bestEval || evalRes.score > bestEval.score) {
+            bestEval = evalRes;
+            bestCard = card;
+          }
+        }
+      } else {
+        const candidateScores = new Map<string, number>();
+        if (features.canonicalFamily) {
+          const famList = cardsByFamily.get(features.canonicalFamily);
+          if (famList) {
+            for (const cid of famList) {
+              candidateScores.set(cid, (candidateScores.get(cid) || 0) + 3);
+            }
+          }
+        }
+        for (const t of features.tokens) {
+          if (PACKAGING_WORDS.has(t)) continue;
+          const tokList = cardsByToken.get(t);
+          if (tokList) {
+            for (const cid of tokList) {
+              candidateScores.set(cid, (candidateScores.get(cid) || 0) + 4);
+            }
+          }
+          if (t.length >= 4) {
+            const pList = cardsByAnchor.get(t.slice(0, 2));
+            if (pList) {
+              for (const cid of pList) {
+                candidateScores.set(cid, (candidateScores.get(cid) || 0) + 1);
+              }
+            }
+            const sList = cardsByAnchor.get(t.slice(-2));
+            if (sList) {
+              for (const cid of sList) {
+                candidateScores.set(cid, (candidateScores.get(cid) || 0) + 1);
+              }
+            }
+          }
+        }
+
+        let candidateIds: string[];
+        if (candidateScores.size <= MAX_CANDIDATES_PER_LINE) {
+          candidateIds = Array.from(candidateScores.keys());
+        } else {
+          candidateIds = Array.from(candidateScores.entries())
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, MAX_CANDIDATES_PER_LINE)
+            .map(([cid]) => cid);
+        }
+
+        for (const cid of candidateIds) {
+          const card = cardById.get(cid);
+          const cFeat = cardFeatures.get(cid);
+          if (!card || !cFeat) continue;
+          const evalRes = evaluateFeatureSimilarity(features, cFeat);
+          if (!bestEval || evalRes.score > bestEval.score) {
+            bestEval = evalRes;
+            bestCard = card;
+          }
+        }
       }
     }
 
@@ -1087,7 +1236,7 @@ export function runInvoiceProductComparison(params: {
 
     // Low confidence or first line creating a new card
     const isUnmatchedOutgoing =
-      orderedLines.some((l) => l.direction === "incoming") &&
+      hasAnyIncoming &&
       line.direction === "outgoing" &&
       (!bestCard || (bestEval && bestEval.score < 45));
 
@@ -1248,6 +1397,11 @@ export function runInvoiceProductComparison(params: {
     });
   }
 
+  const comparisonRowByCardId = new Map<string, ProductComparisonRow>();
+  for (const r of comparisonRows) {
+    comparisonRowByCardId.set(r.centralProductId, r);
+  }
+
   for (const line of enrichedLines) {
     const a = assignmentByLineId.get(line.id);
     const inv = invoiceMap.get(line.invoiceId);
@@ -1255,7 +1409,9 @@ export function runInvoiceProductComparison(params: {
     if (a.approvalStatus === "needs_approval") {
       suspiciousAssignments.push({ line, invoice: inv, assignment: a });
     } else {
-      const cardRow = comparisonRows.find((r) => r.centralProductId === a.centralProductId);
+      const cardRow = a.centralProductId
+        ? comparisonRowByCardId.get(a.centralProductId)
+        : undefined;
       if (
         a.approvalStatus === "unmatched_review" ||
         a.approvalStatus === "user_rejected" ||
@@ -1266,22 +1422,31 @@ export function runInvoiceProductComparison(params: {
     }
   }
 
+  let matchedProductCount = 0;
+  let onlyIncomingCount = 0;
+  let onlyOutgoingCount = 0;
+  let totalIncomingAmountSum = 0;
+  let totalOutgoingAmountSum = 0;
+  for (const r of comparisonRows) {
+    if (r.status === "matched") matchedProductCount += 1;
+    else if (r.status === "only_incoming") onlyIncomingCount += 1;
+    else if (r.status === "only_outgoing") onlyOutgoingCount += 1;
+    totalIncomingAmountSum += r.incomingAmount;
+    totalOutgoingAmountSum += r.outgoingAmount;
+  }
+
   const summary: ComparisonAnalysisSummary = {
     incomingInvoiceCount: incomingInvoices.length,
     outgoingInvoiceCount: outgoingInvoices.length,
-    totalIncomingLines: enrichedLines.filter((l) => l.direction === "incoming").length,
-    totalOutgoingLines: enrichedLines.filter((l) => l.direction === "outgoing").length,
-    matchedProductCount: comparisonRows.filter((r) => r.status === "matched").length,
+    totalIncomingLines: totalIncomingLineCount,
+    totalOutgoingLines: totalOutgoingLineCount,
+    matchedProductCount,
     unmatchedLineCount: unmatchedLines.length,
     needsReviewCount: suspiciousAssignments.length,
-    onlyIncomingCount: comparisonRows.filter((r) => r.status === "only_incoming").length,
-    onlyOutgoingCount: comparisonRows.filter((r) => r.status === "only_outgoing").length,
-    totalIncomingAmount: Number(
-      comparisonRows.reduce((s, r) => s + r.incomingAmount, 0).toFixed(2)
-    ),
-    totalOutgoingAmount: Number(
-      comparisonRows.reduce((s, r) => s + r.outgoingAmount, 0).toFixed(2)
-    ),
+    onlyIncomingCount,
+    onlyOutgoingCount,
+    totalIncomingAmount: Number(totalIncomingAmountSum.toFixed(2)),
+    totalOutgoingAmount: Number(totalOutgoingAmountSum.toFixed(2)),
   };
 
   return {

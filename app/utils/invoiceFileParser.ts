@@ -45,11 +45,23 @@ export function detectFileFormat(
   return null;
 }
 
+const textEncoder = typeof TextEncoder !== "undefined" ? new TextEncoder() : null;
+
+function getUtf8ByteLength(text: string): number {
+  if (typeof Buffer !== "undefined") {
+    return Buffer.byteLength(text, "utf8");
+  }
+  if (textEncoder) {
+    return textEncoder.encode(text).length;
+  }
+  return text.length * 2;
+}
+
 export function validateXmlSecurity(xmlText: string): { safe: boolean; error?: string } {
   if (!xmlText || !xmlText.trim()) {
     return { safe: false, error: "XML dosyası boş." };
   }
-  if (Buffer.byteLength(xmlText, "utf8") > MAX_INVOICE_FILE_BYTES) {
+  if (getUtf8ByteLength(xmlText) > MAX_INVOICE_FILE_BYTES) {
     return { safe: false, error: "XML dosyası 4 MB sınırını aşıyor." };
   }
   for (const check of DANGEROUS_XML_PATTERNS) {
@@ -217,10 +229,13 @@ function normalizeDateString(raw?: string | null): string {
   return trimmed;
 }
 
+let monotonicIdCounter = 0;
+
 function makeId(prefix: string, seedIndex = 0): string {
-  return `${prefix}-${Date.now().toString(36)}-${seedIndex}-${Math.random()
+  monotonicIdCounter = (monotonicIdCounter + 1) % 1000000000;
+  return `${prefix}-${Date.now().toString(36)}-${monotonicIdCounter.toString(36)}-${seedIndex}-${Math.random()
     .toString(36)
-    .slice(2, 7)}`;
+    .slice(2, 6)}`;
 }
 
 function parseXmlPartyName(partyBlock: string): string {
@@ -662,7 +677,7 @@ export function parseInvoiceJsonSecure(
   if (!jsonText || !jsonText.trim()) {
     throw new Error("JSON dosyası boş.");
   }
-  if (Buffer.byteLength(jsonText, "utf8") > MAX_INVOICE_FILE_BYTES) {
+  if (getUtf8ByteLength(jsonText) > MAX_INVOICE_FILE_BYTES) {
     throw new Error("JSON dosyası 4 MB sınırını aşıyor.");
   }
 

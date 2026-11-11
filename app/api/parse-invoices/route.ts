@@ -66,7 +66,7 @@ if (typeof globalThis.DOMMatrix === "undefined") {
 
 if (typeof globalThis.Path2D === "undefined") {
   // @ts-expect-error polyfill for pdfjs in node runtime
-  globalThis.Path2D = class Path2DPolyfill {};
+  globalThis.Path2D = class Path2DPolyfill { };
 }
 
 if (typeof globalThis.ImageData === "undefined") {
@@ -294,7 +294,7 @@ function parseInvoiceXml(xmlText: string, fileName: string): ExtractedInvoiceDoc
     new Date().toISOString().slice(0, 10);
 
   const currency =
-    extractXmlTagValue(beforeSupplier, "DocumentCurrencyCode") || "TRY";
+    extractXmlTagValue(beforeSupplier, "DocumentCurrencyCode") || "₺";
 
   const customerBlock =
     extractXmlTagValue(strippedHeaderXml, "AccountingCustomerParty") ||
@@ -372,11 +372,11 @@ function parseInvoiceXml(xmlText: string, fileName: string): ExtractedInvoiceDoc
   const monetaryBlock = extractXmlTagValue(strippedHeaderXml, "LegalMonetaryTotal");
   const xmlSubtotal = parseFlexibleNumber(
     extractXmlTagValue(monetaryBlock, "LineExtensionAmount") ||
-      extractXmlTagValue(monetaryBlock, "TaxExclusiveAmount")
+    extractXmlTagValue(monetaryBlock, "TaxExclusiveAmount")
   );
   const xmlPayable = parseFlexibleNumber(
     extractXmlTagValue(monetaryBlock, "PayableAmount") ||
-      extractXmlTagValue(monetaryBlock, "TaxInclusiveAmount")
+    extractXmlTagValue(monetaryBlock, "TaxInclusiveAmount")
   );
 
   const withoutLines = strippedHeaderXml.replace(
@@ -401,7 +401,7 @@ function parseInvoiceXml(xmlText: string, fileName: string): ExtractedInvoiceDoc
     sellerName: seller.name || "",
     invoiceDate,
     invoiceNo,
-    currency: currency === "TRL" ? "TRY" : currency,
+    currency: currency === "TRL" ? "₺" : currency,
     items,
     subtotalAmount: Number((computedSubtotal || xmlSubtotal).toFixed(2)),
     totalVatAmount: Number((computedVat || xmlVatTotal).toFixed(2)),
@@ -812,13 +812,13 @@ function parseInvoicePdfText(
   const items = extractKgAndStandardLineItems(lines);
 
   const subtotalMatch = rawText.match(
-    /(?:Mal\s*Hizmet\s*Toplam\s*Tutar[ıi]|Ara\s*Toplam|Matrah)\s*[:.]?\s*([\d.,]+)\s*(?:TL|TRY|₺)?/i
+    /(?:Mal\s*Hizmet\s*Toplam\s*Tutar[ıi]|Ara\s*Toplam|Matrah)\s*[:.]?\s*([\d.,]+)\s*(?:TL|₺|₺)?/i
   );
   const vatTotalMatch = rawText.match(
-    /(?:Hesaplanan\s*KDV|Toplam\s*KDV|KDV\s*Tutar[ıi])\s*(?:\([^)]*\))?\s*[:.]?\s*([\d.,]+)\s*(?:TL|TRY|₺)?/i
+    /(?:Hesaplanan\s*KDV|Toplam\s*KDV|KDV\s*Tutar[ıi])\s*(?:\([^)]*\))?\s*[:.]?\s*([\d.,]+)\s*(?:TL|₺|₺)?/i
   );
   const grandTotalMatch = rawText.match(
-    /(?:Ödenecek\s*Tutar|Odenecek\s*Tutar|Vergiler\s*Dahil\s*Toplam\s*Tutar|Genel\s*Toplam)\s*[:.]?\s*([\d.,]+)\s*(?:TL|TRY|₺)?/i
+    /(?:Ödenecek\s*Tutar|Odenecek\s*Tutar|Vergiler\s*Dahil\s*Toplam\s*Tutar|Genel\s*Toplam)\s*[:.]?\s*([\d.,]+)\s*(?:TL|₺|₺)?/i
   );
 
   const pdfSubtotal = subtotalMatch ? parseFlexibleNumber(subtotalMatch[1]) : 0;
@@ -874,7 +874,7 @@ function parseInvoicePdfText(
     sellerName,
     invoiceDate,
     invoiceNo,
-    currency: "TRY",
+    currency: "₺",
     items,
     subtotalAmount: Number((computedSubtotal || pdfSubtotal).toFixed(2)),
     totalVatAmount: Number((computedVat || pdfVatTotal).toFixed(2)),

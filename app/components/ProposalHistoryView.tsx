@@ -46,12 +46,12 @@ interface ProposalHistoryViewProps {
 
 // Currency formatter
 function formatCurrency(val: number): string {
-  if (isNaN(val)) return "0,00 TRY";
+  if (isNaN(val)) return "0,00 ₺";
   return (
     new Intl.NumberFormat("tr-TR", {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
-    }).format(val) + " TRY"
+    }).format(val) + " ₺"
   );
 }
 
@@ -184,7 +184,7 @@ export default function ProposalHistoryView({
           setCompanyInfo((prev) => ({ ...prev, ...parsed.companyInfo }));
         }
       }
-    } catch {}
+    } catch { }
   }, []);
 
   const whatsappProposalData: WhatsAppProposalData | null = useMemo(() => {
@@ -567,11 +567,10 @@ export default function ProposalHistoryView({
               <button
                 key={item.id}
                 onClick={() => setStatusFilter(item.id)}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap ${
-                  statusFilter === item.id
+                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap ${statusFilter === item.id
                     ? "bg-slate-900 text-white"
                     : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                }`}
+                  }`}
               >
                 {item.label}
               </button>
@@ -633,12 +632,12 @@ export default function ProposalHistoryView({
                     const itemCount = prop.items?.length || 0;
                     const dateStr = prop.created_at
                       ? new Date(prop.created_at).toLocaleDateString("tr-TR", {
-                          day: "2-digit",
-                          month: "2-digit",
-                          year: "numeric",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })
+                        day: "2-digit",
+                        month: "2-digit",
+                        year: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })
                       : "-";
 
                     const isDownloadingThis = generatingPdfId === prop.id;
@@ -842,11 +841,9 @@ export default function ProposalHistoryView({
                           {selectedProposalForDetail.proposal_number}
                         </span>
                         <span
-                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                            STATUS_CONFIG[selectedProposalForDetail.status]?.bg
-                          } ${STATUS_CONFIG[selectedProposalForDetail.status]?.text} ${
-                            STATUS_CONFIG[selectedProposalForDetail.status]?.border
-                          }`}
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${STATUS_CONFIG[selectedProposalForDetail.status]?.bg
+                            } ${STATUS_CONFIG[selectedProposalForDetail.status]?.text} ${STATUS_CONFIG[selectedProposalForDetail.status]?.border
+                            }`}
                         >
                           {STATUS_CONFIG[selectedProposalForDetail.status]?.label ||
                             selectedProposalForDetail.status}

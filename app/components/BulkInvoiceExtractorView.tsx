@@ -69,7 +69,7 @@ const DEMO_INVOICES: InvoiceDocumentRecord[] = [
     sellerName: "ÖZBEREKET ET VE SÜT ÜRÜNLERİ LTD. ŞTİ.",
     invoiceDate: "2026-11-05",
     invoiceNo: "GIB2026000001452",
-    currency: "TRY",
+    currency: "₺",
     items: [
       {
         id: "demo-item-1",
@@ -108,7 +108,7 @@ const DEMO_INVOICES: InvoiceDocumentRecord[] = [
     sellerName: "MARMARA ENDÜSTRİYEL AMBALAJ SAN. A.Ş.",
     invoiceDate: "2026-11-07",
     invoiceNo: "MAR2026000008914",
-    currency: "TRY",
+    currency: "₺",
     items: [
       {
         id: "demo-item-3",
@@ -147,7 +147,7 @@ const DEMO_INVOICES: InvoiceDocumentRecord[] = [
     sellerName: "KUZEY SOĞUK HAVA DEPOLAMA HİZMETLERİ A.Ş.",
     invoiceDate: "2026-11-08",
     invoiceNo: "KZY2026000000319",
-    currency: "TRY",
+    currency: "₺",
     items: [
       {
         id: "demo-item-5",
@@ -206,10 +206,10 @@ function recalcDocumentTotals(doc: InvoiceDocumentRecord): InvoiceDocumentRecord
   };
 }
 
-function formatCurrency(amount: number, currency = "TRY"): string {
+function formatCurrency(amount: number, currency = "₺"): string {
   return new Intl.NumberFormat("tr-TR", {
     style: "currency",
-    currency: currency === "TL" ? "TRY" : currency,
+    currency: currency === "TL" ? "₺" : currency,
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(Number.isFinite(amount) ? amount : 0);
@@ -441,10 +441,10 @@ export default function BulkInvoiceExtractorView() {
           prev.map((d) =>
             d.id === doc.id
               ? {
-                  ...parsedDoc,
-                  id: doc.id,
-                  imagePreviewUrl: doc.imagePreviewUrl,
-                }
+                ...parsedDoc,
+                id: doc.id,
+                imagePreviewUrl: doc.imagePreviewUrl,
+              }
               : d
           )
         );
@@ -640,7 +640,7 @@ export default function BulkInvoiceExtractorView() {
       sellerName: "",
       invoiceDate: today,
       invoiceNo: `FAT2026${Math.floor(100000 + Math.random() * 900000)}`,
-      currency: "TRY",
+      currency: "₺",
       items: [
         {
           id: `item-${Date.now()}`,
@@ -808,8 +808,8 @@ export default function BulkInvoiceExtractorView() {
         doc.fileType === "xml"
           ? "XML"
           : doc.fileType === "pdf"
-          ? "PDF"
-          : "Fotoğraf",
+            ? "PDF"
+            : "Fotoğraf",
       "Dosya Adı": doc.fileName,
       "Alıcı Firma / Kişi": doc.buyerName,
       "Alıcı VKN / TCKN": doc.buyerTaxId || "-",
@@ -824,7 +824,7 @@ export default function BulkInvoiceExtractorView() {
       "KDV Tutarı": item.vatAmount,
       "KDV Hariç Tutar": item.netAmount,
       "Toplam Tutar (KDV Dahil)": item.totalAmount,
-      "Para Birimi": doc.currency || "TRY",
+      "Para Birimi": doc.currency || "₺",
     }));
 
     // Append a summary row at the bottom of the detailed sheet
@@ -845,7 +845,7 @@ export default function BulkInvoiceExtractorView() {
       "KDV Tutarı": Number(summaryStats.totalVat.toFixed(2)),
       "KDV Hariç Tutar": Number(summaryStats.totalNet.toFixed(2)),
       "Toplam Tutar (KDV Dahil)": Number(summaryStats.totalGrand.toFixed(2)),
-      "Para Birimi": "TRY",
+      "Para Birimi": "₺",
     });
 
     // 2. Invoice Summary Sheet
@@ -855,8 +855,8 @@ export default function BulkInvoiceExtractorView() {
         doc.fileType === "xml"
           ? "XML"
           : doc.fileType === "pdf"
-          ? "PDF"
-          : "Fotoğraf",
+            ? "PDF"
+            : "Fotoğraf",
       "Dosya Adı": doc.fileName,
       "Alıcı Firma / Kişi": doc.buyerName,
       "Alıcı VKN / TCKN": doc.buyerTaxId || "-",
@@ -867,7 +867,7 @@ export default function BulkInvoiceExtractorView() {
       "Ara Toplam (KDV Hariç)": doc.subtotalAmount,
       "Toplam KDV": doc.totalVatAmount,
       "Genel Toplam (KDV Dahil)": doc.grandTotalAmount,
-      "Para Birimi": doc.currency || "TRY",
+      "Para Birimi": doc.currency || "₺",
     }));
 
     const workbook = XLSX.utils.book_new();
@@ -1021,11 +1021,10 @@ export default function BulkInvoiceExtractorView() {
             }
           }}
           onClick={() => fileInputRef.current?.click()}
-          className={`relative border-2 border-dashed rounded-2xl p-6 text-center transition-all cursor-pointer ${
-            dragActive
+          className={`relative border-2 border-dashed rounded-2xl p-6 text-center transition-all cursor-pointer ${dragActive
               ? "border-indigo-500 bg-indigo-50/70"
               : "border-slate-300 hover:border-indigo-400 bg-slate-50/60 hover:bg-indigo-50/20"
-          }`}
+            }`}
         >
           <input
             ref={fileInputRef}
@@ -1080,13 +1079,12 @@ export default function BulkInvoiceExtractorView() {
         {/* Status Notification Banner */}
         {statusBanner && (
           <div
-            className={`mt-4 flex items-center justify-between gap-3 px-4 py-3 rounded-xl text-xs font-medium border ${
-              statusBanner.type === "success"
+            className={`mt-4 flex items-center justify-between gap-3 px-4 py-3 rounded-xl text-xs font-medium border ${statusBanner.type === "success"
                 ? "bg-emerald-50 border-emerald-200 text-emerald-800"
                 : statusBanner.type === "error"
-                ? "bg-rose-50 border-rose-200 text-rose-800"
-                : "bg-indigo-50 border-indigo-200 text-indigo-800"
-            }`}
+                  ? "bg-rose-50 border-rose-200 text-rose-800"
+                  : "bg-indigo-50 border-indigo-200 text-indigo-800"
+              }`}
           >
             <div className="flex items-center gap-2">
               {statusBanner.type === "success" ? (
@@ -1180,11 +1178,10 @@ export default function BulkInvoiceExtractorView() {
                 key={tab.id}
                 type="button"
                 onClick={() => setFileTypeFilter(tab.id)}
-                className={`px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
-                  fileTypeFilter === tab.id
+                className={`px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${fileTypeFilter === tab.id
                     ? "bg-white text-slate-900 shadow-2xs"
                     : "text-slate-600 hover:text-slate-900"
-                }`}
+                  }`}
               >
                 {tab.label}
               </button>
@@ -1197,11 +1194,10 @@ export default function BulkInvoiceExtractorView() {
             <button
               type="button"
               onClick={() => setViewMode("flat-table")}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
-                viewMode === "flat-table"
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${viewMode === "flat-table"
                   ? "bg-white text-indigo-700 shadow-2xs"
                   : "text-slate-600 hover:text-slate-900"
-              }`}
+                }`}
             >
               <TableIcon className="w-3.5 h-3.5" />
               Excel Tablo Görünümü
@@ -1209,11 +1205,10 @@ export default function BulkInvoiceExtractorView() {
             <button
               type="button"
               onClick={() => setViewMode("grouped-cards")}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
-                viewMode === "grouped-cards"
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${viewMode === "grouped-cards"
                   ? "bg-white text-indigo-700 shadow-2xs"
                   : "text-slate-600 hover:text-slate-900"
-              }`}
+                }`}
             >
               <Layers className="w-3.5 h-3.5" />
               Fatura Kartları ({filteredDocuments.length})

@@ -35,6 +35,7 @@ import {
   mapInvoiceFromDb,
   mapDocumentFromDb,
   mapReportFromDb,
+  mapAnimalFromDb,
 } from "../../utils/kurbanProcessDb";
 import {
   KurbanProcessOrganization,
@@ -47,6 +48,7 @@ import {
   KurbanInvoice,
   KurbanDocument,
   KurbanReport,
+  KurbanAnimal,
 } from "../../types/kurbanProcess";
 
 const NO_STORE_HEADERS = {

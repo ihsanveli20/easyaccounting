@@ -10,7 +10,8 @@
       "stock-tracking",
       "admin-users",
       "proposal-comparison",
-      "kurban-reporting"
+      "kurban-reporting",
+      "invoice-extractor"
     ],
     "sales": [
       "quote",
@@ -39,5 +40,28 @@
       "calculator"
     ]
   },
-  "userPermissions": {}
+  "userPermissions": {
+    "bektassk@ea.co": {
+      "custom": true,
+      "allowedMenus": [
+        "calculator",
+        "invoice-comparison"
+      ]
+    },
+    "veliihsan@ea.co": {
+      "custom": false,
+      "allowedMenus": [
+        "summary",
+        "details",
+        "calculator",
+        "reconciliation",
+        "quote",
+        "proposal-history",
+        "stock-tracking",
+        "admin-users",
+        "proposal-comparison",
+        "kurban-reporting"
+      ]
+    }
+  }
 }

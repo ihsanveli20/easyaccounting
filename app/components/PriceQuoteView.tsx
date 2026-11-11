@@ -87,6 +87,26 @@ function formatCurrency(val: number): string {
   );
 }
 
+// Render stock quantity pill for product selection options
+function renderStockBadge(stockQuantity: number | undefined, unit: string) {
+  if (stockQuantity === undefined || stockQuantity === null || Number.isNaN(stockQuantity)) {
+    return null;
+  }
+  const badgeStyle =
+    stockQuantity <= 0
+      ? "bg-rose-50 text-rose-700 border-rose-200"
+      : stockQuantity <= 10
+        ? "bg-amber-50 text-amber-700 border-amber-200"
+        : "bg-emerald-50 text-emerald-700 border-emerald-200";
+  return (
+    <span
+      className={`inline-flex items-center px-1.5 py-0.5 rounded border text-[10px] font-mono font-semibold ${badgeStyle}`}
+    >
+      Stok: {stockQuantity.toLocaleString("tr-TR")} {unit}
+    </span>
+  );
+}
+
 // Convert number to Turkish words (e.g. 15.450 -> "On Beş Bin Dört Yüz Elli Türk Lirası")
 function numberToTurkishWords(amount: number): string {
   if (amount <= 0 || isNaN(amount)) return "Sıfır Türk Lirası";
@@ -378,6 +398,7 @@ export default function PriceQuoteView({
   const [customerSearchModalOpen, setCustomerSearchModalOpen] = useState<boolean>(false);
   const [customerModalSearch, setCustomerModalSearch] = useState<string>("");
   const [customerDropdownOpen, setCustomerDropdownOpen] = useState<boolean>(false);
+  const [customerHighlightIndex, setCustomerHighlightIndex] = useState<number>(-1);
 
   // Proposal persistence state (Supabase proposals & proposal_items)
   const [proposalNumber, setProposalNumber] = useState<string>("");
@@ -491,13 +512,17 @@ export default function PriceQuoteView({
 
   // Customer matching for active input autocomplete
   const matchingCustomers = useMemo(() => {
-    if (!customerDropdownOpen || !customerName.trim()) return [];
-    const q = normalizeForSearch(customerName);
+    if (!customerDropdownOpen) return [];
+    const raw = customerName.trim();
+    if (!raw) return customers.slice(0, 15);
+    const terms = normalizeForSearch(raw).split(/\s+/).filter(Boolean);
+    if (terms.length === 0) return customers.slice(0, 15);
     const matches: Customer[] = [];
     for (const c of customers) {
-      if (normalizeForSearch(c.name).includes(q)) {
+      const normName = normalizeForSearch(c.name);
+      if (terms.every((t) => normName.includes(t))) {
         matches.push(c);
-        if (matches.length >= 8) break;
+        if (matches.length >= 20) break;
       }
     }
     return matches;
@@ -507,9 +532,11 @@ export default function PriceQuoteView({
   const filteredModalCustomers = useMemo(() => {
     const q = normalizeForSearch(customerModalSearch);
     if (!q) return customers.slice(0, 100);
+    const terms = q.split(/\s+/).filter(Boolean);
     const matches: Customer[] = [];
     for (const c of customers) {
-      if (normalizeForSearch(c.name).includes(q)) {
+      const normName = normalizeForSearch(c.name);
+      if (terms.every((t) => normName.includes(t))) {
         matches.push(c);
         if (matches.length >= 100) break;
       }
@@ -521,6 +548,7 @@ export default function PriceQuoteView({
     setCustomerName(cust.name.toLocaleUpperCase("tr-TR"));
     setSelectedCustomerId(cust.id);
     setCustomerDropdownOpen(false);
+    setCustomerHighlightIndex(-1);
     setCustomerSearchModalOpen(false);
   };
 
@@ -1643,7 +1671,11 @@ export default function PriceQuoteView({
         </div>
 
         {/* 3. CUSTOMER META TABLE (ONLY CUSTOMER COMPANY NAME AND DATE AS REQUESTED!) */}
-        <div className="w-full mb-2 print:mb-1.5 overflow-x-auto no-scrollbar print:overflow-visible">
+        <div
+          className={`w-full mb-2 print:mb-1.5 no-scrollbar print:overflow-visible ${
+            customerDropdownOpen ? "overflow-visible relative z-30" : "overflow-x-auto"
+          }`}
+        >
           <table className="w-full border-collapse border-2 border-black text-xs font-semibold table-fixed min-w-[500px] print:min-w-0">
             <colgroup>
               <col style={{ width: "22%" }} />
@@ -1669,36 +1701,104 @@ export default function PriceQuoteView({
                       <textarea
                         rows={1}
                         value={customerName}
-                        onFocus={() => setCustomerDropdownOpen(true)}
+                        onFocus={() => {
+                          setCustomerDropdownOpen(true);
+                          setCustomerHighlightIndex(-1);
+                        }}
+                        onBlur={() =>
+                          setTimeout(() => {
+                            setCustomerDropdownOpen(false);
+                            setCustomerHighlightIndex(-1);
+                          }, 200)
+                        }
                         onChange={(e) => {
                           setCustomerName(e.target.value.toLocaleUpperCase("tr-TR"));
+                          setSelectedCustomerId(null);
                           setCustomerDropdownOpen(true);
+                          setCustomerHighlightIndex(-1);
                         }}
-                        placeholder="MÜŞTERİ FİRMA ADINI GİRİNİZ VEYA LİSTEDEN SEÇİNİZ..."
+                        onKeyDown={(e) => {
+                          if (!customerDropdownOpen && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+                            setCustomerDropdownOpen(true);
+                            return;
+                          }
+                          if (!customerDropdownOpen) return;
+                          if (e.key === "ArrowDown") {
+                            e.preventDefault();
+                            setCustomerHighlightIndex((prev) =>
+                              matchingCustomers.length === 0
+                                ? -1
+                                : (prev + 1) % matchingCustomers.length
+                            );
+                          } else if (e.key === "ArrowUp") {
+                            e.preventDefault();
+                            setCustomerHighlightIndex((prev) =>
+                              matchingCustomers.length === 0
+                                ? -1
+                                : prev <= 0
+                                  ? matchingCustomers.length - 1
+                                  : prev - 1
+                            );
+                          } else if (
+                            e.key === "Enter" &&
+                            customerHighlightIndex >= 0 &&
+                            matchingCustomers[customerHighlightIndex]
+                          ) {
+                            e.preventDefault();
+                            handleSelectCustomer(matchingCustomers[customerHighlightIndex]);
+                          } else if (e.key === "Escape") {
+                            setCustomerDropdownOpen(false);
+                            setCustomerHighlightIndex(-1);
+                          }
+                        }}
+                        placeholder="MÜŞTERİ FİRMA ADINI YAZARAK ARAYIN VEYA SEÇİN..."
                         className="w-full bg-transparent border-none focus:outline-none font-bold text-slate-900 placeholder:font-normal placeholder:text-slate-300 resize-none overflow-hidden leading-snug print:hidden uppercase"
                       />
                       {/* Customer Autocomplete Dropdown */}
-                      {customerDropdownOpen && matchingCustomers.length > 0 && (
-                        <div
-                          className="absolute left-0 top-full mt-1 w-full max-w-lg bg-white rounded-xl shadow-xl border border-slate-200 z-50 overflow-hidden divide-y divide-slate-100 no-print"
-                        >
-                          <div className="px-3 py-1.5 bg-slate-50 text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
+                      {customerDropdownOpen && (
+                        <div className="absolute left-0 top-full mt-1 w-full min-w-[280px] max-w-lg bg-white rounded-xl shadow-2xl border border-slate-200 z-50 overflow-hidden no-print">
+                          <div className="px-3 py-1.5 bg-slate-50 border-b border-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
                             <span>Kayıtlı Müşteriler</span>
-                            <span>{matchingCustomers.length} Eşleşme</span>
+                            <span>
+                              {isLoadingCustomers
+                                ? "Yükleniyor..."
+                                : `${matchingCustomers.length} Seçenek`}
+                            </span>
                           </div>
-                          {matchingCustomers.map((cust) => (
-                            <div
-                              key={cust.id}
-                              onMouseDown={(e) => {
-                                e.preventDefault();
-                                handleSelectCustomer(cust);
-                              }}
-                              className="px-3 py-2 text-xs font-semibold text-slate-800 hover:bg-blue-50 hover:text-blue-700 cursor-pointer flex items-center justify-between gap-2"
-                            >
-                              <span className="truncate">{cust.name}</span>
-                              <span className="text-[10px] text-slate-400 font-mono shrink-0">#{cust.id}</span>
-                            </div>
-                          ))}
+                          <div className="max-h-60 overflow-y-auto divide-y divide-slate-100">
+                            {isLoadingCustomers ? (
+                              <div className="px-3 py-3 text-xs text-slate-400 text-center">
+                                Müşteri listesi yükleniyor...
+                              </div>
+                            ) : matchingCustomers.length === 0 ? (
+                              <div className="px-3 py-3 text-xs text-slate-500 text-center">
+                                {customerName.trim()
+                                  ? "Kayıtlı müşterilerde eşleşme bulunamadı — yazdığınız ad ile devam edebilirsiniz."
+                                  : "Kayıtlı müşteri bulunamadı."}
+                              </div>
+                            ) : (
+                              matchingCustomers.map((cust, cIdx) => (
+                                <button
+                                  key={cust.id}
+                                  type="button"
+                                  onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    handleSelectCustomer(cust);
+                                  }}
+                                  className={`w-full px-3 py-2 text-xs font-semibold text-left flex items-center justify-between gap-2 transition-colors cursor-pointer ${
+                                    cIdx === customerHighlightIndex
+                                      ? "bg-blue-100 text-blue-800"
+                                      : "text-slate-800 hover:bg-blue-50 hover:text-blue-700"
+                                  }`}
+                                >
+                                  <span className="truncate">{cust.name}</span>
+                                  <span className="text-[10px] text-slate-400 font-mono shrink-0">
+                                    #{cust.id}
+                                  </span>
+                                </button>
+                              ))
+                            )}
+                          </div>
                         </div>
                       )}
                     </div>
@@ -1873,7 +1973,7 @@ export default function PriceQuoteView({
                                 <div className="font-semibold text-slate-900 group-hover:text-blue-700 truncate">
                                   {p.name}
                                 </div>
-                                <div className="text-[10px] text-slate-500 flex items-center gap-1.5">
+                                <div className="text-[10px] text-slate-500 flex items-center flex-wrap gap-1.5 mt-0.5">
                                   {p.code && (
                                     <span className="font-mono bg-slate-100 px-1 rounded text-slate-700">
                                       {p.code}
@@ -1881,6 +1981,7 @@ export default function PriceQuoteView({
                                   )}
                                   {p.category && <span>{p.category}</span>}
                                   <span className="font-medium text-blue-600">• {p.unit}</span>
+                                  {renderStockBadge(p.stockQuantity, p.unit)}
                                 </div>
                               </div>
                               <div className="shrink-0 text-right font-mono font-bold text-slate-900 group-hover:text-blue-700">
@@ -2275,7 +2376,7 @@ export default function PriceQuoteView({
                           <div className="font-semibold text-slate-900 text-xs truncate">
                             {p.name}
                           </div>
-                          <div className="text-[10px] text-slate-500 flex items-center gap-2">
+                          <div className="text-[10px] text-slate-500 flex items-center flex-wrap gap-2 mt-0.5">
                             {p.code && (
                               <span className="font-mono bg-slate-100 px-1 rounded text-slate-700">
                                 {p.code}
@@ -2283,6 +2384,7 @@ export default function PriceQuoteView({
                             )}
                             {p.category && <span>{p.category}</span>}
                             <span>Birim: {p.unit}</span>
+                            {renderStockBadge(p.stockQuantity, p.unit)}
                           </div>
                         </div>
                       </div>

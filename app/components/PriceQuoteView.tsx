@@ -215,13 +215,40 @@ function createEmptyRow(): QuoteItem {
   };
 }
 
+// Fixed VAT note constant
+const FIXED_VAT_NOTE = "Birim fiyatlara KDV dahil değildir.";
+
+// Default numbered condition items
+const DEFAULT_NOTE_ITEMS: string[] = [
+  "Fiyatlarımız teklif tarihinden itibaren 15 gün süreyle geçerlidir.",
+  "Teslimat şantiye/depo teslimidir.",
+  "Ödeme vadesi teslimat sonrası 30 gündür.",
+];
+
+function parseNotesToItems(raw: string | undefined | null): string[] {
+  if (!raw || !raw.trim()) return [...DEFAULT_NOTE_ITEMS];
+  const lines = raw
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^\s*\d+[\.\)\-]\s*/, "").trim())
+    .filter((line) => line.length > 0);
+  return lines.length > 0 ? lines : [""];
+}
+
+function formatItemsToNumberedNotes(items: string[]): string {
+  return items
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0)
+    .map((item, idx) => `${idx + 1}. ${item}`)
+    .join("\n");
+}
+
 // Sample initial rows (5 items)
 const SAMPLE_ITEMS: QuoteItem[] = [
-  { id: "1", materialName: "Q12 Nervürlü İnşaat Demiri", quantity: 5, unit: "Ton", unitPrice: 28500, total: 142500 },
-  { id: "2", materialName: "C30/37 Hazır Beton", quantity: 45, unit: "m³", unitPrice: 2450, total: 110250 },
-  { id: "3", materialName: "19'luk Tuğla (Paletli)", quantity: 1200, unit: "Adet", unitPrice: 14.5, total: 17400 },
-  { id: "4", materialName: "Torbalı Çimento (50 Kg)", quantity: 60, unit: "Paket", unitPrice: 195, total: 11700 },
-  { id: "5", materialName: "Kaba Sıva Kumu", quantity: 18, unit: "Ton", unitPrice: 480, total: 8640 },
+  { id: "1", materialName: "Q12 NERVÜRLÜ İNŞAAT DEMİRİ", quantity: 5, unit: "Ton", unitPrice: 28500, total: 142500 },
+  { id: "2", materialName: "C30/37 HAZIR BETON", quantity: 45, unit: "m³", unitPrice: 2450, total: 110250 },
+  { id: "3", materialName: "19'LUK TUĞLA (PALETLİ)", quantity: 1200, unit: "Adet", unitPrice: 14.5, total: 17400 },
+  { id: "4", materialName: "TORBALI ÇİMENTO (50 KG)", quantity: 60, unit: "Paket", unitPrice: 195, total: 11700 },
+  { id: "5", materialName: "KABA SIVA KUMU", quantity: 18, unit: "Ton", unitPrice: 480, total: 8640 },
 ];
 
 interface PriceQuoteViewProps {
@@ -270,10 +297,38 @@ export default function PriceQuoteView({
   const { user, profile, isViewer } = useAuth();
 
   // Additional settings
-  const [vatNote, setVatNote] = useState<string>("Birim fiyatlara KDV dahil değildir.");
-  const [notes, setNotes] = useState<string>(
-    "1. Fiyatlarımız teklif tarihinden itibaren 15 gün süreyle geçerlidir.\n2. Teslimat şantiye/depo teslimidir.\n3. Ödeme vadesi teslimat sonrası 30 gündür."
-  );
+  const vatNote = FIXED_VAT_NOTE;
+  const [noteItems, setNoteItems] = useState<string[]>([...DEFAULT_NOTE_ITEMS]);
+  const notes = useMemo(() => formatItemsToNumberedNotes(noteItems), [noteItems]);
+
+  const handleUpdateNoteItem = (index: number, value: string) => {
+    setNoteItems((prev) => {
+      const updated = [...prev];
+      updated[index] = value;
+      return updated;
+    });
+  };
+
+  const handleAddNoteItem = (afterIndex?: number) => {
+    setNoteItems((prev) => {
+      const updated = [...prev];
+      if (afterIndex !== undefined && afterIndex >= 0 && afterIndex < updated.length) {
+        updated.splice(afterIndex + 1, 0, "");
+      } else {
+        updated.push("");
+      }
+      return updated;
+    });
+  };
+
+  const handleRemoveNoteItem = (index: number) => {
+    setNoteItems((prev) => {
+      if (prev.length <= 1) {
+        return [""];
+      }
+      return prev.filter((_, i) => i !== index);
+    });
+  };
   const [preparedBy, setPreparedBy] = useState<string>(
     profile?.full_name || profile?.user_name || "Satış & Pazarlama Departmanı"
   );
@@ -369,11 +424,8 @@ export default function PriceQuoteView({
       if (editingProposal.metadata?.vatRate !== undefined) {
         setVatRate(editingProposal.metadata.vatRate);
       }
-      if (editingProposal.metadata?.vatNote !== undefined) {
-        setVatNote(editingProposal.metadata.vatNote);
-      }
       if (editingProposal.metadata?.notes !== undefined) {
-        setNotes(editingProposal.metadata.notes);
+        setNoteItems(parseNotesToItems(editingProposal.metadata.notes));
       }
       if (editingProposal.metadata?.preparedBy !== undefined) {
         setPreparedBy(editingProposal.metadata.preparedBy);
@@ -382,10 +434,11 @@ export default function PriceQuoteView({
       if (Array.isArray(editingProposal.items) && editingProposal.items.length > 0) {
         const loadedRows: QuoteItem[] = editingProposal.items.map((it, idx) => {
           const custom = editingProposal.metadata?.customItems?.[idx];
+          const rawMaterialName = it.product?.name || custom?.materialName || "";
           return {
             id: String(it.id || idx + 1),
             productId: it.product_id || undefined,
-            materialName: it.product?.name || custom?.materialName || "",
+            materialName: rawMaterialName.toLocaleUpperCase("tr-TR"),
             quantity: it.quantity,
             unit: it.product?.unit_of_measure || custom?.unit || "Adet",
             unitPrice: it.unit_price,
@@ -408,13 +461,14 @@ export default function PriceQuoteView({
         const item = JSON.parse(prefillRaw);
         if (item && item.materialName) {
           sessionStorage.removeItem("easy_accounting_quote_prefill");
+          const upperMaterial = String(item.materialName).toLocaleUpperCase("tr-TR");
           setRows((prev) => {
             const emptyIdx = prev.findIndex((r) => !r.materialName.trim());
             const qty = item.quantity || 1;
             const price = item.unitPrice || 0;
             const newRow: QuoteItem = {
               id: Math.random().toString(36).substring(2, 9),
-              materialName: item.materialName,
+              materialName: upperMaterial,
               unit: item.unit || "Adet",
               unitPrice: price,
               quantity: qty,
@@ -427,7 +481,7 @@ export default function PriceQuoteView({
             }
             return [...prev, newRow];
           });
-          setToastMsg(`"${item.materialName}" kıyaslamadan teklif formuna aktarıldı!`);
+          setToastMsg(`"${upperMaterial}" kıyaslamadan teklif formuna aktarıldı!`);
           setTimeout(() => setToastMsg(null), 3500);
         }
       }
@@ -534,7 +588,12 @@ export default function PriceQuoteView({
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed.rows && Array.isArray(parsed.rows) && parsed.rows.length > 0) {
-          let initialRows = parsed.rows;
+          let initialRows = parsed.rows.map((r: any) => ({
+            ...r,
+            materialName: r.materialName
+              ? String(r.materialName).toLocaleUpperCase("tr-TR")
+              : "",
+          }));
           // If previous saved list had 10 rows and trailing rows are empty, reduce to 5
           if (initialRows.length === 10) {
             const hasDataPast5 = initialRows.slice(5).some(
@@ -547,11 +606,14 @@ export default function PriceQuoteView({
           setRows(initialRows);
         }
         if (parsed.quoteDate) setQuoteDate(parsed.quoteDate);
-        if (parsed.vatNote !== undefined) setVatNote(parsed.vatNote);
         if (parsed.customerName !== undefined)
           setCustomerName(parsed.customerName.toLocaleUpperCase("tr-TR"));
         if (parsed.formTitle) setFormTitle(parsed.formTitle);
-        if (parsed.notes) setNotes(parsed.notes);
+        if (Array.isArray(parsed.noteItems) && parsed.noteItems.length > 0) {
+          setNoteItems(parsed.noteItems);
+        } else if (parsed.notes) {
+          setNoteItems(parseNotesToItems(parsed.notes));
+        }
         if (parsed.preparedBy) setPreparedBy(parsed.preparedBy);
         if (parsed.vatRate !== undefined) setVatRate(parsed.vatRate);
         if (parsed.companyInfo) {
@@ -590,10 +652,11 @@ export default function PriceQuoteView({
       const data = {
         rows,
         quoteDate,
-        vatNote,
+        vatNote: FIXED_VAT_NOTE,
         customerName,
         formTitle,
         notes,
+        noteItems,
         preparedBy,
         vatRate,
         companyInfo,
@@ -602,7 +665,7 @@ export default function PriceQuoteView({
     } catch {
       // ignore
     }
-  }, [rows, quoteDate, vatNote, customerName, formTitle, notes, preparedBy, vatRate, companyInfo]);
+  }, [rows, quoteDate, vatNote, customerName, formTitle, notes, noteItems, preparedBy, vatRate, companyInfo]);
 
   const showToast = (msg: string) => {
     setToastMsg(msg);
@@ -615,9 +678,14 @@ export default function PriceQuoteView({
     field: keyof QuoteItem,
     value: any
   ) => {
+    const normalizedValue =
+      field === "materialName" && typeof value === "string"
+        ? value.toLocaleUpperCase("tr-TR")
+        : value;
+
     setRows((prev) => {
       const updated = [...prev];
-      const row = { ...updated[index], [field]: value };
+      const row = { ...updated[index], [field]: normalizedValue };
 
       // Auto calculate total
       const qty = typeof row.quantity === "number" ? row.quantity : parseFloat(String(row.quantity)) || 0;
@@ -679,11 +747,12 @@ export default function PriceQuoteView({
 
   // Select single product from autocomplete or catalog
   const handleSelectProduct = (index: number, product: ProductItem) => {
+    const upperProductName = (product.name || "").toLocaleUpperCase("tr-TR");
     setRows((prev) => {
       const updated = [...prev];
       const row = { ...updated[index] };
       row.productId = product.id;
-      row.materialName = product.name;
+      row.materialName = upperProductName;
       row.unit = product.unit || "Adet";
       row.unitPrice = product.unitPrice;
       const qty = typeof row.quantity === "number" ? row.quantity : parseFloat(String(row.quantity)) || 0;
@@ -692,7 +761,7 @@ export default function PriceQuoteView({
       return updated;
     });
     setActiveAutocompleteRow(null);
-    showToast(`"${product.name}" teklife aktarıldı (${formatCurrency(product.unitPrice)})`);
+    showToast(`"${upperProductName}" teklife aktarıldı (${formatCurrency(product.unitPrice)})`);
   };
 
   // Add multiple products from catalog modal
@@ -710,12 +779,13 @@ export default function PriceQuoteView({
       });
 
       items.forEach((item) => {
+        const upperItemName = (item.name || "").toLocaleUpperCase("tr-TR");
         if (emptyRowIndices.length > 0) {
           const targetIdx = emptyRowIndices.shift()!;
           updated[targetIdx] = {
             ...updated[targetIdx],
             productId: item.id,
-            materialName: item.name,
+            materialName: upperItemName,
             unit: item.unit || "Adet",
             unitPrice: item.unitPrice,
             total: 0,
@@ -725,7 +795,7 @@ export default function PriceQuoteView({
           updated.push({
             id: Math.random().toString(36).substring(2, 9),
             productId: item.id,
-            materialName: item.name,
+            materialName: upperItemName,
             quantity: "",
             unit: item.unit || "Adet",
             unitPrice: item.unitPrice,
@@ -752,6 +822,7 @@ export default function PriceQuoteView({
       setProposalNumber("");
       setProposalStatus("draft");
       setQuoteDate(getTodayStr());
+      setNoteItems([...DEFAULT_NOTE_ITEMS]);
       localStorage.removeItem("fiyat_teklifi_data_v2");
       if (onClearEditingProposal) onClearEditingProposal();
       showToast("Teklif formu sıfırlandı.");
@@ -1676,18 +1747,9 @@ export default function PriceQuoteView({
           </table>
         </div>
 
-        {/* 4. KDV DAHİL DEĞİLDİR NOTE */}
-        <div className="w-full py-1 px-2.5 mb-2 border border-slate-300 rounded text-xs italic text-slate-800 bg-slate-50/50 print:bg-transparent print:border-none print:px-0 print:py-0 print:mb-1">
-          <input
-            type="text"
-            value={vatNote}
-            onChange={(e) => setVatNote(e.target.value)}
-            className="w-full bg-transparent border-none focus:outline-none italic text-slate-800 print:hidden"
-            placeholder="Birim fiyatlara KDV dahil değildir."
-          />
-          <div className="hidden print:block italic text-slate-800 text-xs">
-            {vatNote}
-          </div>
+        {/* 4. KDV DAHİL DEĞİLDİR NOTE (SABİT) */}
+        <div className="w-full py-1 px-2.5 mb-2 border border-slate-300 rounded text-xs italic font-medium text-slate-800 bg-slate-50/50 select-none print:bg-transparent print:border-none print:px-0 print:py-0 print:mb-1">
+          {FIXED_VAT_NOTE}
         </div>
 
         {/* 5. MAIN QUOTATION TABLE (EXACT MATCH & FIXED COLUMNS FOR ZERO PRINT DRIFT) */}
@@ -1741,13 +1803,17 @@ export default function PriceQuoteView({
                         type="text"
                         value={row.materialName}
                         onChange={(e) => {
-                          handleUpdateRow(idx, "materialName", e.target.value);
+                          handleUpdateRow(
+                            idx,
+                            "materialName",
+                            e.target.value.toLocaleUpperCase("tr-TR")
+                          );
                           setActiveAutocompleteRow(idx);
                         }}
                         onFocus={() => setActiveAutocompleteRow(idx)}
                         onBlur={() => setTimeout(() => setActiveAutocompleteRow(null), 250)}
-                        placeholder={idx === 0 ? "Malzeme adını yazın (Katalogdan otomatik tamamlanır)..." : ""}
-                        className="w-full bg-transparent border-none focus:outline-none focus:bg-blue-50/50 rounded px-1 py-0.5 font-medium text-slate-900 placeholder:text-slate-300 print:hidden text-xs pr-5"
+                        placeholder={idx === 0 ? "MALZEME ADINI YAZIN (KATALOGDAN OTOMATİK TAMAMLANIR)..." : ""}
+                        className="w-full bg-transparent border-none focus:outline-none focus:bg-blue-50/50 rounded px-1 py-0.5 font-medium text-slate-900 placeholder:text-slate-300 print:hidden text-xs pr-5 uppercase"
                       />
                       {catalogProducts.length > 0 && (
                         <button
@@ -1764,7 +1830,7 @@ export default function PriceQuoteView({
                         </button>
                       )}
                     </div>
-                    <div className="hidden print:block font-medium text-slate-950 text-xs truncate">
+                    <div className="hidden print:block font-medium text-slate-950 text-xs truncate uppercase">
                       {row.materialName || "\u00A0"}
                     </div>
 
@@ -1920,17 +1986,79 @@ export default function PriceQuoteView({
                   rowSpan={3}
                   className="border border-black p-2.5 align-top bg-slate-50/20 print:bg-transparent"
                 >
-                  <div className="flex flex-col gap-1 text-xs text-slate-600">
-                    <div className="font-semibold text-slate-800">Teklif Açıklaması & Koşullar:</div>
-                    <textarea
-                      value={notes}
-                      onChange={(e) => setNotes(e.target.value)}
-                      rows={3}
-                      className="w-full bg-transparent border-none focus:outline-none resize-none text-[11px] text-slate-700 leading-snug font-sans print:hidden"
-                      placeholder="Teklif şartları, teslim süresi, garanti vb..."
-                    />
-                    <div className="hidden print:block text-[11px] text-slate-700 whitespace-pre-line leading-tight">
-                      {notes}
+                  <div className="flex flex-col gap-1.5 text-xs text-slate-600">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="font-semibold text-slate-800">
+                        Teklif Açıklaması & Koşullar:
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleAddNoteItem()}
+                        className="no-print inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-semibold text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-md transition-colors"
+                        title="Yeni koşul maddesi ekle"
+                      >
+                        <Plus className="w-3 h-3" />
+                        <span>Madde Ekle</span>
+                      </button>
+                    </div>
+
+                    {/* Interactive numbered items list (Screen) */}
+                    <div className="flex flex-col gap-1 print:hidden">
+                      {noteItems.map((itemText, nIdx) => (
+                        <div
+                          key={nIdx}
+                          className="flex items-center gap-1.5 group/note"
+                        >
+                          <span className="font-bold text-slate-700 text-[11px] w-4 text-right shrink-0 select-none">
+                            {nIdx + 1}.
+                          </span>
+                          <input
+                            type="text"
+                            value={itemText}
+                            onChange={(e) =>
+                              handleUpdateNoteItem(nIdx, e.target.value)
+                            }
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                handleAddNoteItem(nIdx);
+                              } else if (
+                                e.key === "Backspace" &&
+                                itemText === "" &&
+                                noteItems.length > 1
+                              ) {
+                                e.preventDefault();
+                                handleRemoveNoteItem(nIdx);
+                              }
+                            }}
+                            placeholder={`${nIdx + 1}. madde açıklamasını yazın...`}
+                            className="flex-1 bg-white/70 focus:bg-white border border-transparent hover:border-slate-200 focus:border-blue-400 rounded px-1.5 py-0.5 focus:outline-none text-[11px] text-slate-700 leading-snug font-sans transition-colors"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveNoteItem(nIdx)}
+                            className="p-0.5 text-slate-300 hover:text-rose-600 rounded hover:bg-rose-50 opacity-0 group-hover/note:opacity-100 focus:opacity-100 transition-opacity shrink-0"
+                            title="Maddeyi sil"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Numbered items list (Print / PDF) */}
+                    <div className="hidden print:flex flex-col gap-0.5 text-[11px] text-slate-700 leading-tight">
+                      {noteItems
+                        .map((item) => item.trim())
+                        .filter((item) => item.length > 0)
+                        .map((item, nIdx) => (
+                          <div key={nIdx} className="flex items-start gap-1">
+                            <span className="font-semibold text-slate-800 shrink-0">
+                              {nIdx + 1}.
+                            </span>
+                            <span>{item}</span>
+                          </div>
+                        ))}
                     </div>
                     {grandTotal > 0 && (
                       <div className="mt-1 pt-1.5 border-t border-slate-200 text-slate-800 font-medium text-[11px]">

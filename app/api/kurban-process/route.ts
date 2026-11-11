@@ -20,6 +20,7 @@ import {
   getActiveOrganizationId,
   getActiveLocationId,
   ensureDatabaseReady,
+  cleanupLegacyMockAnimals,
   safeDeleteLocationFromDb,
   loadKurbanPersistentState,
   saveKurbanPersistentState,
@@ -216,14 +217,15 @@ async function resolveAuthoritativeState(supabase: any): Promise<{
   // 1. Load persistent state from Supabase `proposals` table (or /tmp file fallback)
   const persisted = await loadKurbanPersistentState(supabase);
 
-  let totalAnimalCount = inMemoryAnimalsCount;
+  let totalAnimalCount = Array.isArray(persisted?.animals) ? persisted.animals.length : 0;
   if (supabase) {
+    await cleanupLegacyMockAnimals(supabase);
     try {
-      const { count } = await supabase
+      const { count, error } = await supabase
         .from("kurban_animals")
         .select("id", { count: "exact", head: true });
-      if (typeof count === "number" && count > 0) {
-        totalAnimalCount = count;
+      if (!error && typeof count === "number") {
+        totalAnimalCount = count > 0 ? count : totalAnimalCount;
       }
     } catch {
       // ignore
@@ -566,6 +568,7 @@ export async function POST(request: Request) {
 
       if (supabase) {
         try {
+          await supabase.from("kurban_animals").delete().neq("id", "00000000-0000-0000-0000-000000000000");
           await supabase.from("kurban_parties").delete().neq("id", "00000000-0000-0000-0000-000000000000");
           for (const loc of state.cuttingLocations) {
             await safeDeleteLocationFromDb(supabase, loc.id);
@@ -584,6 +587,7 @@ export async function POST(request: Request) {
         deletedIds: Array.from(new Set(allDeletedIds)),
         parties: [],
         cuttingLocations: [],
+        animals: [],
         shipments: [],
         slaughterBatches: [],
         storageRecords: [],

@@ -82,6 +82,7 @@ import {
   createAnimalApi,
   updateAnimalApi,
   deleteAnimalApi,
+  clearAllAnimalsApi,
   bulkImportAnimalsApi,
   seedDemoDataToSupabaseApi,
   fetchReportsApi,
@@ -165,6 +166,7 @@ export default function KurbanProcessModuleView() {
   const [animalModalOpen, setAnimalModalOpen] = useState<boolean>(false);
   const [editingAnimal, setEditingAnimal] = useState<Partial<KurbanAnimal> | null>(null);
   const [excelImportModalOpen, setExcelImportModalOpen] = useState<boolean>(false);
+  const [excelDefaultLocationId, setExcelDefaultLocationId] = useState<string>("");
 
   // =========================================================================
   // MANUEL EKLEME & DÜZENLEME MODALLARI (PARTIES, LOCATIONS, SHIPMENTS, STORAGE, DELIVERIES)
@@ -923,7 +925,35 @@ export default function KurbanProcessModuleView() {
     }
   };
 
-  // Handle Excel Bulk Import for 300-400 Animals
+  // Handle Clear All Animals
+  const handleClearAllAnimals = async () => {
+    if (
+      !confirm(
+        "Mevcut tüm hayvan kayıtlarını kalıcı olarak temizlemek istediğinize emin misiniz?"
+      )
+    ) {
+      return;
+    }
+    setIsSaving(true);
+    try {
+      const res = await clearAllAnimalsApi();
+      if (res.success) {
+        setAnimals([]);
+        setTotalAnimalCount(0);
+        showToast("Tüm hayvan kayıtları kalıcı olarak temizlendi.");
+        await loadAnimals(1, animalPageSize, animalSearch, animalStatusFilter, selectedLocationId);
+        await loadOverview(selectedLocationId);
+      } else {
+        showToast(res.error || "Hayvan kayıtları temizlenemedi.");
+      }
+    } catch {
+      showToast("Temizleme sırasında hata oluştu.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Handle Excel Bulk Import and Save to Supabase
   const handleExcelImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -931,62 +961,183 @@ export default function KurbanProcessModuleView() {
     const reader = new FileReader();
     reader.onload = async (evt) => {
       try {
-        const bstr = evt.target?.result;
-        const wb = XLSX.read(bstr, { type: "binary" });
+        const buffer = evt.target?.result;
+        if (!buffer) return;
+        const wb = XLSX.read(new Uint8Array(buffer as ArrayBuffer), { type: "array" });
         const wsname = wb.SheetNames[0];
         const ws = wb.Sheets[wsname];
-        const data: any[] = XLSX.utils.sheet_to_json(ws);
+        const data: Record<string, any>[] = XLSX.utils.sheet_to_json(ws, { defval: "" });
 
         if (!data || data.length === 0) {
           alert("Excel dosyasında veri satırı bulunamadı.");
           return;
         }
 
-        const parsedAnimals: Partial<KurbanAnimal>[] = data.map((row, idx) => {
-          const earTag = String(row["Küpe Numarası"] || row["Küpe No"] || `TR34-${Date.now()}-${idx}`).trim();
-          const locCode = String(row["Kesim Yeri Kodu"] || row["Kesim Yeri"] || "").trim();
-          const locId =
-            locCode.includes("KSM-02") || locCode.includes("Kartepe")
-              ? SEED_LOC_KOCAELI_ID
-              : SEED_LOC_TUZLA_ID;
+        const getField = (row: Record<string, any>, candidates: string[]): any => {
+          for (const key of Object.keys(row)) {
+            const normKey = key
+              .toLocaleLowerCase("tr-TR")
+              .replace(/\s+/g, " ")
+              .trim();
+            for (const cand of candidates) {
+              const normCand = cand.toLocaleLowerCase("tr-TR").trim();
+              if (normKey === normCand || normKey.includes(normCand)) {
+                const val = row[key];
+                if (val !== undefined && val !== null && String(val).trim() !== "") {
+                  return val;
+                }
+              }
+            }
+          }
+          return "";
+        };
 
-          return {
-            earTagNo: earTag,
-            cuttingLocationId: locId,
-            animalType: "buyukbas_tosun",
-            animalTypeLabel: String(row["Hayvan Cinsi"] || "Büyükbaş Tosun"),
-            breed: String(row["Irk"] || "Simental"),
-            gender: String(row["Cinsiyet"]).toLowerCase().includes("dişi") ? "female" : "male",
-            ageMonths: Number(row["Yaş (Ay)"] || row["Yaş"]) || 24,
-            passportNo: String(row["Pasaport No"] || `PAS-${earTag}`),
-            farmRegNo: String(row["İşletme Kayıt No"] || "TR-36-004128"),
-            farmName: String(row["Kayıtlı İşletme"] || "Serhat Besi İşletmesi"),
-            healthDocNo: String(row["Sağlık Rapor No"] || `VET-2026-${idx}`),
-            liveWeightKg: Number(row["Canlı Kilo (Kg)"] || row["Canlı Kilo"]) || 650,
-            carcassWeightKg: Number(row["Karkas Kilo (Kg)"] || row["Karkas Kilo"]) || 365,
-            status: "purchased" as AnimalStatus,
-            notes: String(row["Notlar"] || "Excel İçe Aktarım"),
-          };
-        });
+        const parseNum = (val: any, fallback = 0): number => {
+          if (typeof val === "number" && !Number.isNaN(val)) return val;
+          const str = String(val || "")
+            .replace(/[^\d.,-]/g, "")
+            .replace(",", ".");
+          const num = parseFloat(str);
+          return Number.isFinite(num) ? num : fallback;
+        };
+
+        const defaultSupplierName =
+          parties.find((p) => p.partyType === "supplier_seller")?.name || "Besi İşletmesi";
+        const fallbackLocId =
+          excelDefaultLocationId ||
+          (selectedLocationId !== "all" ? selectedLocationId : "") ||
+          cuttingLocations[0]?.id ||
+          "";
+
+        const parsedAnimals: Partial<KurbanAnimal>[] = data
+          .map((row, idx) => {
+            const rawTag = getField(row, [
+              "küpe numarası",
+              "küpe no",
+              "kupe no",
+              "küpe",
+              "kupe",
+              "ear tag",
+              "tag",
+            ]);
+            const firstColVal = Object.values(row)[0];
+            const earTag = String(
+              rawTag || firstColVal || `TR34-${Date.now().toString().slice(-5)}-${idx + 1}`
+            ).trim();
+
+            const rawLoc = String(
+              getField(row, ["kesim yeri kodu", "kesim yeri", "kesimhane", "mezbaha"])
+            ).trim();
+
+            let resolvedLocId = fallbackLocId;
+            if (rawLoc && cuttingLocations.length > 0) {
+              const normRawLoc = rawLoc.toLocaleLowerCase("tr-TR");
+              const matchedLoc = cuttingLocations.find(
+                (l) =>
+                  l.id === rawLoc ||
+                  (l.locationCode && l.locationCode.toLocaleLowerCase("tr-TR") === normRawLoc) ||
+                  l.name.toLocaleLowerCase("tr-TR").includes(normRawLoc) ||
+                  (l.city && normRawLoc.includes(l.city.toLocaleLowerCase("tr-TR")))
+              );
+              if (matchedLoc) {
+                resolvedLocId = matchedLoc.id;
+              }
+            }
+
+            const rawGender = String(getField(row, ["cinsiyet", "gender"])).toLocaleLowerCase(
+              "tr-TR"
+            );
+            const rawStatus = String(getField(row, ["durum", "statü", "status"])).toLocaleLowerCase(
+              "tr-TR"
+            );
+            let status: AnimalStatus = "purchased";
+            if (rawStatus.includes("teslim") || rawStatus === "delivered") {
+              status = "delivered";
+            } else if (rawStatus.includes("depo") || rawStatus === "in_storage") {
+              status = "in_storage";
+            } else if (rawStatus.includes("kesil") || rawStatus === "slaughtered") {
+              status = "slaughtered";
+            } else if (rawStatus.includes("sevk") || rawStatus.includes("yol")) {
+              status = "in_transit";
+            } else if (rawStatus.includes("padok") || rawStatus.includes("mezbaha")) {
+              status = "arrived_at_slaughterhouse";
+            }
+
+            const liveW = parseNum(
+              getField(row, ["canlı kilo", "canli kilo", "canlı ağırlık", "canlı (kg)", "canlı"]),
+              650
+            );
+            const carcassW = parseNum(
+              getField(row, [
+                "karkas kilo",
+                "karkas ağırlık",
+                "karkas (kg)",
+                "karkas",
+                "net et",
+              ]),
+              Math.round(liveW * 0.56 * 10) / 10
+            );
+
+            return {
+              earTagNo: earTag,
+              cuttingLocationId: resolvedLocId || undefined,
+              animalType: "buyukbas_tosun",
+              animalTypeLabel: String(
+                getField(row, ["hayvan cinsi", "tür", "cins"]) || "Büyükbaş Tosun"
+              ),
+              breed: String(getField(row, ["ırk", "irk", "breed"]) || "Simental"),
+              gender: (rawGender.includes("dişi") || rawGender.includes("disi")
+                ? "female"
+                : "male") as "male" | "female",
+              ageMonths: parseNum(getField(row, ["yaş (ay)", "yaş", "yas", "ay"]), 24),
+              passportNo: String(
+                getField(row, ["pasaport no", "pasaport"]) || `PAS-${earTag}`
+              ),
+              farmRegNo: String(
+                getField(row, ["işletme kayıt no", "işletme no", "isletme"]) || "TR-36-004128"
+              ),
+              farmName: String(
+                getField(row, ["kayıtlı işletme", "çiftlik", "besici", "satıcı"]) ||
+                  defaultSupplierName
+              ),
+              healthDocNo: String(
+                getField(row, ["sağlık rapor no", "veteriner rapor", "sağlık raporu"]) ||
+                  `VET-2026-${idx + 1}`
+              ),
+              liveWeightKg: liveW,
+              carcassWeightKg: carcassW,
+              status,
+              notes: String(getField(row, ["notlar", "açıklama", "not"]) || "Excel İçe Aktarım"),
+            };
+          })
+          .filter((a) => Boolean(a.earTagNo));
 
         setIsSaving(true);
-        showToast(`${parsedAnimals.length} adet hayvan sisteme aktarılıyor...`);
+        showToast(`${parsedAnimals.length} adet hayvan Supabase veritabanına kaydediliyor...`);
         const res = await bulkImportAnimalsApi(parsedAnimals);
         setIsSaving(false);
 
         if (res.success) {
-          showToast(`Tebrikler! ${res.count || parsedAnimals.length} adet hayvan aktarıldı.`);
+          showToast(
+            `Tebrikler! ${res.count || parsedAnimals.length} adet hayvan Supabase'e kaydedildi.`
+          );
           setExcelImportModalOpen(false);
-          await loadAnimals();
+          setAnimalPage(1);
+          await loadAnimals(1, animalPageSize, animalSearch, animalStatusFilter, selectedLocationId);
           await loadOverview(selectedLocationId);
         } else {
           alert("İçe aktarma hatası: " + res.error);
         }
       } catch (err: any) {
+        setIsSaving(false);
         alert("Excel dosyası okunamadı: " + err?.message);
+      } finally {
+        if (excelFileRef.current) {
+          excelFileRef.current.value = "";
+        }
       }
     };
-    reader.readAsBinaryString(file);
+    reader.readAsArrayBuffer(file);
   };
 
   // Helper to insert or wrap Markdown syntax at cursor selection in the section editor textarea
@@ -2009,11 +2160,18 @@ export default function KurbanProcessModuleView() {
               </button>
 
               <button
-                onClick={() => setExcelImportModalOpen(true)}
+                onClick={() => {
+                  setExcelDefaultLocationId(
+                    selectedLocationId !== "all"
+                      ? selectedLocationId
+                      : cuttingLocations[0]?.id || ""
+                  );
+                  setExcelImportModalOpen(true);
+                }}
                 className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs transition-all shadow-xs"
               >
                 <Upload className="w-3.5 h-3.5" />
-                <span>Excel'den Toplu Yükle (350 Hayvan)</span>
+                <span>Excel&apos;den Toplu Yükle (Supabase)</span>
               </button>
 
               <button
@@ -2023,6 +2181,17 @@ export default function KurbanProcessModuleView() {
                 <FileDown className="w-3.5 h-3.5 text-emerald-600" />
                 <span>Excel İndir</span>
               </button>
+
+              {totalAnimalCount > 0 && (
+                <button
+                  onClick={handleClearAllAnimals}
+                  disabled={isSaving}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-950/70 text-rose-600 dark:text-rose-400 font-bold text-xs transition-colors border border-rose-200 dark:border-rose-800"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Tüm Hayvanları Temizle</span>
+                </button>
+              )}
             </div>
           </div>
 
@@ -3645,8 +3814,26 @@ export default function KurbanProcessModuleView() {
             </div>
 
             <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-              Excel dosyanızda <strong>Küpe Numarası</strong>, <strong>Kesim Yeri Kodu</strong> (KSM-01 veya KSM-02), <strong>Irk</strong>, <strong>Canlı Kilo</strong> ve <strong>Karkas Kilo</strong> sütunlarını içeren dosyanızı yükleyerek yüzlerce hayvanı tek seferde aktarabilirsiniz.
+              Excel dosyanızda <strong>Küpe Numarası</strong>, <strong>Kesim Yeri</strong>, <strong>Irk</strong>, <strong>Canlı Kilo</strong> ve <strong>Karkas Kilo</strong> sütunlarını içeren dosyanızı yükleyerek tüm hayvan kayıtlarını doğrudan <strong>Supabase</strong> veritabanına kaydedebilirsiniz.
             </p>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                Varsayılan Kesim Yeri / Mezbaha (Excel&apos;de belirtilmeyen satırlar için)
+              </label>
+              <select
+                value={excelDefaultLocationId}
+                onChange={(e) => setExcelDefaultLocationId(e.target.value)}
+                className="w-full text-xs p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-semibold"
+              >
+                <option value="">Otomatik Eşleştir / Kesim Yeri Seçiniz...</option>
+                {cuttingLocations.map((loc) => (
+                  <option key={loc.id} value={loc.id}>
+                    {loc.name} ({loc.locationCode || loc.city})
+                  </option>
+                ))}
+              </select>
+            </div>
 
             <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
               <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">

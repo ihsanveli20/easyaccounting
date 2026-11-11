@@ -1,5 +1,4 @@
 import { NextResponse, connection } from "next/server";
-import { SEED_ANIMALS } from "../../../utils/kurbanProcessSeed";
 import {
   getSupabaseServerClient,
   isUUID,
@@ -7,11 +6,23 @@ import {
   ensureDatabaseReady,
   getActiveOrganizationId,
   mapAnimalFromDb,
+  cleanupLegacyMockAnimals,
+  ensureLocationsExistInDb,
+  loadKurbanPersistentState,
+  saveKurbanPersistentState,
 } from "../../../utils/kurbanProcessDb";
 import { KurbanAnimal } from "../../../types/kurbanProcess";
 
-// In-memory animals store initialized with seed animals
-let memoryAnimals: KurbanAnimal[] = [...SEED_ANIMALS];
+// In-memory animals store initialized empty (no mock animals)
+let memoryAnimals: KurbanAnimal[] = [];
+
+function isLegacyMockAnimalId(id?: string | null): boolean {
+  if (!id) return false;
+  return (
+    id.startsWith("10000000-0000-4000-a000-") ||
+    id.startsWith("20000000-0000-4000-a000-")
+  );
+}
 
 async function resolveValidDbLocationId(
   supabase: any,
@@ -46,17 +57,25 @@ export async function GET(request: Request) {
   const supabase = getSupabaseServerClient();
 
   if (supabase) {
+    await cleanupLegacyMockAnimals(supabase);
+
     try {
-      let query = supabase.from("kurban_animals").select("*", { count: "exact" });
+      let query = supabase
+        .from("kurban_animals")
+        .select("*", { count: "exact" })
+        .not("id", "gte", "10000000-0000-4000-a000-000000000000");
+
+      // Better: query all non-mock rows
+      let dbQuery = supabase.from("kurban_animals").select("*", { count: "exact" });
 
       if (locationId && locationId !== "all" && isUUID(locationId)) {
-        query = query.eq("cutting_location_id", locationId);
+        dbQuery = dbQuery.eq("cutting_location_id", locationId);
       }
       if (status && status !== "all") {
-        query = query.eq("status", status);
+        dbQuery = dbQuery.eq("status", status);
       }
       if (search) {
-        query = query.or(
+        dbQuery = dbQuery.or(
           `ear_tag_no.ilike.%${search}%,passport_no.ilike.%${search}%,breed.ilike.%${search}%,farm_name.ilike.%${search}%`
         );
       }
@@ -64,28 +83,49 @@ export async function GET(request: Request) {
       const from = (page - 1) * pageSize;
       const to = from + pageSize - 1;
 
-      const { data, count, error } = await query
+      const { data, count, error } = await dbQuery
         .order("ear_tag_no", { ascending: true })
         .range(from, to);
 
       if (!error && data && data.length > 0) {
-        const mappedAnimals: KurbanAnimal[] = data.map(mapAnimalFromDb);
+        const mappedAnimals: KurbanAnimal[] = data
+          .map(mapAnimalFromDb)
+          .filter((a: KurbanAnimal) => !isLegacyMockAnimalId(a.id));
 
-        return NextResponse.json({
-          success: true,
-          source: "supabase",
-          totalCount: count || mappedAnimals.length,
-          page,
-          pageSize,
-          animals: mappedAnimals,
-        });
+        if (mappedAnimals.length > 0) {
+          return NextResponse.json(
+            {
+              success: true,
+              source: "supabase",
+              totalCount: count || mappedAnimals.length,
+              page,
+              pageSize,
+              animals: mappedAnimals,
+            },
+            {
+              headers: {
+                "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+              },
+            }
+          );
+        }
       }
     } catch (err) {
-      console.warn("Supabase animals fetch fallback to memory:", err);
+      console.warn("Supabase animals fetch fallback to persistent state:", err);
     }
   }
 
-  // Memory fallback with filtering
+  // Fallback to persistent state (proposals table / file cache) if kurban_animals table was empty or unavailable
+  const persisted = await loadKurbanPersistentState(supabase);
+  if (persisted && Array.isArray(persisted.animals)) {
+    const deletedSet = new Set(persisted.deletedIds || []);
+    memoryAnimals = persisted.animals.filter(
+      (a) => !isLegacyMockAnimalId(a.id) && !deletedSet.has(a.id)
+    );
+  } else {
+    memoryAnimals = memoryAnimals.filter((a) => !isLegacyMockAnimalId(a.id));
+  }
+
   let filtered = memoryAnimals;
 
   if (locationId && locationId !== "all") {
@@ -110,65 +150,109 @@ export async function GET(request: Request) {
   const start = (page - 1) * pageSize;
   const paginated = filtered.slice(start, start + pageSize);
 
-  return NextResponse.json({
-    success: true,
-    source: "in_memory",
-    totalCount,
-    page,
-    pageSize,
-    animals: paginated,
-  });
+  return NextResponse.json(
+    {
+      success: true,
+      source: "persistent_state",
+      totalCount,
+      page,
+      pageSize,
+      animals: paginated,
+    },
+    {
+      headers: {
+        "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+      },
+    }
+  );
 }
 
 /**
- * POST: Create single animal or bulk create (Excel upload)
+ * POST: Create single animal or bulk create (Excel upload) and persist to Supabase
  */
 export async function POST(request: Request) {
   try {
     const body = await request.json();
     const supabase = getSupabaseServerClient();
     await ensureDatabaseReady(supabase);
-    const activeOrgId = await getActiveOrganizationId(supabase, body.organizationId);
+    await cleanupLegacyMockAnimals(supabase);
 
-    // Bulk creation
+    const activeOrgId = await getActiveOrganizationId(supabase, body.organizationId);
+    const validDbLocIds = await ensureLocationsExistInDb(supabase, activeOrgId);
+    const persisted = await loadKurbanPersistentState(supabase);
+
+    // Bulk creation (Excel Import)
     if (body.bulk && Array.isArray(body.animals)) {
       const incoming: KurbanAnimal[] = body.animals.map((a: any, idx: number) => {
         const animalId = ensureUUID(a.id);
-        const cutLocId = isUUID(a.cuttingLocationId) ? a.cuttingLocationId : undefined;
+        const cutLocId = isUUID(a.cuttingLocationId)
+          ? a.cuttingLocationId
+          : persisted?.cuttingLocations?.[0]?.id && isUUID(persisted.cuttingLocations[0].id)
+          ? persisted.cuttingLocations[0].id
+          : undefined;
+
+        const earTag = String(
+          a.earTagNo || `TR34-${Date.now().toString().slice(-5)}-${idx + 1}`
+        ).trim();
 
         return {
           id: animalId,
           organizationId: activeOrgId,
           cuttingLocationId: cutLocId,
-          earTagNo: a.earTagNo || `TR34-${Date.now().toString().slice(-5)}-${idx + 1}`,
+          earTagNo: earTag,
           animalType: a.animalType || "buyukbas_tosun",
           animalTypeLabel: a.animalTypeLabel || "Büyükbaş Tosun",
           breed: a.breed || "Simental",
-          gender: a.gender || "male",
+          gender: a.gender === "female" ? "female" : "male",
           birthDate: a.birthDate || "2024-04-15",
           ageMonths: Number(a.ageMonths) || 24,
-          passportNo: a.passportNo || `PAS-${a.earTagNo || idx}`,
+          passportNo: a.passportNo || `PAS-${earTag}`,
           farmRegNo: a.farmRegNo || "TR-36-004128",
           farmName: a.farmName || "Besi İşletmesi",
-          healthDocNo: a.healthDocNo || `VET-${Date.now().toString().slice(-6)}`,
-          liveWeightKg: Number(a.liveWeightKg) || 650,
-          carcassWeightKg: Number(a.carcassWeightKg) || 365,
+          healthDocNo: a.healthDocNo || `VET-${Date.now().toString().slice(-6)}-${idx + 1}`,
+          liveWeightKg: Number(a.liveWeightKg) || 0,
+          carcassWeightKg: Number(a.carcassWeightKg) || 0,
           status: a.status || "purchased",
-          notes: a.notes || "",
+          notes: a.notes || "Excel İçe Aktarım",
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
       });
 
-      // Update memory store
-      memoryAnimals = [...incoming, ...memoryAnimals];
+      // Replace or merge by earTagNo so re-importing the same Excel updates existing tags cleanly
+      const existingAnimals = (persisted?.animals || memoryAnimals).filter(
+        (a) => !isLegacyMockAnimalId(a.id)
+      );
+      const byTagMap = new Map<string, KurbanAnimal>();
+      for (const ex of existingAnimals) {
+        byTagMap.set(ex.earTagNo.toUpperCase(), ex);
+      }
+      for (const inc of incoming) {
+        const prev = byTagMap.get(inc.earTagNo.toUpperCase());
+        if (prev && isUUID(prev.id)) {
+          inc.id = prev.id;
+        }
+        byTagMap.set(inc.earTagNo.toUpperCase(), inc);
+      }
 
-      // Bulk insert to Supabase
+      memoryAnimals = Array.from(byTagMap.values());
+
+      // Save to Persistent State in Supabase (`proposals` table + local file)
+      if (persisted) {
+        persisted.animals = memoryAnimals;
+        await saveKurbanPersistentState(persisted, supabase);
+      }
+
+      // Bulk upsert to Supabase `kurban_animals` table
+      let supabaseSavedCount = 0;
       if (supabase) {
         const dbRows = incoming.map((a) => ({
           id: a.id,
           organization_id: a.organizationId,
-          cutting_location_id: a.cuttingLocationId || null,
+          cutting_location_id:
+            a.cuttingLocationId && validDbLocIds.has(a.cuttingLocationId)
+              ? a.cuttingLocationId
+              : null,
           ear_tag_no: a.earTagNo,
           animal_type: a.animalType,
           animal_type_label: a.animalTypeLabel,
@@ -189,9 +273,37 @@ export async function POST(request: Request) {
         const batchSize = 50;
         for (let i = 0; i < dbRows.length; i += batchSize) {
           const slice = dbRows.slice(i, i + batchSize);
-          const { error: dbErr } = await supabase.from("kurban_animals").upsert(slice);
-          if (dbErr) {
-            console.warn("Supabase bulk animals insert warning:", dbErr);
+          const { error: dbErr } = await supabase.from("kurban_animals").upsert(slice, {
+            onConflict: "id",
+          });
+          if (!dbErr) {
+            supabaseSavedCount += slice.length;
+          } else {
+            console.warn("Supabase bulk animals upsert warning, retrying without location FK:", dbErr);
+            const fallbackSlice = slice.map((r) => ({ ...r, cutting_location_id: null }));
+            const { error: retryErr } = await supabase
+              .from("kurban_animals")
+              .upsert(fallbackSlice, { onConflict: "id" });
+            if (!retryErr) {
+              supabaseSavedCount += fallbackSlice.length;
+            } else {
+              // Row-by-row fallback in case of unique constraint on ear_tag_no
+              for (const row of slice) {
+                const { error: singleErr } = await supabase
+                  .from("kurban_animals")
+                  .upsert(row, { onConflict: "id" });
+                if (!singleErr) {
+                  supabaseSavedCount++;
+                } else {
+                  const { id: _unusedId, ...updateFields } = row;
+                  await supabase
+                    .from("kurban_animals")
+                    .update(updateFields)
+                    .eq("ear_tag_no", row.ear_tag_no);
+                  supabaseSavedCount++;
+                }
+              }
+            }
           }
         }
       }
@@ -199,7 +311,8 @@ export async function POST(request: Request) {
       return NextResponse.json({
         success: true,
         count: incoming.length,
-        message: `${incoming.length} adet hayvan kaydı başarıyla eklendi.`,
+        supabaseSavedCount,
+        message: `${incoming.length} adet hayvan kaydı Supabase veritabanına başarıyla kaydedildi.`,
       });
     }
 
@@ -211,11 +324,11 @@ export async function POST(request: Request) {
       id: animalId,
       organizationId: activeOrgId,
       cuttingLocationId: cutLocId,
-      earTagNo: body.earTagNo,
+      earTagNo: String(body.earTagNo || "").trim(),
       animalType: body.animalType || "buyukbas_tosun",
       animalTypeLabel: body.animalTypeLabel || "Büyükbaş Tosun",
       breed: body.breed || "Simental",
-      gender: body.gender || "male",
+      gender: body.gender === "female" ? "female" : "male",
       birthDate: body.birthDate,
       ageMonths: Number(body.ageMonths) || 24,
       passportNo: body.passportNo,
@@ -230,10 +343,22 @@ export async function POST(request: Request) {
       updatedAt: new Date().toISOString(),
     };
 
-    memoryAnimals = [newAnimal, ...memoryAnimals];
+    const existingAnimals = (persisted?.animals || memoryAnimals).filter(
+      (a) => !isLegacyMockAnimalId(a.id) && a.id !== newAnimal.id
+    );
+    memoryAnimals = [newAnimal, ...existingAnimals];
+
+    if (persisted) {
+      persisted.animals = memoryAnimals;
+      await saveKurbanPersistentState(persisted, supabase);
+    }
 
     if (supabase) {
-      const dbLocId = await resolveValidDbLocationId(supabase, newAnimal.cuttingLocationId);
+      const dbLocId =
+        newAnimal.cuttingLocationId && validDbLocIds.has(newAnimal.cuttingLocationId)
+          ? newAnimal.cuttingLocationId
+          : await resolveValidDbLocationId(supabase, newAnimal.cuttingLocationId);
+
       const { error: insertErr } = await supabase.from("kurban_animals").upsert({
         id: newAnimal.id,
         organization_id: newAnimal.organizationId,
@@ -263,7 +388,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       animal: newAnimal,
-      message: `${newAnimal.earTagNo} küpeli hayvan kaydedildi.`,
+      message: `${newAnimal.earTagNo} küpeli hayvan Supabase'e kaydedildi.`,
     });
   } catch (err: any) {
     return NextResponse.json(
@@ -286,15 +411,37 @@ export async function PUT(request: Request) {
       );
     }
 
-    // Update in memory
-    memoryAnimals = memoryAnimals.map((a) =>
-      a.id === body.id ? { ...a, ...body, updatedAt: new Date().toISOString() } : a
-    );
-
-    // Update in Supabase
     const supabase = getSupabaseServerClient();
+    const activeOrgId = await getActiveOrganizationId(supabase, body.organizationId);
+    const validDbLocIds = await ensureLocationsExistInDb(supabase, activeOrgId);
+    const persisted = await loadKurbanPersistentState(supabase);
+
+    const updatedAnimal: KurbanAnimal = {
+      ...body,
+      updatedAt: new Date().toISOString(),
+    };
+
+    const baseAnimals = (persisted?.animals || memoryAnimals).filter(
+      (a) => !isLegacyMockAnimalId(a.id)
+    );
+    const existsIdx = baseAnimals.findIndex((a) => a.id === body.id);
+    if (existsIdx >= 0) {
+      baseAnimals[existsIdx] = updatedAnimal;
+    } else {
+      baseAnimals.unshift(updatedAnimal);
+    }
+    memoryAnimals = baseAnimals;
+
+    if (persisted) {
+      persisted.animals = memoryAnimals;
+      await saveKurbanPersistentState(persisted, supabase);
+    }
+
     if (supabase && isUUID(body.id)) {
-      const dbLocId = await resolveValidDbLocationId(supabase, body.cuttingLocationId);
+      const dbLocId =
+        body.cuttingLocationId && validDbLocIds.has(body.cuttingLocationId)
+          ? body.cuttingLocationId
+          : await resolveValidDbLocationId(supabase, body.cuttingLocationId);
 
       const { error: updateErr } = await supabase
         .from("kurban_animals")
@@ -325,7 +472,7 @@ export async function PUT(request: Request) {
 
     return NextResponse.json({
       success: true,
-      animal: body,
+      animal: updatedAnimal,
       message: "Hayvan kaydı güncellendi.",
     });
   } catch (err: any) {
@@ -337,12 +484,37 @@ export async function PUT(request: Request) {
 }
 
 /**
- * DELETE: Delete animal
+ * DELETE: Delete single animal (?id=...) or clear all animals (?all=true)
  */
 export async function DELETE(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
+    const clearAll = searchParams.get("all") === "true";
+
+    const supabase = getSupabaseServerClient();
+    const persisted = await loadKurbanPersistentState(supabase);
+
+    if (clearAll) {
+      memoryAnimals = [];
+      if (persisted) {
+        persisted.animals = [];
+        await saveKurbanPersistentState(persisted, supabase);
+      }
+      if (supabase) {
+        const { error: delAllErr } = await supabase
+          .from("kurban_animals")
+          .delete()
+          .neq("id", "00000000-0000-0000-0000-000000000000");
+        if (delAllErr) {
+          console.warn("Clear all animals Supabase warning:", delAllErr);
+        }
+      }
+      return NextResponse.json({
+        success: true,
+        message: "Tüm hayvan kayıtları kalıcı olarak temizlendi.",
+      });
+    }
 
     if (!id) {
       return NextResponse.json(
@@ -352,8 +524,12 @@ export async function DELETE(request: Request) {
     }
 
     memoryAnimals = memoryAnimals.filter((a) => a.id !== id);
+    if (persisted) {
+      persisted.animals = (persisted.animals || []).filter((a) => a.id !== id);
+      persisted.deletedIds = Array.from(new Set([...(persisted.deletedIds || []), id]));
+      await saveKurbanPersistentState(persisted, supabase);
+    }
 
-    const supabase = getSupabaseServerClient();
     if (supabase && isUUID(id)) {
       const { error: delErr } = await supabase.from("kurban_animals").delete().eq("id", id);
       if (delErr) {

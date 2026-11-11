@@ -94,10 +94,11 @@ export async function fetchAnimalsApi(params: {
       query.set("status", params.status);
     }
     if (params.search) query.set("search", params.search);
+    query.set("_t", String(Date.now()));
 
     const res = await fetch(`/api/kurban-process/animals?${query.toString()}`, {
       method: "GET",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Cache-Control": "no-cache" },
       cache: "no-store",
     });
 
@@ -112,7 +113,7 @@ export async function fetchAnimalsApi(params: {
 }
 
 /**
- * Bulk import animals from Excel
+ * Bulk import animals from Excel (chunked for reliability on serverless)
  */
 export async function bulkImportAnimalsApi(animals: Partial<KurbanAnimal>[]): Promise<{
   success: boolean;
@@ -121,13 +122,33 @@ export async function bulkImportAnimalsApi(animals: Partial<KurbanAnimal>[]): Pr
   error?: string;
 }> {
   try {
-    const res = await fetch("/api/kurban-process/animals", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ bulk: true, animals }),
-    });
+    const chunkSize = 150;
+    let totalImported = 0;
 
-    return await res.json();
+    for (let i = 0; i < animals.length; i += chunkSize) {
+      const chunk = animals.slice(i, i + chunkSize);
+      const res = await fetch("/api/kurban-process/animals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bulk: true, animals: chunk }),
+      });
+
+      const data = await res.json();
+      if (!data.success) {
+        return {
+          success: false,
+          count: totalImported,
+          error: data.error || "Toplu içe aktarma sırasında hata oluştu.",
+        };
+      }
+      totalImported += data.count || chunk.length;
+    }
+
+    return {
+      success: true,
+      count: totalImported,
+      message: `${totalImported} adet hayvan Supabase veritabanına başarıyla kaydedildi.`,
+    };
   } catch (err: any) {
     return { success: false, error: err?.message || "Toplu içe aktarma hatası." };
   }
@@ -187,6 +208,25 @@ export async function deleteAnimalApi(id: string): Promise<{
 }> {
   try {
     const res = await fetch(`/api/kurban-process/animals?id=${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
+
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err?.message };
+  }
+}
+
+/**
+ * Clear all animals from Supabase and persistent state
+ */
+export async function clearAllAnimalsApi(): Promise<{
+  success: boolean;
+  message?: string;
+  error?: string;
+}> {
+  try {
+    const res = await fetch(`/api/kurban-process/animals?all=true`, {
       method: "DELETE",
     });
 

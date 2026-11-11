@@ -203,81 +203,8 @@ export const SEED_CUTTING_LOCATIONS: KurbanCuttingLocation[] = [
   },
 ];
 
-// Helper to generate 350 realistic animals
-function generateSeedAnimals(): KurbanAnimal[] {
-  const animals: KurbanAnimal[] = [];
-  const breeds = ["Simental", "Montofon", "Şarole", "Angus", "Kırmızı Şarole"];
-
-  // 180 animals for Tuzla (TR34-00101 to TR34-00280)
-  for (let i = 1; i <= 180; i++) {
-    const seq = String(100 + i).padStart(5, "0");
-    const breed = breeds[(i - 1) % breeds.length];
-    const liveWeight = 620 + (i % 25) * 4;
-    const carcassWeight = Math.round(liveWeight * 0.565 * 10) / 10;
-
-    animals.push({
-      id: `10000000-0000-4000-a000-${String(i).padStart(12, "0")}`,
-      organizationId: SEED_ORGANIZATION_ID,
-      cuttingLocationId: SEED_LOC_TUZLA_ID,
-      earTagNo: `TR34-${seq}`,
-      animalType: "buyukbas_tosun",
-      animalTypeLabel: "Büyükbaş Tosun",
-      breed,
-      gender: "male",
-      birthDate: "2024-04-15",
-      ageMonths: 25,
-      passportNo: `PAS-TR-${seq}`,
-      farmRegNo: "TR-36-004128",
-      farmName: "Serhat Arpaçay Besi İşletmesi - Kars",
-      healthDocNo: `VET-2026-KRS-${String(2000 + i).slice(-4)}`,
-      passportFileUrl: `https://easyaccounting.storage/passports/TR34-${seq}.pdf`,
-      healthDocFileUrl: `https://easyaccounting.storage/health/TR34-${seq}.pdf`,
-      liveWeightKg: liveWeight,
-      carcassWeightKg: carcassWeight,
-      status: "delivered",
-      notes: `1. Kesimhane (Tuzla) grubu. Randıman: %${Math.round((carcassWeight / liveWeight) * 1000) / 10}`,
-      createdAt: "2026-05-14T08:00:00Z",
-      updatedAt: "2026-06-20T17:00:00Z",
-    });
-  }
-
-  // 170 animals for Kocaeli (TR41-00101 to TR41-00270)
-  for (let i = 1; i <= 170; i++) {
-    const seq = String(100 + i).padStart(5, "0");
-    const breed = breeds[(i + 2) % breeds.length];
-    const liveWeight = 615 + (i % 28) * 4;
-    const carcassWeight = Math.round(liveWeight * 0.562 * 10) / 10;
-
-    animals.push({
-      id: `20000000-0000-4000-a000-${String(i).padStart(12, "0")}`,
-      organizationId: SEED_ORGANIZATION_ID,
-      cuttingLocationId: SEED_LOC_KOCAELI_ID,
-      earTagNo: `TR41-${seq}`,
-      animalType: "buyukbas_tosun",
-      animalTypeLabel: "Büyükbaş Tosun",
-      breed,
-      gender: "male",
-      birthDate: "2024-05-02",
-      ageMonths: 24,
-      passportNo: `PAS-TR41-${seq}`,
-      farmRegNo: "TR-25-009814",
-      farmName: "Erzurum Pasinler Yayla Besi İşletmesi",
-      healthDocNo: `VET-2026-ERZ-${String(3000 + i).slice(-4)}`,
-      passportFileUrl: `https://easyaccounting.storage/passports/TR41-${seq}.pdf`,
-      healthDocFileUrl: `https://easyaccounting.storage/health/TR41-${seq}.pdf`,
-      liveWeightKg: liveWeight,
-      carcassWeightKg: carcassWeight,
-      status: "delivered",
-      notes: `2. Kesimhane (Kartepe) grubu. Randıman: %${Math.round((carcassWeight / liveWeight) * 1000) / 10}`,
-      createdAt: "2026-05-15T08:00:00Z",
-      updatedAt: "2026-06-20T17:30:00Z",
-    });
-  }
-
-  return animals;
-}
-
-export const SEED_ANIMALS: KurbanAnimal[] = generateSeedAnimals();
+// Mock hayvan kayıtları temizlendi — gerçek hayvanlar Excel veya tekil form üzerinden Supabase'e kaydedilir
+export const SEED_ANIMALS: KurbanAnimal[] = [];
 
 // 5. Sevk İşlemleri (4 Tır Tuzla + 4 Tır Kartepe = 8 Sevk)
 export const SEED_SHIPMENTS: KurbanShipment[] = [

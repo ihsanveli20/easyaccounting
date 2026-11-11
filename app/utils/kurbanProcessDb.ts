@@ -44,11 +44,13 @@ const TMP_STATE_FILE = path.join(os.tmpdir(), "easy_kurban_process_state_v2.json
 
 export interface KurbanPersistentState {
   isCustomized: boolean;
+  mockAnimalsCleaned?: boolean;
   deletedIds: string[];
   organization: KurbanProcessOrganization;
   parties: KurbanParty[];
   contracts: KurbanContract[];
   cuttingLocations: KurbanCuttingLocation[];
+  animals?: KurbanAnimal[];
   shipments: KurbanShipment[];
   slaughterBatches: KurbanSlaughterBatch[];
   storageRecords: KurbanStorageRecord[];
@@ -92,11 +94,13 @@ export function getSupabaseServerClient() {
 export function createDefaultPersistentState(): KurbanPersistentState {
   return {
     isCustomized: false,
+    mockAnimalsCleaned: true,
     deletedIds: [],
     organization: { ...SEED_ORGANIZATION },
     parties: [...SEED_PARTIES],
     contracts: [{ ...SEED_CONTRACT }],
     cuttingLocations: [...SEED_CUTTING_LOCATIONS],
+    animals: [],
     shipments: [...SEED_SHIPMENTS],
     slaughterBatches: [...SEED_SLAUGHTER_BATCHES],
     storageRecords: [...SEED_STORAGE_RECORDS],
@@ -396,6 +400,106 @@ export async function ensureDatabaseReady(supabase: any): Promise<string> {
     console.warn("ensureDatabaseReady warning:", err);
     return SEED_ORGANIZATION_ID;
   }
+}
+
+let legacyMockAnimalsCleanedInSession = false;
+
+/**
+ * Deletes any legacy mock animals (IDs 10000000-0000-4000-a000-* and 20000000-0000-4000-a000-*)
+ * from the Supabase `kurban_animals` table so mock animals never appear again.
+ */
+export async function cleanupLegacyMockAnimals(supabase: any): Promise<void> {
+  if (!supabase || legacyMockAnimalsCleanedInSession) return;
+  legacyMockAnimalsCleanedInSession = true;
+  try {
+    await supabase
+      .from("kurban_animals")
+      .delete()
+      .gte("id", "10000000-0000-4000-a000-000000000000")
+      .lte("id", "10000000-0000-4000-a000-000000000999");
+    await supabase
+      .from("kurban_animals")
+      .delete()
+      .gte("id", "20000000-0000-4000-a000-000000000000")
+      .lte("id", "20000000-0000-4000-a000-000000000999");
+  } catch (err) {
+    console.warn("cleanupLegacyMockAnimals warning:", err);
+  }
+}
+
+/**
+ * Ensures that active cutting locations (and slaughterhouse parties) from KurbanPersistentState
+ * exist in `kurban_cutting_locations` in Supabase so `cutting_location_id` FK references on `kurban_animals` succeed.
+ * Returns the Set of valid location UUIDs present in `kurban_cutting_locations`.
+ */
+export async function ensureLocationsExistInDb(
+  supabase: any,
+  activeOrgId: string
+): Promise<Set<string>> {
+  const validIds = new Set<string>();
+  if (!supabase) return validIds;
+
+  try {
+    const persisted = await loadKurbanPersistentState(supabase);
+    const locationsToSync: KurbanCuttingLocation[] = [];
+
+    if (persisted) {
+      for (const loc of persisted.cuttingLocations || []) {
+        if (loc.id && isUUID(loc.id)) {
+          locationsToSync.push(loc);
+        }
+      }
+      for (const p of (persisted.parties || []).filter((x) => x.partyType === "slaughterhouse")) {
+        if (p.id && isUUID(p.id) && !locationsToSync.some((l) => l.id === p.id)) {
+          locationsToSync.push({
+            id: p.id,
+            organizationId: activeOrgId,
+            name: p.name,
+            locationCode: `KSM-0${locationsToSync.length + 1}`,
+            city: p.city || "İstanbul",
+            address: p.address || "",
+            responsiblePerson: p.authorizedPerson || "",
+            responsiblePhone: p.phone || "",
+            officialApprovalNo: p.taxId || "",
+            veterinaryName: p.authorizedPerson || "",
+            dailyCapacity: 200,
+            allocatedAnimalCount: 0,
+            notes: p.notes || "",
+            createdAt: p.createdAt || new Date().toISOString(),
+          });
+        }
+      }
+    }
+
+    for (const loc of locationsToSync) {
+      await supabase.from("kurban_cutting_locations").upsert({
+        id: loc.id,
+        organization_id: activeOrgId,
+        name: loc.name,
+        location_code: loc.locationCode || "KSM-01",
+        city: loc.city || "İstanbul",
+        address: loc.address || null,
+        responsible_person: loc.responsiblePerson || null,
+        responsible_phone: loc.responsiblePhone || null,
+        official_approval_no: loc.officialApprovalNo || null,
+        veterinary_name: loc.veterinaryName || null,
+        daily_capacity: loc.dailyCapacity || 200,
+        allocated_animal_count: loc.allocatedAnimalCount || 0,
+        notes: loc.notes || null,
+      });
+    }
+
+    const { data } = await supabase.from("kurban_cutting_locations").select("id");
+    if (data && Array.isArray(data)) {
+      for (const row of data) {
+        if (row.id) validIds.add(row.id);
+      }
+    }
+  } catch (err) {
+    console.warn("ensureLocationsExistInDb warning:", err);
+  }
+
+  return validIds;
 }
 
 /**

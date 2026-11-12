@@ -295,10 +295,18 @@ export async function updateReportApi(report: Partial<KurbanReport>): Promise<{
     const res = await fetch("/api/kurban-process/reports", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
+      cache: "no-store",
       body: JSON.stringify(report),
     });
 
-    return await res.json();
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      return {
+        success: false,
+        error: data?.error || `Sunucu hatası (${res.status})`,
+      };
+    }
+    return data || { success: false, error: "Boş sunucu yanıtı." };
   } catch (err: any) {
     return { success: false, error: err?.message };
   }

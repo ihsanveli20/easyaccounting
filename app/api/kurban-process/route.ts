@@ -25,6 +25,8 @@ import {
   loadKurbanPersistentState,
   saveKurbanPersistentState,
   createDefaultPersistentState,
+  syncLocationsWithSlaughterhouseParties,
+  loadRelationalFallbackState,
   KurbanPersistentState,
   mapLocationFromDb,
   mapPartyFromDb,
@@ -59,49 +61,6 @@ const NO_STORE_HEADERS = {
 let inMemoryStore: KurbanPersistentState = createDefaultPersistentState();
 let inMemoryAnimalsCount = SEED_ANIMALS.length;
 
-/**
- * Helper: Build a default 10-section official report for a newly added cutting location
- */
-function createReportForLocation(
-  loc: KurbanCuttingLocation,
-  org: KurbanProcessOrganization,
-  index: number
-): KurbanReport {
-  const reportId = ensureUUID();
-  const baseTemplate = SEED_REPORTS[0];
-  const sections = (baseTemplate?.sections || []).map((sec, idx) => ({
-    ...sec,
-    id: ensureUUID(),
-    reportId,
-    orderIndex: idx + 1,
-    contentHtml: (sec.contentHtml || "")
-      .replace(/Tuzla Entegre Et Kombinası/g, loc.name)
-      .replace(/1\. Kesimhane \(İstanbul Tuzla\)/g, loc.name)
-      .replace(/Anadolu Gıda & Perakende A\.Ş\./g, org.clientCompanyName || "Alıcı Kurum"),
-  }));
-
-  return {
-    id: reportId,
-    organizationId: org.id,
-    cuttingLocationId: loc.id,
-    cuttingLocationName: loc.name,
-    reportNo: `KRB-2026-RAP-0${index + 1}`,
-    title: `${loc.name} — Kurban Kesim, Depolama ve Teslimat Resmî Denetim Raporu`,
-    reportDate: new Date().toISOString().split("T")[0],
-    reportPeriod: "2026 Kurban Dönemi",
-    preparedBy: loc.responsiblePerson || "Operasyon Denetim Kurulu",
-    status: "final_approved",
-    clientCompanyName: org.clientCompanyName || "Alıcı Kurum",
-    executiveSummary: `${loc.name} (${loc.city}) tesisinde gerçekleştirilen kurban kesim, soğuk hava depolama ve teslimat süreçlerine ilişkin resmî denetim raporu.`,
-    evaluationNotes: "Tüm süreçler veteriner hekim kontrolünde ve hijyen standartlarına uygun tamamlanmıştır.",
-    finalResultSummary: "Tam Mutabakat • 0 Fire",
-    metadata: {},
-    sections,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  };
-}
-
 const LEGACY_PARTY_TO_LOCATION_ID: Record<string, string> = {
   "30000000-0000-4000-a000-000000000004": "f4779128-11e4-4593-93de-ff811c1bbfc9",
   "30000000-0000-4000-a000-000000000005": "e289c564-901a-4d76-b631-0e4c6b8f3a21",
@@ -111,99 +70,6 @@ const LOCATION_TO_LEGACY_PARTY_ID: Record<string, string> = {
   "f4779128-11e4-4593-93de-ff811c1bbfc9": "30000000-0000-4000-a000-000000000004",
   "e289c564-901a-4d76-b631-0e4c6b8f3a21": "30000000-0000-4000-a000-000000000005",
 };
-
-/**
- * Derives and synchronizes `state.cuttingLocations` (Kesim Yerleri) directly from
- * `state.parties` where `partyType === "slaughterhouse"` (Firma / Müşteri Bilgileri -> Kesimhane / Mezbaha).
- */
-function syncLocationsWithSlaughterhouseParties(state: KurbanPersistentState): KurbanPersistentState {
-  const deletedSet = new Set(state.deletedIds || []);
-  const existingLocations = state.cuttingLocations || [];
-
-  // Normalize any legacy slaughterhouse party IDs to match their cutting location IDs
-  const normalizedParties: KurbanParty[] = [];
-  const seenPartyIds = new Set<string>();
-
-  for (const p of state.parties || []) {
-    const mappedId = LEGACY_PARTY_TO_LOCATION_ID[p.id] || p.id;
-    if (deletedSet.has(p.id) || deletedSet.has(mappedId)) continue;
-    if (seenPartyIds.has(mappedId)) continue;
-    seenPartyIds.add(mappedId);
-    normalizedParties.push({
-      ...p,
-      id: mappedId,
-    });
-  }
-
-  state.parties = normalizedParties;
-
-  const slaughterhouseParties = state.parties.filter((p) => p.partyType === "slaughterhouse");
-
-  // Derive cuttingLocations directly from the slaughterhouse parties in Firma / Müşteri Bilgileri
-  const derivedLocations: KurbanCuttingLocation[] = slaughterhouseParties.map((p, idx) => {
-    const existingLoc =
-      existingLocations.find((l) => l.id === p.id) ||
-      existingLocations.find(
-        (l) => l.name.trim().toLowerCase() === p.name.trim().toLowerCase()
-      );
-
-    // Extract approval number from notes if not explicitly set
-    const approvalMatch = (p.notes || "").match(/TR-\d{2}-\d+/i);
-    const derivedApproval =
-      existingLoc?.officialApprovalNo ||
-      (approvalMatch ? `${approvalMatch[0].toUpperCase()} (Bakanlık Onaylı)` : p.taxId || "");
-
-    return {
-      id: p.id,
-      organizationId: p.organizationId || state.organization?.id || SEED_ORGANIZATION.id,
-      name: p.name,
-      locationCode: existingLoc?.locationCode || `KSM-0${idx + 1}`,
-      city: p.city || existingLoc?.city || "İstanbul",
-      address: p.address || existingLoc?.address || "",
-      responsiblePerson: p.authorizedPerson || existingLoc?.responsiblePerson || "",
-      responsiblePhone: p.phone || existingLoc?.responsiblePhone || "",
-      officialApprovalNo: derivedApproval,
-      veterinaryName: existingLoc?.veterinaryName || p.authorizedPerson || "",
-      dailyCapacity: existingLoc?.dailyCapacity || 200,
-      allocatedAnimalCount: existingLoc?.allocatedAnimalCount ?? 0,
-      notes: p.notes || existingLoc?.notes || "",
-      createdAt: existingLoc?.createdAt || p.createdAt || new Date().toISOString(),
-    };
-  });
-
-  state.cuttingLocations = derivedLocations;
-
-  // Ensure each derived cutting location has a corresponding report, and keep report names synced
-  const activeLocIds = new Set(derivedLocations.map((l) => l.id));
-  const updatedReports: KurbanReport[] = [];
-
-  for (let i = 0; i < derivedLocations.length; i++) {
-    const loc = derivedLocations[i];
-    const existingRep = (state.reports || []).find((r) => r.cuttingLocationId === loc.id);
-    if (existingRep) {
-      updatedReports.push({
-        ...existingRep,
-        cuttingLocationName: loc.name,
-        clientCompanyName: state.organization?.clientCompanyName || existingRep.clientCompanyName,
-      });
-    } else {
-      updatedReports.push(createReportForLocation(loc, state.organization, i));
-    }
-  }
-
-  // Keep any custom reports only if their location is still active
-  for (const rep of state.reports || []) {
-    if (
-      activeLocIds.has(rep.cuttingLocationId) &&
-      !updatedReports.some((ur) => ur.id === rep.id)
-    ) {
-      updatedReports.push(rep);
-    }
-  }
-
-  state.reports = updatedReports;
-  return state;
-}
 
 function isLegacyMockAnimalId(id?: string | null): boolean {
   if (!id) return false;
@@ -315,129 +181,11 @@ async function resolveAuthoritativeState(supabase: any): Promise<{
     return { state: cleanState, animals, totalAnimalCount, source: "supabase_persistent_state" };
   }
 
-  // 2. Otherwise, check relational `kurban_*` tables in Supabase (WITHOUT calling auto-seeding!)
-  if (supabase) {
-    try {
-      const [
-        orgRes,
-        locsRes,
-        partiesRes,
-        shipmentsRes,
-        slaughtersRes,
-        storagesRes,
-        deliveriesRes,
-        invoicesRes,
-        docsRes,
-        reportsRes,
-      ] = await Promise.all([
-        supabase.from("kurban_process_organizations").select("*").order("created_at", { ascending: false }),
-        supabase.from("kurban_cutting_locations").select("*").order("location_code", { ascending: true }),
-        supabase.from("kurban_parties").select("*").order("created_at", { ascending: false }),
-        supabase.from("kurban_shipments").select("*").order("shipment_date", { ascending: false }),
-        supabase.from("kurban_slaughter_batches").select("*").order("slaughter_date", { ascending: false }),
-        supabase.from("kurban_storage_records").select("*").order("entry_date", { ascending: false }),
-        supabase.from("kurban_deliveries").select("*").order("delivery_date", { ascending: false }),
-        supabase.from("kurban_invoices").select("*").order("invoice_date", { ascending: false }),
-        supabase.from("kurban_documents").select("*").order("uploaded_at", { ascending: false }),
-        supabase.from("kurban_reports").select("*, kurban_report_sections(*)").order("report_no", { ascending: true }),
-      ]);
-
-      const hasRelationalData =
-        (!orgRes.error && orgRes.data && orgRes.data.length > 0) ||
-        (!locsRes.error && locsRes.data && locsRes.data.length > 0) ||
-        (!partiesRes.error && partiesRes.data && partiesRes.data.length > 0);
-
-      if (hasRelationalData) {
-        const activeOrgRow = orgRes.data?.[0];
-        const organization: KurbanProcessOrganization = activeOrgRow
-          ? {
-              id: activeOrgRow.id,
-              name: activeOrgRow.name || SEED_ORGANIZATION.name,
-              clientCompanyName:
-                activeOrgRow.client_company_name || SEED_ORGANIZATION.clientCompanyName,
-              clientTaxNo: activeOrgRow.client_tax_no || "",
-              clientTaxOffice: activeOrgRow.client_tax_office || "",
-              clientAddress: activeOrgRow.client_address || "",
-              clientContact: activeOrgRow.client_contact || "",
-              startDate: activeOrgRow.start_date || SEED_ORGANIZATION.startDate,
-              endDate: activeOrgRow.end_date || SEED_ORGANIZATION.endDate,
-              targetAnimalCount: totalAnimalCount > 0 ? totalAnimalCount : Number(activeOrgRow.target_animal_count) || 0,
-              status: activeOrgRow.status || "in_progress",
-              description: activeOrgRow.description || "",
-              generalNotes: activeOrgRow.general_notes || "",
-              createdAt: activeOrgRow.created_at || new Date().toISOString(),
-              updatedAt: activeOrgRow.updated_at || new Date().toISOString(),
-            }
-          : { ...SEED_ORGANIZATION, targetAnimalCount: totalAnimalCount };
-
-        const locationsMap = new Map<string, string>();
-        const cuttingLocations: KurbanCuttingLocation[] = (locsRes.data || []).map((row: any) => {
-          const loc = mapLocationFromDb(row);
-          locationsMap.set(loc.id, loc.name);
-          return loc;
-        });
-
-        const parties: KurbanParty[] = (partiesRes.data || []).map(mapPartyFromDb);
-        const shipments: KurbanShipment[] =
-          shipmentsRes.data && shipmentsRes.data.length > 0
-            ? shipmentsRes.data
-                .map((r: any) => mapShipmentFromDb(r, locationsMap))
-                .filter((s: KurbanShipment) => !isMockSeedProcessId(s.id, "40000000-0000-4000-a000-"))
-            : [];
-        const slaughterBatches: KurbanSlaughterBatch[] =
-          slaughtersRes.data && slaughtersRes.data.length > 0
-            ? slaughtersRes.data
-                .map((r: any) => mapSlaughterBatchFromDb(r, locationsMap))
-                .filter((b: KurbanSlaughterBatch) => !isMockSeedProcessId(b.id, "50000000-0000-4000-a000-"))
-            : [];
-        const storageRecords: KurbanStorageRecord[] =
-          storagesRes.data && storagesRes.data.length > 0
-            ? storagesRes.data
-                .map((r: any) => mapStorageRecordFromDb(r, locationsMap))
-                .filter((sr: KurbanStorageRecord) => !isMockSeedProcessId(sr.id, "60000000-0000-4000-a000-"))
-            : [];
-        const deliveries: KurbanDelivery[] =
-          deliveriesRes.data && deliveriesRes.data.length > 0
-            ? deliveriesRes.data
-                .map((r: any) => mapDeliveryFromDb(r, locationsMap))
-                .filter((d: KurbanDelivery) => !isMockSeedProcessId(d.id, "70000000-0000-4000-a000-"))
-            : [];
-        const invoices: KurbanInvoice[] =
-          invoicesRes.data && invoicesRes.data.length > 0
-            ? invoicesRes.data.map((r: any) => mapInvoiceFromDb(r, locationsMap))
-            : [...SEED_INVOICES];
-        const documents: KurbanDocument[] =
-          docsRes.data && docsRes.data.length > 0
-            ? docsRes.data.map(mapDocumentFromDb)
-            : [...SEED_DOCUMENTS];
-        const reports: KurbanReport[] =
-          reportsRes.data && reportsRes.data.length > 0
-            ? reportsRes.data.map((r: any) => mapReportFromDb(r, locationsMap))
-            : JSON.parse(JSON.stringify(SEED_REPORTS));
-
-        const relationalState: KurbanPersistentState = syncLocationsWithSlaughterhouseParties({
-          isCustomized: false,
-          deletedIds: [],
-          organization,
-          parties,
-          contracts: [{ ...SEED_CONTRACT, animalCount: totalAnimalCount }],
-          cuttingLocations,
-          shipments,
-          slaughterBatches,
-          storageRecords,
-          invoices,
-          deliveries,
-          documents,
-          reports,
-          updatedAt: new Date().toISOString(),
-        });
-
-        inMemoryStore = relationalState;
-        return { state: relationalState, animals, totalAnimalCount, source: "supabase_relational" };
-      }
-    } catch (err) {
-      console.warn("Supabase relational fetch warning:", err);
-    }
+  // 2. Otherwise, check relational `kurban_*` tables (WITHOUT calling auto-seeding!)
+  const relationalState = await loadRelationalFallbackState(supabase, totalAnimalCount);
+  if (relationalState) {
+    inMemoryStore = relationalState;
+    return { state: relationalState, animals, totalAnimalCount, source: "supabase_relational" };
   }
 
   inMemoryStore = syncLocationsWithSlaughterhouseParties(stripMockProcessRows(inMemoryStore));

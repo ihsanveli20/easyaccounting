@@ -1237,8 +1237,11 @@ export default function KurbanProcessModuleView() {
         const finalReport = res.report || updatedReport;
         showToast("Rapor bölümü canlı olarak güncellendi.");
         setActiveReport(finalReport);
+        setSelectedReportId(finalReport.id);
         setReports((prev) =>
-          prev.map((r) => (r.id === finalReport.id ? finalReport : r))
+          prev.map((r) =>
+            r.id === activeReport.id || r.id === finalReport.id ? finalReport : r
+          )
         );
         setEditingSectionId(null);
       } else {

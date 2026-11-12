@@ -62,6 +62,60 @@
         "proposal-comparison",
         "kurban-reporting"
       ]
+    },
+    "rustemskn@ea.co": {
+      "custom": true,
+      "allowedMenus": [
+        "quote",
+        "proposal-history",
+        "stock-tracking",
+        "calculator"
+      ]
+    },
+    "bilalersy@ea.co": {
+      "custom": true,
+      "allowedMenus": [
+        "quote",
+        "proposal-history",
+        "stock-tracking",
+        "calculator"
+      ]
+    },
+    "zekeriyagzl@ea.co": {
+      "custom": true,
+      "allowedMenus": []
+    },
+    "omerfrk@ea.co": {
+      "custom": true,
+      "allowedMenus": [
+        "quote",
+        "proposal-history",
+        "proposal-comparison",
+        "stock-tracking",
+        "calculator"
+      ]
+    },
+    "ekremsyn@ea.co": {
+      "custom": true,
+      "allowedMenus": [
+        "details",
+        "calculator",
+        "summary"
+      ]
+    },
+    "ysftrz@ea.co": {
+      "custom": true,
+      "allowedMenus": [
+        "quote",
+        "proposal-history",
+        "proposal-comparison",
+        "stock-tracking",
+        "details",
+        "calculator",
+        "summary",
+        "reconciliation",
+        "invoice-comparison"
+      ]
     }
   }
 }

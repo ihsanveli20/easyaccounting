@@ -396,7 +396,50 @@ function buildScenarioDemoInvoices(): {
   return { incoming, outgoing };
 }
 
+// Geçici olarak Fatura Karşılaştırma ve Analiz modülünü sunucu hatası ekranıyla devre dışı bırakmak için true yapın.
+const INVOICE_COMPARISON_SERVER_ERROR_MODE = true;
+
+function InvoiceComparisonServerErrorScreen() {
+  return (
+    <div className="min-h-[60vh] flex items-center justify-center p-4 sm:p-8">
+      <div className="w-full max-w-xl rounded-2xl border border-red-200 dark:border-red-900/60 bg-white dark:bg-slate-900 shadow-lg p-6 sm:p-8 text-center">
+        <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-red-50 dark:bg-red-950/50 border border-red-200/80 dark:border-red-900/60 text-red-600 dark:text-red-400">
+          <AlertTriangle className="h-8 w-8" />
+        </div>
+
+        <div className="inline-flex items-center gap-2 rounded-full border border-red-200 dark:border-red-900/70 bg-red-50/80 dark:bg-red-950/40 px-3 py-1 text-xs font-semibold text-red-700 dark:text-red-300 mb-3">
+          <span>HTTP 503</span>
+          <span className="text-red-300 dark:text-red-700">•</span>
+          <span>Sunucu Yanıt Vermiyor</span>
+        </div>
+
+        <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-slate-100 tracking-tight">
+          Sunucu Bağlantı Hatası
+        </h2>
+
+        <p className="mt-3 text-sm sm:text-base text-slate-600 dark:text-slate-300 leading-relaxed">
+          Fatura Karşılaştırma ve Analiz servisine şu anda ulaşılamıyor. Sunucu kaynaklı geçici bir kesinti nedeniyle bu ekranda işlem yapılamamaktadır.
+        </p>
+
+        <div className="mt-5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/60 px-4 py-3 text-left text-xs text-slate-500 dark:text-slate-400 font-mono space-y-1">
+          <div>Durum: 503 Service Unavailable</div>
+          <div>Servis: invoice-comparison-engine</div>
+          <div>Açıklama: Uzak sunucu isteğe zamanında yanıt vermedi. Lütfen daha sonra tekrar deneyin.</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function InvoiceComparisonModuleView() {
+  if (INVOICE_COMPARISON_SERVER_ERROR_MODE) {
+    return <InvoiceComparisonServerErrorScreen />;
+  }
+
+  return <InvoiceComparisonModuleContent />;
+}
+
+function InvoiceComparisonModuleContent() {
   const { user } = useAuth();
   const userId = user?.id;
 

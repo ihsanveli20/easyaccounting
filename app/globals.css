@@ -120,6 +120,7 @@ body {
   display: table-cell !important;
 }
 .pdf-export-mode {
+  box-sizing: border-box !important;
   width: 820px !important;
   max-width: 820px !important;
   min-width: 820px !important;
@@ -128,5 +129,23 @@ body {
   border-radius: 0 !important;
   padding: 24px 32px !important;
   background-color: #ffffff !important;
+  overflow: visible !important;
+}
+.pdf-export-mode .pdf-header-row {
+  display: flex !important;
+  flex-direction: row !important;
+  justify-content: space-between !important;
+  align-items: flex-start !important;
+  gap: 20px !important;
+}
+.pdf-export-mode .pdf-header-left {
+  width: 54% !important;
+  max-width: 54% !important;
+  min-width: 0 !important;
+}
+.pdf-export-mode .pdf-header-right {
+  width: 43% !important;
+  max-width: 43% !important;
+  min-width: 0 !important;
 }
 

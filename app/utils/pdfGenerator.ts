@@ -9,6 +9,7 @@ export async function renderElementToPdf(element: HTMLElement): Promise<{ pdf: j
   await new Promise((resolve) => setTimeout(resolve, 150));
 
   const dataUrl = await htmlToImage.toPng(element, {
+    width: 820,
     pixelRatio: 2,
     backgroundColor: "#ffffff",
     cacheBust: false,

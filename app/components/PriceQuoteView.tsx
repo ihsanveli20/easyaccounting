@@ -1142,6 +1142,7 @@ export default function PriceQuoteView({
 
       // Native browser rasterizer - 100% compatible with Tailwind v4, lab(), oklab(), and custom fonts
       const dataUrl = await htmlToImage.toPng(quoteElement, {
+        width: 820,
         pixelRatio: 2,
         backgroundColor: "#ffffff",
         cacheBust: false,
@@ -1613,11 +1614,11 @@ export default function PriceQuoteView({
         className={`bg-white rounded-2xl shadow-sm border border-slate-300 p-4 sm:p-8 w-full print:p-0 print:border-none print:shadow-none print:rounded-none ${isGeneratingPdf ? "pdf-export-mode" : ""
           }`}
       >
-        {/* 1. TOP HEADER: LOGO ON LEFT (app/logo.jpg) & CONTACT INFO ON RIGHT (EXACT MATCH, NEVER WRAPS VERTICALLY IN PRINT) */}
-        <div className="w-full flex flex-col sm:flex-row print:flex-row justify-between items-start gap-4 pb-3 border-b-2 border-black print:pb-2">
+        {/* 1. TOP HEADER: LOGO ON LEFT (app/logo.jpg) & CONTACT INFO ON RIGHT */}
+        <div className="pdf-header-row w-full flex flex-col sm:flex-row print:flex-row justify-between items-start gap-4 pb-3 border-b-2 border-black print:pb-2">
           {/* Left: Logo & Company Name */}
-          <div className="flex flex-col items-start gap-1 w-full sm:max-w-[55%] print:max-w-[55%]">
-            <div className="h-16 sm:h-20 max-w-[320px] flex items-center mb-0.5 print:h-14 print:max-w-[260px]">
+          <div className="pdf-header-left flex flex-col items-start gap-1.5 w-full sm:w-[54%] print:w-[54%] min-w-0">
+            <div className="h-14 sm:h-16 max-w-[260px] flex items-center print:h-14 print:max-w-[240px]">
               <img
                 src={companyInfo.logoUrl}
                 alt={companyInfo.name}
@@ -1627,7 +1628,7 @@ export default function PriceQuoteView({
                 }}
               />
             </div>
-            <div className="w-full text-xs font-bold text-slate-900 leading-snug">
+            <div className="w-full text-[11px] font-bold text-slate-900 leading-snug">
               <textarea
                 rows={2}
                 value={companyInfo.name}
@@ -1637,37 +1638,37 @@ export default function PriceQuoteView({
                     name: e.target.value.toLocaleUpperCase("tr-TR"),
                   })
                 }
-                className="w-full bg-transparent border-none focus:outline-none font-bold text-slate-900 resize-none overflow-hidden leading-tight text-xs print:hidden uppercase"
+                className="w-full bg-transparent border-none focus:outline-none font-bold text-slate-900 resize-none overflow-hidden leading-snug text-[11px] print:hidden uppercase"
                 placeholder="FİRMA TİCARİ UNVANI"
               />
-              <div className="hidden print:block font-bold text-slate-900 text-xs leading-tight uppercase">
+              <div className="hidden print:block font-bold text-slate-900 text-[11px] leading-snug uppercase break-words whitespace-normal">
                 {companyInfo.name}
               </div>
             </div>
           </div>
 
-          {/* Right: Address & Contact info (NO GAP BETWEEN ADDRESS AND PHONE) */}
-          <div className="text-xs text-slate-900 font-sans w-full sm:w-[42%] print:w-[42%] max-w-md shrink-0 flex flex-col justify-start">
+          {/* Right: Address & Contact info */}
+          <div className="pdf-header-right text-xs text-slate-900 font-sans w-full sm:w-[43%] print:w-[43%] min-w-0 flex flex-col justify-start">
             {/* ADRES */}
-            <div className="flex items-start gap-1.5 leading-tight">
+            <div className="flex items-start gap-1.5 leading-snug min-w-0">
               <span className="font-bold tracking-wider w-16 text-left select-none shrink-0 pt-0.5">ADRES</span>
               <span className="font-bold shrink-0 pt-0.5">:</span>
               <div className="text-slate-800 font-medium text-left flex-1 min-w-0">
                 <textarea
-                  rows={2}
+                  rows={3}
                   value={companyInfo.address}
                   onChange={(e) => setCompanyInfo({ ...companyInfo, address: e.target.value })}
-                  className="w-full bg-transparent border-none focus:outline-none text-slate-800 resize-none overflow-hidden leading-tight text-xs p-0 m-0 print:hidden"
+                  className="w-full bg-transparent border-none focus:outline-none text-slate-800 resize-none overflow-hidden leading-snug text-[11px] p-0 m-0 print:hidden"
                   placeholder="Firma adresi"
                 />
-                <div className="hidden print:block text-slate-800 font-medium text-xs leading-tight">
+                <div className="hidden print:block text-slate-800 font-medium text-[11px] leading-snug break-words whitespace-normal">
                   {companyInfo.address}
                 </div>
               </div>
             </div>
 
             {/* TELEFON - IMMEDIATELY UNDER ADRES WITHOUT GAP */}
-            <div className="flex items-center gap-1.5 leading-tight mt-0.5">
+            <div className="flex items-center gap-1.5 leading-snug mt-1 min-w-0">
               <span className="font-bold tracking-wider w-16 text-left select-none shrink-0">TELEFON</span>
               <span className="font-bold shrink-0">:</span>
               <div className="text-slate-800 font-medium text-left flex-1 min-w-0">
@@ -1675,10 +1676,10 @@ export default function PriceQuoteView({
                   type="text"
                   value={companyInfo.phone}
                   onChange={(e) => setCompanyInfo({ ...companyInfo, phone: e.target.value })}
-                  className="w-full bg-transparent border-none focus:outline-none text-slate-800 text-xs font-semibold p-0 m-0 print:hidden"
+                  className="w-full bg-transparent border-none focus:outline-none text-slate-800 text-[11px] font-semibold p-0 m-0 print:hidden"
                   placeholder="Telefon"
                 />
-                <div className="hidden print:block text-slate-800 font-semibold text-xs leading-tight">
+                <div className="hidden print:block text-slate-800 font-semibold text-[11px] leading-snug break-words whitespace-normal">
                   {companyInfo.phone}
                 </div>
               </div>
@@ -1893,11 +1894,11 @@ export default function PriceQuoteView({
           <table className="w-full border-collapse border-2 border-black text-xs text-slate-900 table-fixed min-w-[580px] print:min-w-0">
             <colgroup>
               <col style={{ width: "5%" }} />
-              <col style={{ width: "45%" }} />
+              <col style={{ width: "41%" }} />
               <col style={{ width: "10%" }} />
-              <col style={{ width: "10%" }} />
-              <col style={{ width: "14%" }} />
+              <col style={{ width: "8%" }} />
               <col style={{ width: "16%" }} />
+              <col style={{ width: "20%" }} />
               <col className="no-print" style={{ width: "48px" }} />
             </colgroup>
             <thead>
@@ -2082,7 +2083,7 @@ export default function PriceQuoteView({
                   </td>
 
                   {/* TUTAR (₺) */}
-                  <td className="border border-black py-1 px-2.5 text-right font-mono font-bold text-slate-900 bg-slate-50/30 print:bg-transparent">
+                  <td className="border border-black py-1 px-2.5 text-right font-mono font-bold text-slate-900 bg-slate-50/30 print:bg-transparent whitespace-nowrap">
                     {row.total > 0
                       ? new Intl.NumberFormat("tr-TR", {
                         minimumFractionDigits: 2,

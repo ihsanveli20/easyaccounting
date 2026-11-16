@@ -106,6 +106,15 @@ body {
 .pdf-export-mode .print\:block {
   display: block !important;
 }
+.pdf-export-mode .print\:flex {
+  display: flex !important;
+}
+.pdf-export-mode .print\:inline {
+  display: inline !important;
+}
+.pdf-export-mode .print\:inline-flex {
+  display: inline-flex !important;
+}
 .pdf-export-mode th.print\:block,
 .pdf-export-mode td.print\:block {
   display: table-cell !important;

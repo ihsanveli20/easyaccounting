@@ -141,6 +141,7 @@ export type AppMenuId =
   | "quote"
   | "proposal-history"
   | "proposal-comparison"
+  | "received-quotes"
   | "stock-tracking"
   | "kurban-reporting"
   | "admin-users";

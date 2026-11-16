@@ -64,6 +64,7 @@ import ReconciliationView from "./components/ReconciliationView";
 import PriceQuoteView from "./components/PriceQuoteView";
 import ProposalHistoryView from "./components/ProposalHistoryView";
 import ProposalComparisonView from "./components/ProposalComparisonView";
+import ReceivedQuotesComparisonView from "./components/ReceivedQuotesComparisonView";
 import ProductManagementView, { DEFAULT_SAMPLE_PRODUCTS } from "./components/ProductManagementView";
 import KurbanReportingView from "./components/KurbanReportingView";
 import KurbanProcessModuleView from "./components/KurbanProcessModuleView";
@@ -93,7 +94,7 @@ export default function Home() {
 
   // Navigation Tab: "summary" = Hesap Planı / Bakiye Listesi, "details" = Firma Detay Hareketleri, "calculator" = Ayrıntılı Hesap Makinesi, "reconciliation" = Ekstre & Luca Mutabakat, "invoice-extractor" = Toplu Fatura -> Excel, "quote" = Fiyat Teklifi, "proposal-history" = Teklif Geçmişi, "proposal-comparison" = Teklif Karşılaştırma, "stock-tracking" = Ürün Stok Takibi, "kurban-reporting" = Kurban Raporlama & Takip, "admin-users" = Kullanıcı & Yetki Yönetimi
   const [activeTab, setActiveTab] = useState<
-    "summary" | "details" | "calculator" | "reconciliation" | "invoice-extractor" | "invoice-comparison" | "quote" | "proposal-history" | "proposal-comparison" | "stock-tracking" | "kurban-reporting" | "admin-users"
+    "summary" | "details" | "calculator" | "reconciliation" | "invoice-extractor" | "invoice-comparison" | "quote" | "proposal-history" | "proposal-comparison" | "received-quotes" | "stock-tracking" | "kurban-reporting" | "admin-users"
   >("summary");
 
   // State for proposal editing when navigating from history to editor
@@ -719,6 +720,17 @@ export default function Home() {
       tag: "YENİ",
     },
     {
+      id: "received-quotes" as const,
+      name: "Gelen Teklif Karşılaştırma",
+      shortName: "Gelen Teklifler",
+      description: "Çoklu PDF, Excel & Görsel Teklif Kıyaslama",
+      icon: GitCompareArrows,
+      activeBg: "bg-indigo-600 text-white shadow-md shadow-indigo-600/25",
+      badge: null,
+      badgeStyle: "bg-white/20 text-white",
+      tag: "YENİ",
+    },
+    {
       id: "stock-tracking" as const,
       name: "Ürün & Stok Yönetimi",
       shortName: "Ürün Yönetimi",
@@ -1237,7 +1249,9 @@ export default function Home() {
                                 ? "bg-gradient-to-tr from-indigo-600 to-purple-500 shadow-indigo-500/20"
                                 : activeTab === "proposal-comparison"
                                   ? "bg-gradient-to-tr from-purple-700 via-indigo-600 to-purple-900 shadow-purple-600/20"
-                                  : activeTab === "stock-tracking"
+                                  : activeTab === "received-quotes"
+                                    ? "bg-gradient-to-tr from-indigo-600 via-blue-600 to-cyan-500 shadow-indigo-600/20"
+                                    : activeTab === "stock-tracking"
                                     ? "bg-gradient-to-tr from-amber-600 to-orange-500 shadow-amber-500/20"
                                     : activeTab === "kurban-reporting"
                                       ? "bg-gradient-to-tr from-amber-600 via-emerald-600 to-teal-700 shadow-amber-600/20"
@@ -1262,6 +1276,8 @@ export default function Home() {
                   <History className="w-4 h-4 sm:w-5 sm:h-5" />
                 ) : activeTab === "proposal-comparison" ? (
                   <ArrowLeftRight className="w-4 h-4 sm:w-5 sm:h-5 text-amber-300" />
+                ) : activeTab === "received-quotes" ? (
+                  <GitCompareArrows className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
                 ) : activeTab === "stock-tracking" ? (
                   <Package className="w-4 h-4 sm:w-5 sm:h-5" />
                 ) : activeTab === "kurban-reporting" ? (
@@ -1292,7 +1308,9 @@ export default function Home() {
                                     ? "Teklif Geçmişi"
                                     : activeTab === "proposal-comparison"
                                       ? "Fiyat & Tedarikçi Kıyaslama"
-                                      : activeTab === "stock-tracking"
+                                      : activeTab === "received-quotes"
+                                        ? "Gelen Teklif Karşılaştırma"
+                                        : activeTab === "stock-tracking"
                                         ? "Ürün Stok Takibi"
                                         : activeTab === "kurban-reporting"
                                           ? "Kurban Kesim ve Süreç Takip Raporu"
@@ -1315,7 +1333,9 @@ export default function Home() {
                                   ? "bg-purple-50 text-purple-700 border-purple-200"
                                   : activeTab === "proposal-comparison"
                                     ? "bg-emerald-100 text-emerald-900 border-emerald-300 font-extrabold"
-                                    : activeTab === "stock-tracking"
+                                    : activeTab === "received-quotes"
+                                      ? "bg-indigo-100 text-indigo-900 border-indigo-300 font-extrabold"
+                                      : activeTab === "stock-tracking"
                                       ? "bg-blue-50 text-blue-700 border-blue-200"
                                       : activeTab === "kurban-reporting"
                                         ? "bg-amber-100 text-amber-900 border-amber-300 font-extrabold"
@@ -1340,7 +1360,9 @@ export default function Home() {
                                     ? "Kayıtlı Teklifler"
                                     : activeTab === "proposal-comparison"
                                       ? "En Uygun Fiyat"
-                                      : activeTab === "stock-tracking"
+                                      : activeTab === "received-quotes"
+                                        ? "PDF / Excel / Görsel"
+                                        : activeTab === "stock-tracking"
                                         ? "Ürün Kataloğu"
                                         : activeTab === "kurban-reporting"
                                           ? "Resmî Denetim Raporu"
@@ -1366,7 +1388,9 @@ export default function Home() {
                                   ? "Supabase bulutunda kayıtlı teklifleri görüntüleyin, düzenleyin ve durumlarını takip edin"
                                   : activeTab === "proposal-comparison"
                                     ? "Ürün bazında farklı tedarikçi ve internet fiyatlarını çekin, en uygun maliyeti bulun"
-                                    : activeTab === "stock-tracking"
+                                    : activeTab === "received-quotes"
+                                      ? "Tedarikçilerden gelen birden fazla PDF, Excel ve Görsel teklifleri yükleyip kalem bazında kıyaslayın"
+                                      : activeTab === "stock-tracking"
                                       ? "Excel ile ürün listenizi içe aktarın, kaydedin ve teklif hazırlarken anında çekin"
                                       : activeTab === "kurban-reporting"
                                         ? "350 canlı hayvan alımı, 8 tır sevkiyatı, 2 kesimhanede kesim, soğuk depolama ve iki ayrı resmî denetim raporu"
@@ -2198,6 +2222,13 @@ export default function Home() {
               onGoToQuote={() => setActiveTab("quote")}
               onGoToHistory={() => setActiveTab("proposal-history")}
             />
+          )}
+
+          {/* ========================================================================= */}
+          {/* TAB 5.7: RECEIVED QUOTES COMPARISON (GELEN TEKLİFLERİ KARŞILAŞTIRMA)       */}
+          {/* ========================================================================= */}
+          {activeTab === "received-quotes" && hasMenuAccess("received-quotes") && (
+            <ReceivedQuotesComparisonView />
           )}
 
           {/* ========================================================================= */}

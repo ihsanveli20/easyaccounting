@@ -247,7 +247,7 @@ export default function LoginView() {
           {/* Footer Security Badge */}
           <div className="mt-5 pt-3 text-center flex items-center justify-center gap-1.5 text-[10px] text-slate-400">
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-            <span>256-Bit SSL Güvenli Bağlantı • Supabase Auth</span>
+            <span>2026 İst Anadolu Yapı</span>
           </div>
         </div>
       </div>

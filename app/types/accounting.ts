@@ -101,6 +101,7 @@ export interface SavedProposal {
   metadata?: {
     notes?: string;
     vatRate?: number;
+    showVat?: boolean;
     vatNote?: string;
     formTitle?: string;
     preparedBy?: string;

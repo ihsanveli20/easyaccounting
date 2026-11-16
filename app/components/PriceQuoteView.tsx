@@ -33,6 +33,8 @@ import {
   Users,
   History,
   Save,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { ProductItem, Customer, SavedProposal } from "../types/accounting";
 import { normalizeForSearch } from "../utils/excel";
@@ -354,8 +356,9 @@ export default function PriceQuoteView({
     profile?.full_name || profile?.user_name || "Satış & Pazarlama Departmanı"
   );
 
-  // KDV Rate (%20 default)
+  // KDV Rate (%20 default) & visibility toggle
   const [vatRate, setVatRate] = useState<number>(20);
+  const [showVat, setShowVat] = useState<boolean>(true);
 
   // Rows State (starts with 5 rows)
   const [rows, setRows] = useState<QuoteItem[]>(() => {
@@ -445,6 +448,9 @@ export default function PriceQuoteView({
       }
       if (editingProposal.metadata?.vatRate !== undefined) {
         setVatRate(editingProposal.metadata.vatRate);
+      }
+      if (editingProposal.metadata?.showVat !== undefined) {
+        setShowVat(Boolean(editingProposal.metadata.showVat));
       }
       if (editingProposal.metadata?.notes !== undefined) {
         setNoteItems(parseNotesToItems(editingProposal.metadata.notes));
@@ -645,6 +651,7 @@ export default function PriceQuoteView({
         }
         if (parsed.preparedBy) setPreparedBy(parsed.preparedBy);
         if (parsed.vatRate !== undefined) setVatRate(parsed.vatRate);
+        if (parsed.showVat !== undefined) setShowVat(Boolean(parsed.showVat));
         if (parsed.companyInfo) {
           setCompanyInfo((prev) => ({
             ...prev,
@@ -688,13 +695,14 @@ export default function PriceQuoteView({
         noteItems,
         preparedBy,
         vatRate,
+        showVat,
         companyInfo,
       };
       localStorage.setItem("fiyat_teklifi_data_v2", JSON.stringify(data));
     } catch {
       // ignore
     }
-  }, [rows, quoteDate, vatNote, customerName, formTitle, notes, noteItems, preparedBy, vatRate, companyInfo]);
+  }, [rows, quoteDate, vatNote, customerName, formTitle, notes, noteItems, preparedBy, vatRate, showVat, companyInfo]);
 
   const showToast = (msg: string) => {
     setToastMsg(msg);
@@ -882,7 +890,7 @@ export default function PriceQuoteView({
 
   // Calculations
   const subtotal = rows.reduce((acc, r) => acc + (r.total || 0), 0);
-  const vatAmount = subtotal * (vatRate / 100);
+  const vatAmount = showVat ? subtotal * (vatRate / 100) : 0;
   const grandTotal = subtotal + vatAmount;
 
   // Save or Update Proposal in Supabase (proposals & proposal_items)
@@ -930,6 +938,7 @@ export default function PriceQuoteView({
       const metadata = {
         notes,
         vatRate,
+        showVat,
         vatNote,
         formTitle,
         preparedBy,
@@ -1213,7 +1222,7 @@ export default function PriceQuoteView({
         [],
         [formTitle, "", "", "", "", ""],
         ["MÜŞTERİ FİRMA ADI", customerName || "-", "", "TEKLİF TARİHİ", quoteDate, ""],
-        [vatNote, "", "", "", "", ""],
+        ...(showVat ? [[vatNote, "", "", "", "", ""]] : []),
         ["SIRA", "MALZEME CİNSİ", "MİKTAR", "BİRİM", "BİRİM FİYATI (₺)", "TUTAR (₺)"],
       ];
 
@@ -1230,7 +1239,9 @@ export default function PriceQuoteView({
 
       // Totals
       wsData.push(["", "", "", "", "Ara Toplam", subtotal]);
-      wsData.push(["", "", "", "", `KDV (%${vatRate})`, vatAmount]);
+      if (showVat) {
+        wsData.push(["", "", "", "", `KDV (%${vatRate})`, vatAmount]);
+      }
       wsData.push(["", "", "", "", "TOPLAM", grandTotal]);
 
       const ws = XLSX.utils.aoa_to_sheet(wsData);
@@ -1240,7 +1251,7 @@ export default function PriceQuoteView({
         { s: { r: 3, c: 0 }, e: { r: 3, c: 5 } }, // Title
         { s: { r: 4, c: 1 }, e: { r: 4, c: 2 } }, // Customer Name
         { s: { r: 4, c: 4 }, e: { r: 4, c: 5 } }, // Date
-        { s: { r: 5, c: 0 }, e: { r: 5, c: 5 } }, // Vat note
+        ...(showVat ? [{ s: { r: 5, c: 0 }, e: { r: 5, c: 5 } }] : []), // Vat note
       ];
 
       // Col widths
@@ -1365,6 +1376,25 @@ export default function PriceQuoteView({
             <Settings className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Firma Bilgileri</span>
             <span className="sm:hidden">Ayarlar</span>
+          </button>
+
+          {/* KDV Show/Hide Toggle */}
+          <button
+            type="button"
+            onClick={() => setShowVat((prev) => !prev)}
+            className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl text-xs font-semibold border transition-colors ${
+              showVat
+                ? "bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+                : "bg-slate-100 hover:bg-slate-200 text-slate-600 border-slate-300"
+            }`}
+            title="Teklif formunda, PDF ve Excel çıktısında KDV satırını göster veya gizle"
+          >
+            {showVat ? (
+              <Eye className="w-3.5 h-3.5 text-blue-600" />
+            ) : (
+              <EyeOff className="w-3.5 h-3.5 text-slate-500" />
+            )}
+            <span>{showVat ? `KDV Göster (%${vatRate})` : "KDV Gizli"}</span>
           </button>
 
           {/* Reset */}
@@ -1848,10 +1878,12 @@ export default function PriceQuoteView({
           </table>
         </div>
 
-        {/* 4. KDV DAHİL DEĞİLDİR NOTE (SABİT) */}
-        <div className="w-full py-1 px-2.5 mb-2 border border-slate-300 rounded text-xs italic font-medium text-slate-800 bg-slate-50/50 select-none print:bg-transparent print:border-none print:px-0 print:py-0 print:mb-1">
-          {FIXED_VAT_NOTE}
-        </div>
+        {/* 4. KDV DAHİL DEĞİLDİR NOTE (KDV görünürken gösterilir) */}
+        {showVat && (
+          <div className="w-full py-1 px-2.5 mb-2 border border-slate-300 rounded text-xs italic font-medium text-slate-800 bg-slate-50/50 select-none print:bg-transparent print:border-none print:px-0 print:py-0 print:mb-1">
+            {FIXED_VAT_NOTE}
+          </div>
+        )}
 
         {/* 5. MAIN QUOTATION TABLE (EXACT MATCH & FIXED COLUMNS FOR ZERO PRINT DRIFT) */}
         <div className="sm:hidden no-print text-[11px] text-slate-400 italic mb-1 flex items-center justify-between">
@@ -2081,11 +2113,11 @@ export default function PriceQuoteView({
                 </tr>
               ))}
 
-              {/* 6. SUMMARY FOOTER (EXACT MATCH: Ara Toplam, KDV, TOPLAM) */}
+              {/* 6. SUMMARY FOOTER (Ara Toplam, KDV opsiyonel, TOPLAM) */}
               <tr>
                 <td
                   colSpan={4}
-                  rowSpan={3}
+                  rowSpan={showVat ? 3 : 2}
                   className="border border-black p-2.5 align-top bg-slate-50/20 print:bg-transparent"
                 >
                   <div className="flex flex-col gap-1.5 text-xs text-slate-600">
@@ -2179,20 +2211,22 @@ export default function PriceQuoteView({
                 <td className="no-print border border-black" />
               </tr>
 
-              <tr>
-                <td className="border border-black py-2 px-2.5 text-right font-bold text-slate-800 bg-slate-50 print:bg-transparent text-xs">
-                  <div className="flex items-center justify-end gap-1">
-                    <span>KDV</span>
-                    <span className="text-[10px] text-slate-500 font-normal">
-                      (%{vatRate})
-                    </span>
-                  </div>
-                </td>
-                <td className="border border-black py-2 px-2.5 text-right font-mono font-bold text-slate-900 text-xs">
-                  {formatCurrency(vatAmount)}
-                </td>
-                <td className="no-print border border-black" />
-              </tr>
+              {showVat && (
+                <tr>
+                  <td className="border border-black py-2 px-2.5 text-right font-bold text-slate-800 bg-slate-50 print:bg-transparent text-xs">
+                    <div className="flex items-center justify-end gap-1">
+                      <span>KDV</span>
+                      <span className="text-[10px] text-slate-500 font-normal">
+                        (%{vatRate})
+                      </span>
+                    </div>
+                  </td>
+                  <td className="border border-black py-2 px-2.5 text-right font-mono font-bold text-slate-900 text-xs">
+                    {formatCurrency(vatAmount)}
+                  </td>
+                  <td className="no-print border border-black" />
+                </tr>
+              )}
 
               <tr
                 style={{

@@ -74,7 +74,7 @@ export const SYSTEM_MENUS: MenuItemDefinition[] = [
   {
     id: "received-quotes",
     name: "Gelen Teklif Karşılaştırma",
-    shortName: "Gelen Teklifler",
+    shortName: "Teklif Karşılaştırma",
     description: "Çoklu PDF, Excel ve Görsel teklif dosyalarını yükleyip kalem bazlı kıyaslama",
     category: "sales",
   },

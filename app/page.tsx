@@ -821,7 +821,7 @@ export default function Home() {
     {
       id: "received-quotes" as const,
       name: "Gelen Teklif Karşılaştırma",
-      shortName: "Gelen Teklifler",
+      shortName: "Teklif Karşılaştırma",
       description: "Çoklu PDF, Excel & Görsel Teklif Kıyaslama",
       icon: GitCompareArrows,
       activeBg: "bg-indigo-600 text-white shadow-md shadow-indigo-600/25",

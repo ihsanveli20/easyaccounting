@@ -93,6 +93,13 @@ export const SYSTEM_MENUS: MenuItemDefinition[] = [
     category: "sales",
   },
   {
+    id: "settings",
+    name: "Ayarlar",
+    shortName: "Ayarlar",
+    description: "Menü yönetimi, yan menü gizleme, sıralama ve görünüm tercihleri",
+    category: "admin",
+  },
+  {
     id: "admin-users",
     name: "Kullanıcı & Yetki Yönetimi",
     shortName: "Yetki Paneli",
@@ -115,6 +122,7 @@ export const DEFAULT_ROLE_PERMISSIONS: RoleMenuPermissions = {
     "received-quotes",
     "stock-tracking",
     "kurban-reporting",
+    "settings",
     "admin-users",
   ],
   sales: [
@@ -128,6 +136,7 @@ export const DEFAULT_ROLE_PERMISSIONS: RoleMenuPermissions = {
     "invoice-comparison",
     "details",
     "calculator",
+    "settings",
   ],
   viewer: [
     "summary",
@@ -138,6 +147,7 @@ export const DEFAULT_ROLE_PERMISSIONS: RoleMenuPermissions = {
     "proposal-comparison",
     "received-quotes",
     "kurban-reporting",
+    "settings",
   ],
   purchasing: [
     "stock-tracking",
@@ -148,6 +158,7 @@ export const DEFAULT_ROLE_PERMISSIONS: RoleMenuPermissions = {
     "invoice-comparison",
     "summary",
     "calculator",
+    "settings",
   ],
   user: [
     "summary",
@@ -158,6 +169,7 @@ export const DEFAULT_ROLE_PERMISSIONS: RoleMenuPermissions = {
     "received-quotes",
     "kurban-reporting",
     "calculator",
+    "settings",
   ],
 };
 

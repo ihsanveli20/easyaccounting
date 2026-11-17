@@ -67,6 +67,7 @@ const MENU_ICONS: Record<AppMenuId, React.ComponentType<{ className?: string }>>
   "received-quotes": GitCompareArrows,
   "stock-tracking": Package,
   "kurban-reporting": ScrollText,
+  settings: Settings2,
   "admin-users": UserCheck,
 };
 

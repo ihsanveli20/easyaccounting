@@ -40,6 +40,8 @@ import {
   Truck,
   ScrollText,
   GitCompareArrows,
+  LayoutGrid,
+  SlidersHorizontal,
 } from "lucide-react";
 import {
   AccountRecord,
@@ -73,6 +75,13 @@ import KurbanProcessModuleView from "./components/KurbanProcessModuleView";
 import InvoiceComparisonModuleView from "./components/InvoiceComparisonModuleView";
 import LoginView from "./components/LoginView";
 import AdminUsersView from "./components/AdminUsersView";
+import SettingsView from "./components/SettingsView";
+import AppLauncherView, {
+  DEFAULT_MENU_PREFS,
+  MENU_PREFS_STORAGE_KEY,
+  MenuCustomizerModal,
+  MenuPreferences,
+} from "./components/AppLauncherView";
 import { useAuth } from "./context/AuthContext";
 
 export default function Home() {
@@ -94,15 +103,107 @@ export default function Home() {
 
   // Navigation Tab: "summary" = Hesap Planı / Bakiye Listesi, "details" = Firma Detay Hareketleri, "calculator" = Ayrıntılı Hesap Makinesi, "reconciliation" = Ekstre & Luca Mutabakat, "invoice-extractor" = Toplu Fatura -> Excel, "quote" = Fiyat Teklifi, "proposal-history" = Teklif Geçmişi, "proposal-comparison" = Teklif Karşılaştırma, "stock-tracking" = Ürün Stok Takibi, "kurban-reporting" = Kurban Raporlama & Takip, "admin-users" = Kullanıcı & Yetki Yönetimi
   const [activeTab, setActiveTab] = useState<
-    "summary" | "details" | "calculator" | "reconciliation" | "invoice-extractor" | "invoice-comparison" | "quote" | "proposal-history" | "proposal-comparison" | "received-quotes" | "stock-tracking" | "kurban-reporting" | "admin-users"
+    "summary" | "details" | "calculator" | "reconciliation" | "invoice-extractor" | "invoice-comparison" | "quote" | "proposal-history" | "proposal-comparison" | "received-quotes" | "stock-tracking" | "kurban-reporting" | "settings" | "admin-users"
   >("summary");
 
   // State for proposal editing when navigating from history to editor
   const [editingProposal, setEditingProposal] = useState<SavedProposal | null>(null);
 
-  // Sidebar Layout State
+  // Sidebar Layout State & Menu Customization
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [menuPrefs, setMenuPrefs] = useState<MenuPreferences>(() => {
+    if (typeof window === "undefined") return DEFAULT_MENU_PREFS;
+    try {
+      const raw = window.localStorage.getItem(MENU_PREFS_STORAGE_KEY);
+      if (raw) return { ...DEFAULT_MENU_PREFS, ...JSON.parse(raw) };
+    } catch {
+      // ignore
+    }
+    return DEFAULT_MENU_PREFS;
+  });
+  const [showAppLauncher, setShowAppLauncher] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      const raw = window.localStorage.getItem(MENU_PREFS_STORAGE_KEY);
+      if (raw) return Boolean(JSON.parse(raw)?.startInLauncher);
+    } catch {
+      // ignore
+    }
+    return false;
+  });
+  const [menuCustomizerOpen, setMenuCustomizerOpen] = useState(false);
+  const [prefsSource, setPrefsSource] = useState<string>("default");
+  const [isSavingPrefs, setIsSavingPrefs] = useState<boolean>(false);
+
+  const handleUpdateMenuPrefs = (next: MenuPreferences) => {
+    setMenuPrefs(next);
+    setSidebarCollapsed(Boolean(next.sidebarCollapsed));
+    if (typeof window !== "undefined") {
+      try {
+        window.localStorage.setItem(MENU_PREFS_STORAGE_KEY, JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+    }
+  };
+
+  const saveMenuPrefsToSupabase = async (prefsToSave: MenuPreferences = menuPrefs): Promise<boolean> => {
+    setIsSavingPrefs(true);
+    try {
+      const res = await fetch("/api/menu-preferences", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({
+          userId: user?.id || "default",
+          preferences: prefsToSave,
+        }),
+      });
+      const data = await res.json();
+      if (data?.success) {
+        if (data.source) setPrefsSource(data.source);
+        return true;
+      }
+    } catch {
+      // ignore
+    } finally {
+      setIsSavingPrefs(false);
+    }
+    return false;
+  };
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    let active = true;
+    const uid = user?.id || "default";
+    fetch(`/api/menu-preferences?userId=${encodeURIComponent(uid)}`, {
+      cache: "no-store",
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (!active || !data?.success || !data?.preferences) return;
+        const loaded: MenuPreferences = {
+          ...DEFAULT_MENU_PREFS,
+          ...data.preferences,
+        };
+        if (data.source && data.source !== "default") {
+          setMenuPrefs(loaded);
+          setSidebarCollapsed(Boolean(loaded.sidebarCollapsed));
+          setShowAppLauncher(Boolean(loaded.startInLauncher));
+          setPrefsSource(data.source);
+          try {
+            window.localStorage.setItem(MENU_PREFS_STORAGE_KEY, JSON.stringify(loaded));
+          } catch {
+            // ignore
+          }
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [isAuthenticated, user?.id]);
 
   // Summary State (Hesap Planı & Mizan)
   const [records, setRecords] = useState<AccountRecord[]>([]);
@@ -752,6 +853,17 @@ export default function Home() {
       badgeStyle: "bg-white/20 text-white font-bold",
       tag: "RESMÎ",
     },
+    {
+      id: "settings" as const,
+      name: "Ayarlar",
+      shortName: "Ayarlar",
+      description: "Menü Yönetimi & Görünüm Tercihleri",
+      icon: Settings2,
+      activeBg: "bg-amber-600 text-white shadow-md shadow-amber-600/25",
+      badge: null,
+      badgeStyle: "bg-white/20 text-white",
+      tag: null,
+    },
     ...(isAdmin
       ? [
         {
@@ -769,10 +881,23 @@ export default function Home() {
       : []),
   ];
 
-  // Filter navigation items based on active user's permissions
+  // Filter navigation items based on active user's permissions + custom order/visibility
+  const orderedAllowedNavItems = useMemo(() => {
+    const allowed = navItems.filter((item) => hasMenuAccess(item.id));
+    if (!menuPrefs.order || menuPrefs.order.length === 0) return allowed;
+    const orderMap = new Map(menuPrefs.order.map((id, idx) => [id, idx]));
+    return [...allowed].sort((a, b) => {
+      const idxA = orderMap.has(a.id) ? (orderMap.get(a.id) as number) : 999;
+      const idxB = orderMap.has(b.id) ? (orderMap.get(b.id) as number) : 999;
+      return idxA - idxB;
+    });
+  }, [navItems, hasMenuAccess, menuPrefs.order]);
+
   const visibleNavItems = useMemo(() => {
-    return navItems.filter((item) => hasMenuAccess(item.id));
-  }, [navItems, hasMenuAccess]);
+    const hiddenSet = new Set(menuPrefs.hiddenIds || []);
+    const filtered = orderedAllowedNavItems.filter((item) => !hiddenSet.has(item.id));
+    return filtered.length > 0 ? filtered : orderedAllowedNavItems;
+  }, [orderedAllowedNavItems, menuPrefs.hiddenIds]);
 
   // Auto-switch to first allowed tab if current tab is not accessible or hidden
   useEffect(() => {
@@ -848,18 +973,45 @@ export default function Home() {
         </div>
 
         <div className="flex-1 py-4 px-3 overflow-y-auto no-scrollbar space-y-1.5">
-          <div className="px-3 pb-2 text-[10px] font-bold tracking-wider text-slate-400 uppercase">
+          <div className="flex items-center justify-between px-2 pb-2 gap-1.5">
+            <button
+              onClick={() => {
+                setShowAppLauncher((prev) => !prev);
+                setMobileMenuOpen(false);
+              }}
+              className={`flex-1 flex items-center gap-2 px-2.5 py-2 rounded-xl text-xs font-bold border transition-colors ${
+                showAppLauncher
+                  ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
+                  : "bg-indigo-50/70 text-indigo-700 border-indigo-200/70 hover:bg-indigo-100"
+              }`}
+            >
+              <LayoutGrid className="w-3.5 h-3.5 shrink-0" />
+              <span>Uygulamalar</span>
+            </button>
+            <button
+              onClick={() => {
+                setMenuCustomizerOpen(true);
+                setMobileMenuOpen(false);
+              }}
+              className="p-2 rounded-xl border border-slate-200 text-slate-600 hover:text-indigo-700 hover:bg-indigo-50 transition-colors"
+              title="Menüyü Özelleştir"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <div className="px-3 pb-1 text-[10px] font-bold tracking-wider text-slate-400 uppercase">
             Ana Menü
           </div>
           <nav className="space-y-1.5">
             {visibleNavItems.map((item) => {
-              const isActive = activeTab === item.id;
+              const isActive = !showAppLauncher && activeTab === item.id;
               const Icon = item.icon;
               return (
                 <button
                   key={item.id}
                   onClick={() => {
                     setActiveTab(item.id);
+                    setShowAppLauncher(false);
                     setMobileMenuOpen(false);
                   }}
                   className={`w-full flex items-center justify-between p-3 rounded-xl text-left transition-all ${isActive
@@ -969,6 +1121,7 @@ export default function Home() {
       </aside>
 
       {/* Desktop Persistent Left Sidebar Navigation */}
+      {!menuPrefs.sidebarHidden && !(showAppLauncher && menuPrefs.hideSidebarInLauncher) && (
       <aside
         className={`hidden lg:flex flex-col sticky top-0 h-screen z-40 bg-white border-r border-slate-200/80 transition-all duration-300 ease-in-out shrink-0 no-print select-none ${sidebarCollapsed ? "w-20" : "w-72"
           }`}
@@ -1018,22 +1171,63 @@ export default function Home() {
 
         {/* Sidebar Navigation Items */}
         <div className="flex-1 py-4 px-3 overflow-y-auto no-scrollbar space-y-1.5">
+          {!sidebarCollapsed ? (
+            <div className="flex items-center justify-between gap-1.5 pb-2">
+              <button
+                onClick={() => setShowAppLauncher((prev) => !prev)}
+                className={`flex-1 flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold border transition-all ${
+                  showAppLauncher
+                    ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
+                    : "bg-indigo-50/70 text-indigo-700 border-indigo-200/70 hover:bg-indigo-100"
+                }`}
+                title="Odoo tarzı uygulama başlatıcı ızgarasını aç/kapat"
+              >
+                <LayoutGrid className="w-4 h-4 shrink-0" />
+                <span>Uygulamalar</span>
+              </button>
+              <button
+                onClick={() => setMenuCustomizerOpen(true)}
+                className="p-2 rounded-xl border border-slate-200 text-slate-600 hover:text-indigo-700 hover:bg-indigo-50 transition-colors"
+                title="Menüyü Özelleştir (Sırala / Gizle)"
+              >
+                <SlidersHorizontal className="w-4 h-4" />
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-1.5 pb-2 border-b border-slate-100">
+              <button
+                onClick={() => setShowAppLauncher((prev) => !prev)}
+                title="Uygulamalar (Izgara Görünümü)"
+                className={`w-full h-11 rounded-xl flex items-center justify-center transition-all ${
+                  showAppLauncher
+                    ? "bg-indigo-600 text-white shadow-sm"
+                    : "bg-indigo-50/70 text-indigo-600 hover:bg-indigo-100"
+                }`}
+              >
+                <LayoutGrid className="w-5 h-5" />
+              </button>
+            </div>
+          )}
+
           {!sidebarCollapsed && (
-            <div className="px-3 pb-2 text-[10px] font-bold tracking-wider text-slate-400 uppercase">
+            <div className="px-3 pb-1 text-[10px] font-bold tracking-wider text-slate-400 uppercase">
               Ana Menü
             </div>
           )}
 
           <nav className="space-y-1.5">
             {visibleNavItems.map((item) => {
-              const isActive = activeTab === item.id;
+              const isActive = !showAppLauncher && activeTab === item.id;
               const Icon = item.icon;
 
               if (sidebarCollapsed) {
                 return (
                   <button
                     key={item.id}
-                    onClick={() => setActiveTab(item.id)}
+                    onClick={() => {
+                      setActiveTab(item.id);
+                      setShowAppLauncher(false);
+                    }}
                     title={`${item.name} - ${item.description}`}
                     className={`w-full h-12 rounded-xl flex items-center justify-center relative transition-all group ${isActive
                       ? item.activeBg
@@ -1061,7 +1255,10 @@ export default function Home() {
               return (
                 <button
                   key={item.id}
-                  onClick={() => setActiveTab(item.id)}
+                  onClick={() => {
+                    setActiveTab(item.id);
+                    setShowAppLauncher(false);
+                  }}
                   className={`w-full flex items-center justify-between p-2.5 rounded-xl text-left transition-all group ${isActive
                     ? item.activeBg
                     : "text-slate-600 hover:text-slate-900 hover:bg-slate-100/80"
@@ -1200,6 +1397,7 @@ export default function Home() {
           )}
         </div>
       </aside>
+      )}
 
       {/* Main Content Area Wrapper */}
       <div className="flex-1 flex flex-col min-w-0 min-h-screen">
@@ -1218,17 +1416,52 @@ export default function Home() {
               </button>
 
               {/* Desktop collapse toggle */}
+              {!menuPrefs.sidebarHidden && !(showAppLauncher && menuPrefs.hideSidebarInLauncher) && (
+                <button
+                  onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+                  className="hidden lg:flex p-2 -ml-1 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition-colors shrink-0"
+                  title={sidebarCollapsed ? "Menüyü Genişlet" : "Menüyü Daralt"}
+                >
+                  {sidebarCollapsed ? (
+                    <PanelLeft className="w-5 h-5" />
+                  ) : (
+                    <PanelLeftClose className="w-5 h-5" />
+                  )}
+                </button>
+              )}
+
+              {/* App Launcher Grid Toggle (Odoo-style menu) */}
               <button
-                onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-                className="hidden lg:flex p-2 -ml-1 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition-colors shrink-0"
-                title={sidebarCollapsed ? "Menüyü Genişlet" : "Menüyü Daralt"}
+                onClick={() => setShowAppLauncher((prev) => !prev)}
+                className={`p-2 rounded-xl transition-colors shrink-0 flex items-center gap-1.5 text-xs font-bold ${
+                  showAppLauncher
+                    ? "bg-indigo-600 text-white shadow-sm"
+                    : "text-slate-600 hover:text-indigo-700 hover:bg-indigo-50"
+                }`}
+                title={showAppLauncher ? "Modüle Dön" : "Uygulamalar (Izgara Menü)"}
               >
-                {sidebarCollapsed ? (
-                  <PanelLeft className="w-5 h-5" />
-                ) : (
-                  <PanelLeftClose className="w-5 h-5" />
-                )}
+                <LayoutGrid className="w-4 h-4 sm:w-5 sm:h-5" />
+                <span className="hidden xl:inline">
+                  {showAppLauncher ? "Modüle Dön" : "Uygulamalar"}
+                </span>
               </button>
+
+              {hasMenuAccess("settings") && (
+                <button
+                  onClick={() => {
+                    setActiveTab("settings");
+                    setShowAppLauncher(false);
+                  }}
+                  className={`p-2 rounded-xl transition-colors shrink-0 ${
+                    !showAppLauncher && activeTab === "settings"
+                      ? "bg-amber-100 text-amber-800"
+                      : "text-slate-500 hover:text-amber-700 hover:bg-amber-50"
+                  }`}
+                  title="Ayarlar & Menü Yönetimi"
+                >
+                  <Settings2 className="w-4 h-4 sm:w-5 sm:h-5" />
+                </button>
+              )}
 
               <div
                 className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center text-white shadow-md transition-all shrink-0 ${activeTab === "summary"
@@ -1255,7 +1488,9 @@ export default function Home() {
                                     ? "bg-gradient-to-tr from-amber-600 to-orange-500 shadow-amber-500/20"
                                     : activeTab === "kurban-reporting"
                                       ? "bg-gradient-to-tr from-amber-600 via-emerald-600 to-teal-700 shadow-amber-600/20"
-                                      : "bg-gradient-to-tr from-purple-600 to-indigo-600 shadow-purple-500/20"
+                                      : activeTab === "settings"
+                                        ? "bg-gradient-to-tr from-amber-500 to-orange-600 shadow-amber-500/20"
+                                        : "bg-gradient-to-tr from-purple-600 to-indigo-600 shadow-purple-500/20"
                   }`}
               >
                 {activeTab === "summary" ? (
@@ -1282,6 +1517,8 @@ export default function Home() {
                   <Package className="w-4 h-4 sm:w-5 sm:h-5" />
                 ) : activeTab === "kurban-reporting" ? (
                   <ScrollText className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-100" />
+                ) : activeTab === "settings" ? (
+                  <Settings2 className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
                 ) : (
                   <UserCheck className="w-4 h-4 sm:w-5 sm:h-5" />
                 )}
@@ -1314,7 +1551,9 @@ export default function Home() {
                                         ? "Ürün Stok Takibi"
                                         : activeTab === "kurban-reporting"
                                           ? "Kurban Kesim ve Süreç Takip Raporu"
-                                          : "Kullanıcı & Yetki Yönetimi"}
+                                          : activeTab === "settings"
+                                            ? "Ayarlar & Menü Yönetimi"
+                                            : "Kullanıcı & Yetki Yönetimi"}
                   </span>
                   <span
                     className={`hidden sm:inline-block text-xs font-semibold px-2 py-0.5 rounded-full border ${activeTab === "summary"
@@ -1339,7 +1578,9 @@ export default function Home() {
                                       ? "bg-blue-50 text-blue-700 border-blue-200"
                                       : activeTab === "kurban-reporting"
                                         ? "bg-amber-100 text-amber-900 border-amber-300 font-extrabold"
-                                        : "bg-purple-50 text-purple-700 border-purple-200"
+                                        : activeTab === "settings"
+                                          ? "bg-orange-100 text-orange-900 border-orange-300 font-bold"
+                                          : "bg-purple-50 text-purple-700 border-purple-200"
                       }`}
                   >
                     {activeTab === "summary"
@@ -1366,7 +1607,9 @@ export default function Home() {
                                         ? "Ürün Kataloğu"
                                         : activeTab === "kurban-reporting"
                                           ? "Resmî Denetim Raporu"
-                                          : "Admin Paneli"}
+                                          : activeTab === "settings"
+                                            ? "Menü & Görünüm"
+                                            : "Admin Paneli"}
                   </span>
                 </h1>
                 <p className="text-xs text-slate-500 hidden md:block truncate">
@@ -1394,7 +1637,9 @@ export default function Home() {
                                       ? "Excel ile ürün listenizi içe aktarın, kaydedin ve teklif hazırlarken anında çekin"
                                       : activeTab === "kurban-reporting"
                                         ? "350 canlı hayvan alımı, 8 tır sevkiyatı, 2 kesimhanede kesim, soğuk depolama ve iki ayrı resmî denetim raporu"
-                                        : "Kullanıcıları görüntüleyin, rolleri güncelleyin ve yetki matrisini yönetin"}
+                                        : activeTab === "settings"
+                                          ? "Yan menüyü gizleyin, modülleri sıralayın ve tercihlerinizi Supabase'e kaydedin"
+                                          : "Kullanıcıları görüntüleyin, rolleri güncelleyin ve yetki matrisini yönetin"}
                 </p>
               </div>
             </div>
@@ -1505,6 +1750,21 @@ export default function Home() {
 
         {/* Main Content Area */}
         <main className="max-w-[1600px] w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 flex-1 flex flex-col gap-4 sm:gap-6">
+          {showAppLauncher ? (
+            <AppLauncherView
+              items={visibleNavItems}
+              allAllowedItems={orderedAllowedNavItems}
+              activeTab={activeTab}
+              prefs={menuPrefs}
+              onUpdatePrefs={handleUpdateMenuPrefs}
+              onSelectModule={(id) => {
+                setActiveTab(id);
+                setShowAppLauncher(false);
+              }}
+              onOpenCustomizer={() => setMenuCustomizerOpen(true)}
+            />
+          ) : (
+            <>
           {/* Access denied fallback if tab is not permitted */}
           {!hasMenuAccess(activeTab) && (
             <div className="flex-1 flex flex-col items-center justify-center p-8 sm:p-12 text-center bg-white rounded-2xl border border-slate-200 shadow-xs my-8 max-w-lg mx-auto">
@@ -2252,12 +2512,40 @@ export default function Home() {
           )}
 
           {/* ========================================================================= */}
+          {/* TAB 6.8: SETTINGS & MENU MANAGEMENT (AYARLAR)                             */}
+          {/* ========================================================================= */}
+          {activeTab === "settings" && hasMenuAccess("settings") && (
+            <SettingsView
+              orderedAllowedItems={orderedAllowedNavItems}
+              prefs={menuPrefs}
+              prefsSource={prefsSource}
+              isSavingPrefs={isSavingPrefs}
+              onUpdatePrefs={handleUpdateMenuPrefs}
+              onSaveToSupabase={saveMenuPrefsToSupabase}
+              onOpenLauncher={() => setShowAppLauncher(true)}
+            />
+          )}
+
+          {/* ========================================================================= */}
           {/* TAB 7: ADMIN USERS & ROLE MANAGEMENT (KULLANICI & YETKİ YÖNETİMİ)         */}
           {/* ========================================================================= */}
           {activeTab === "admin-users" && isAdmin && hasMenuAccess("admin-users") && (
             <AdminUsersView />
           )}
+            </>
+          )}
         </main>
+
+        <MenuCustomizerModal
+          open={menuCustomizerOpen}
+          onClose={() => {
+            setMenuCustomizerOpen(false);
+            saveMenuPrefsToSupabase(menuPrefs);
+          }}
+          orderedAllowedItems={orderedAllowedNavItems}
+          prefs={menuPrefs}
+          onUpdatePrefs={handleUpdateMenuPrefs}
+        />
 
         {/* Footer */}
         <footer className="border-t border-slate-200/80 bg-white/60 py-4 text-center text-xs text-slate-400 no-print mt-auto">

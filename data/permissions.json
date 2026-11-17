@@ -49,7 +49,7 @@
       ]
     },
     "veliihsan@ea.co": {
-      "custom": false,
+      "custom": true,
       "allowedMenus": [
         "summary",
         "details",
@@ -60,7 +60,10 @@
         "stock-tracking",
         "admin-users",
         "proposal-comparison",
-        "kurban-reporting"
+        "kurban-reporting",
+        "invoice-extractor",
+        "received-quotes",
+        "settings"
       ]
     },
     "rustemskn@ea.co": {
@@ -78,7 +81,14 @@
         "quote",
         "proposal-history",
         "stock-tracking",
-        "calculator"
+        "calculator",
+        "summary",
+        "details",
+        "reconciliation",
+        "invoice-extractor",
+        "invoice-comparison",
+        "proposal-comparison",
+        "received-quotes"
       ]
     },
     "zekeriyagzl@ea.co": {

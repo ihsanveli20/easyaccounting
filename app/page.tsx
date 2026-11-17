@@ -79,7 +79,6 @@ import SettingsView from "./components/SettingsView";
 import AppLauncherView, {
   DEFAULT_MENU_PREFS,
   MENU_PREFS_STORAGE_KEY,
-  MenuCustomizerModal,
   MenuPreferences,
 } from "./components/AppLauncherView";
 import { useAuth } from "./context/AuthContext";
@@ -132,7 +131,6 @@ export default function Home() {
     }
     return false;
   });
-  const [menuCustomizerOpen, setMenuCustomizerOpen] = useState(false);
   const [prefsSource, setPrefsSource] = useState<string>("default");
   const [isSavingPrefs, setIsSavingPrefs] = useState<boolean>(false);
 
@@ -990,11 +988,12 @@ export default function Home() {
             </button>
             <button
               onClick={() => {
-                setMenuCustomizerOpen(true);
+                setActiveTab("settings");
+                setShowAppLauncher(false);
                 setMobileMenuOpen(false);
               }}
               className="p-2 rounded-xl border border-slate-200 text-slate-600 hover:text-indigo-700 hover:bg-indigo-50 transition-colors"
-              title="Menüyü Özelleştir"
+              title="Ayarlar & Menü Yönetimi"
             >
               <SlidersHorizontal className="w-3.5 h-3.5" />
             </button>
@@ -1186,9 +1185,12 @@ export default function Home() {
                 <span>Uygulamalar</span>
               </button>
               <button
-                onClick={() => setMenuCustomizerOpen(true)}
+                onClick={() => {
+                  setActiveTab("settings");
+                  setShowAppLauncher(false);
+                }}
                 className="p-2 rounded-xl border border-slate-200 text-slate-600 hover:text-indigo-700 hover:bg-indigo-50 transition-colors"
-                title="Menüyü Özelleştir (Sırala / Gizle)"
+                title="Ayarlar & Menü Yönetimi"
               >
                 <SlidersHorizontal className="w-4 h-4" />
               </button>
@@ -1761,7 +1763,6 @@ export default function Home() {
                 setActiveTab(id);
                 setShowAppLauncher(false);
               }}
-              onOpenCustomizer={() => setMenuCustomizerOpen(true)}
             />
           ) : (
             <>
@@ -2535,17 +2536,6 @@ export default function Home() {
             </>
           )}
         </main>
-
-        <MenuCustomizerModal
-          open={menuCustomizerOpen}
-          onClose={() => {
-            setMenuCustomizerOpen(false);
-            saveMenuPrefsToSupabase(menuPrefs);
-          }}
-          orderedAllowedItems={orderedAllowedNavItems}
-          prefs={menuPrefs}
-          onUpdatePrefs={handleUpdateMenuPrefs}
-        />
 
         {/* Footer */}
         <footer className="border-t border-slate-200/80 bg-white/60 py-4 text-center text-xs text-slate-400 no-print mt-auto">

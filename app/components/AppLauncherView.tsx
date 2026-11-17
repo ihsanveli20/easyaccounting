@@ -128,7 +128,6 @@ interface AppLauncherViewProps {
   prefs: MenuPreferences;
   onUpdatePrefs: (next: MenuPreferences) => void;
   onSelectModule: (id: AppMenuId) => void;
-  onOpenCustomizer?: () => void;
 }
 
 export default function AppLauncherView({
@@ -136,7 +135,6 @@ export default function AppLauncherView({
   allAllowedItems,
   activeTab,
   onSelectModule,
-  onOpenCustomizer,
 }: AppLauncherViewProps) {
   const [search, setSearch] = useState("");
 
@@ -171,7 +169,7 @@ export default function AppLauncherView({
           </div>
 
           <div className="flex items-center gap-2">
-            <div className="relative flex-1 sm:w-56">
+            <div className="relative w-full sm:w-64">
               <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
@@ -181,17 +179,6 @@ export default function AppLauncherView({
                 className="w-full pl-8 pr-3 py-2 rounded-xl bg-white/90 border border-indigo-100 text-xs font-medium text-slate-700 placeholder:text-slate-400 shadow-2xs focus:outline-none focus:ring-2 focus:ring-indigo-400"
               />
             </div>
-
-            {onOpenCustomizer && (
-              <button
-                type="button"
-                onClick={onOpenCustomizer}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 border border-indigo-100 shadow-2xs text-xs font-bold transition-colors shrink-0"
-              >
-                <SlidersHorizontal className="w-3.5 h-3.5 text-indigo-600" />
-                <span>Menüyü Özelleştir</span>
-              </button>
-            )}
           </div>
         </div>
 

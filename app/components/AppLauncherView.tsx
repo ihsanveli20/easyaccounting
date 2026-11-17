@@ -202,11 +202,10 @@ export default function AppLauncherView({
                 className="group flex flex-col items-center gap-2.5 focus:outline-none"
               >
                 <div
-                  className={`relative w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-white border shadow-sm group-hover:shadow-xl group-hover:-translate-y-1 transition-all duration-200 flex items-center justify-center p-3 ${
-                    isActive
+                  className={`relative w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-white border shadow-sm group-hover:shadow-xl group-hover:-translate-y-1 transition-all duration-200 flex items-center justify-center p-3 ${isActive
                       ? "border-indigo-400 ring-2 ring-indigo-400/30"
                       : "border-white/90 group-hover:border-indigo-200"
-                  }`}
+                    }`}
                 >
                   <div
                     className={`w-12 h-12 sm:w-14 sm:h-14 rounded-xl border flex items-center justify-center transition-transform duration-200 group-hover:scale-105 ${style.iconBg}`}
@@ -241,10 +240,6 @@ export default function AppLauncherView({
             Aramanızla eşleşen modül bulunamadı.
           </div>
         )}
-      </div>
-
-      <div className="max-w-5xl w-full mx-auto pt-8 text-center text-[11px] text-slate-500">
-        Toplam {items.length} görünür modül ({allAllowedItems.length} yetkili modülden) • Sol yan menüden veya buradan geçiş yapabilirsiniz
       </div>
     </div>
   );
@@ -406,9 +401,8 @@ export function MenuCustomizerModal({
                 return (
                   <div
                     key={item.id}
-                    className={`flex items-center justify-between gap-3 px-3.5 py-2.5 ${
-                      isHidden ? "bg-slate-50/70 opacity-60" : "bg-white"
-                    }`}
+                    className={`flex items-center justify-between gap-3 px-3.5 py-2.5 ${isHidden ? "bg-slate-50/70 opacity-60" : "bg-white"
+                      }`}
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
                       <div className="w-8 h-8 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center shrink-0">
@@ -446,11 +440,10 @@ export function MenuCustomizerModal({
                       <button
                         type="button"
                         onClick={() => toggleVisibility(item.id)}
-                        className={`p-1.5 rounded-lg transition-colors ${
-                          isHidden
+                        className={`p-1.5 rounded-lg transition-colors ${isHidden
                             ? "text-slate-400 hover:text-emerald-600 hover:bg-emerald-50"
                             : "text-emerald-600 hover:bg-emerald-50"
-                        }`}
+                          }`}
                         title={isHidden ? "Menüde göster" : "Menüden gizle"}
                       >
                         {isHidden ? (

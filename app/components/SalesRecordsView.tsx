@@ -29,6 +29,7 @@ export interface SalesRecordItem {
   unit: string;
   sale_date: string; // YYYY-MM-DD
   notes?: string | null;
+  is_official_recorded?: boolean;
   created_at?: string;
 }
 
@@ -48,6 +49,7 @@ const SUPABASE_SQL_SNIPPET = `CREATE TABLE IF NOT EXISTS public.sales_records (
   unit TEXT NOT NULL DEFAULT 'Adet',
   sale_date DATE NOT NULL DEFAULT CURRENT_DATE,
   notes TEXT,
+  is_official_recorded BOOLEAN NOT NULL DEFAULT false,
   created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );`;
@@ -84,6 +86,7 @@ export default function SalesRecordsView({
   const [unit, setUnit] = useState("Adet");
   const [saleDate, setSaleDate] = useState(getTodayDateString);
   const [notes, setNotes] = useState("");
+  const [isOfficialRecorded, setIsOfficialRecorded] = useState(false);
 
   // Dropdown visibility
   const [customerDropdownOpen, setCustomerDropdownOpen] = useState(false);
@@ -94,6 +97,7 @@ export default function SalesRecordsView({
   // Filters
   const [searchQuery, setSearchQuery] = useState("");
   const [dateFilter, setDateFilter] = useState<"all" | "today" | "week" | "month">("all");
+  const [officialFilter, setOfficialFilter] = useState<"all" | "official" | "pending">("all");
 
   // Editing row state
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -259,6 +263,7 @@ export default function SalesRecordsView({
       unit: unit.trim() || "Adet",
       sale_date: saleDate || getTodayDateString(),
       notes: notes.trim() || null,
+      is_official_recorded: isOfficialRecorded,
     };
 
     try {
@@ -290,6 +295,7 @@ export default function SalesRecordsView({
       setProductName("");
       setQuantity("1");
       setNotes("");
+      setIsOfficialRecorded(false);
     } catch {
       const localRec: SalesRecordItem = {
         id: `local-${Date.now()}`,
@@ -302,6 +308,7 @@ export default function SalesRecordsView({
       setProductName("");
       setQuantity("1");
       setNotes("");
+      setIsOfficialRecorded(false);
     } finally {
       setIsSaving(false);
     }
@@ -322,6 +329,7 @@ export default function SalesRecordsView({
       unit: (editDraft.unit || "Adet").trim(),
       sale_date: editDraft.sale_date || getTodayDateString(),
       notes: editDraft.notes || null,
+      is_official_recorded: Boolean(editDraft.is_official_recorded),
     };
 
     const next = records.map((r) => (r.id === id ? { ...r, ...updatedPayload } : r));
@@ -335,6 +343,27 @@ export default function SalesRecordsView({
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(updatedPayload),
+        });
+      } catch {
+        // ignore network error; already saved locally
+      }
+    }
+  };
+
+  const handleToggleOfficial = async (rec: SalesRecordItem) => {
+    const nextVal = !rec.is_official_recorded;
+    const next = records.map((r) =>
+      r.id === rec.id ? { ...r, is_official_recorded: nextVal } : r
+    );
+    setRecords(next);
+    saveLocalFallback(next);
+
+    if (!rec.id.startsWith("local-")) {
+      try {
+        await fetch("/api/sales-records", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: rec.id, is_official_recorded: nextVal }),
         });
       } catch {
         // ignore network error; already saved locally
@@ -373,6 +402,9 @@ export default function SalesRecordsView({
         if (!r.sale_date.startsWith(todayStr.slice(0, 7))) return false;
       }
 
+      if (officialFilter === "official" && !r.is_official_recorded) return false;
+      if (officialFilter === "pending" && r.is_official_recorded) return false;
+
       if (searchQuery.trim()) {
         const q = searchQuery.trim().toLocaleLowerCase("tr-TR");
         const hit =
@@ -384,15 +416,19 @@ export default function SalesRecordsView({
 
       return true;
     });
-  }, [records, dateFilter, searchQuery]);
+  }, [records, dateFilter, officialFilter, searchQuery]);
 
   const stats = useMemo(() => {
     const uniqueCustomers = new Set(filteredRecords.map((r) => r.customer_name)).size;
     const uniqueProducts = new Set(filteredRecords.map((r) => r.product_name)).size;
+    const officialCount = filteredRecords.filter((r) => r.is_official_recorded).length;
+    const pendingCount = filteredRecords.length - officialCount;
     return {
       totalRecords: filteredRecords.length,
       uniqueCustomers,
       uniqueProducts,
+      officialCount,
+      pendingCount,
     };
   }, [filteredRecords]);
 
@@ -404,6 +440,7 @@ export default function SalesRecordsView({
       "Kime (Firma)": r.customer_name,
       "Miktar": r.quantity,
       "Birim": r.unit,
+      "Resmî Sisteme İşlendi": r.is_official_recorded ? "Evet" : "Hayır",
       "Not": r.notes || "",
     }));
     const wb = XLSX.utils.book_new();
@@ -462,7 +499,7 @@ export default function SalesRecordsView({
             </p>
           </div>
 
-          <div className="flex items-center gap-2 text-xs">
+          <div className="flex flex-wrap items-center gap-2 text-xs">
             <span className="px-2.5 py-1 rounded-xl bg-slate-100 text-slate-700 font-bold">
               {stats.totalRecords} Kayıt
             </span>
@@ -470,7 +507,10 @@ export default function SalesRecordsView({
               {stats.uniqueCustomers} Firma
             </span>
             <span className="px-2.5 py-1 rounded-xl bg-emerald-50 text-emerald-700 font-bold">
-              {stats.uniqueProducts} Ürün
+              {stats.officialCount} Resmî İşlenen
+            </span>
+            <span className="px-2.5 py-1 rounded-xl bg-amber-50 text-amber-700 font-bold">
+              {stats.pendingCount} Bekleyen
             </span>
           </div>
         </div>
@@ -630,8 +670,8 @@ export default function SalesRecordsView({
             </div>
           </div>
 
-          {/* Optional Note + Submit */}
-          <div className="sm:col-span-9">
+          {/* Optional Note + Official Status + Submit */}
+          <div className="sm:col-span-6">
             <input
               type="text"
               value={notes}
@@ -639,6 +679,19 @@ export default function SalesRecordsView({
               placeholder="Opsiyonel kısa not (ör: şantiye teslim, plaka, vb.)"
               className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50/70 text-xs text-slate-700 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
             />
+          </div>
+          <div className="sm:col-span-3 flex items-center">
+            <label className="w-full inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-slate-50/70 cursor-pointer select-none hover:bg-slate-100 transition-colors">
+              <input
+                type="checkbox"
+                checked={isOfficialRecorded}
+                onChange={(e) => setIsOfficialRecorded(e.target.checked)}
+                className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+              />
+              <span className="text-xs font-bold text-slate-700">
+                Resmî Sisteme İşlendi
+              </span>
+            </label>
           </div>
           <div className="sm:col-span-3">
             <button
@@ -703,6 +756,31 @@ export default function SalesRecordsView({
               ))}
             </div>
 
+            <div className="inline-flex rounded-xl border border-slate-200 bg-white p-0.5 text-[11px] font-bold">
+              {(
+                [
+                  ["all", "Tümü"],
+                  ["pending", "Bekleyen"],
+                  ["official", "Resmî İşlendi"],
+                ] as const
+              ).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setOfficialFilter(key)}
+                  className={`px-2.5 py-1 rounded-lg transition-colors ${
+                    officialFilter === key
+                      ? key === "pending"
+                        ? "bg-amber-500 text-white"
+                        : "bg-indigo-600 text-white"
+                      : "text-slate-600 hover:bg-slate-100"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
             {filteredRecords.length > 0 && (
               <button
                 type="button"
@@ -734,6 +812,7 @@ export default function SalesRecordsView({
                   <th className="py-3 px-4">Ürün Adı</th>
                   <th className="py-3 px-4">Kime (Firma)</th>
                   <th className="py-3 px-4 text-right w-36">Miktar</th>
+                  <th className="py-3 px-4 text-center w-36">Resmî Durum</th>
                   <th className="py-3 px-4">Not</th>
                   <th className="py-3 px-4 text-right w-24">İşlem</th>
                 </tr>
@@ -803,6 +882,22 @@ export default function SalesRecordsView({
                             </select>
                           </div>
                         </td>
+                        <td className="py-2 px-3 text-center">
+                          <label className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={Boolean(editDraft.is_official_recorded)}
+                              onChange={(e) =>
+                                setEditDraft({
+                                  ...editDraft,
+                                  is_official_recorded: e.target.checked,
+                                })
+                              }
+                              className="rounded border-slate-300 text-emerald-600"
+                            />
+                            <span>İşlendi</span>
+                          </label>
+                        </td>
                         <td className="py-2 px-3">
                           <input
                             type="text"
@@ -850,6 +945,27 @@ export default function SalesRecordsView({
                       </td>
                       <td className="py-3 px-4 text-right font-black text-slate-900 tabular-nums whitespace-nowrap">
                         {rec.quantity.toLocaleString("tr-TR")} {rec.unit}
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleOfficial(rec)}
+                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold border transition-colors ${
+                            rec.is_official_recorded
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
+                              : "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100"
+                          }`}
+                          title="Resmî sisteme işlenme durumunu değiştir"
+                        >
+                          {rec.is_official_recorded ? (
+                            <>
+                              <Check className="w-3 h-3" />
+                              <span>Resmî İşlendi</span>
+                            </>
+                          ) : (
+                            <span>Bekliyor</span>
+                          )}
+                        </button>
                       </td>
                       <td className="py-3 px-4 text-slate-500">{rec.notes || "—"}</td>
                       <td className="py-3 px-4 text-right">

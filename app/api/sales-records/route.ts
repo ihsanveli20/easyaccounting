@@ -45,7 +45,7 @@ export async function GET() {
   try {
     const { data, error } = await supabase
       .from("sales_records")
-      .select("id, product_name, customer_name, quantity, unit, sale_date, notes, created_at, updated_at")
+      .select("id, product_name, customer_name, quantity, unit, sale_date, notes, is_official_recorded, created_at, updated_at")
       .order("sale_date", { ascending: false })
       .order("created_at", { ascending: false });
 
@@ -89,6 +89,7 @@ export async function POST(request: Request) {
     const sale_date =
       String(body.sale_date || "").trim() || new Date().toISOString().split("T")[0];
     const notes = body.notes ? String(body.notes).trim() : null;
+    const is_official_recorded = Boolean(body.is_official_recorded);
 
     if (!product_name || !customer_name || !Number.isFinite(quantity) || quantity <= 0) {
       return NextResponse.json(
@@ -99,7 +100,7 @@ export async function POST(request: Request) {
 
     const { data, error } = await supabase
       .from("sales_records")
-      .insert([{ product_name, customer_name, quantity, unit, sale_date, notes }])
+      .insert([{ product_name, customer_name, quantity, unit, sale_date, notes, is_official_recorded }])
       .select()
       .single();
 
@@ -145,6 +146,7 @@ export async function PATCH(request: Request) {
     if (body.unit !== undefined) updates.unit = String(body.unit).trim() || "Adet";
     if (body.sale_date !== undefined) updates.sale_date = String(body.sale_date).trim();
     if (body.notes !== undefined) updates.notes = body.notes ? String(body.notes).trim() : null;
+    if (body.is_official_recorded !== undefined) updates.is_official_recorded = Boolean(body.is_official_recorded);
 
     const { data, error } = await supabase
       .from("sales_records")

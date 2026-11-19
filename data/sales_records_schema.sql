@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS public.sales_records (
   unit TEXT NOT NULL DEFAULT 'Adet',
   sale_date DATE NOT NULL DEFAULT CURRENT_DATE,
   notes TEXT,
+  is_official_recorded BOOLEAN NOT NULL DEFAULT false,
   created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
@@ -52,4 +53,8 @@ CREATE POLICY "Allow delete sales_records"
   ON public.sales_records
   FOR DELETE
   USING (true);
+
+-- Mevcut tabloya sonradan eklemek için:
+ALTER TABLE public.sales_records
+  ADD COLUMN IF NOT EXISTS is_official_recorded BOOLEAN NOT NULL DEFAULT false;
 

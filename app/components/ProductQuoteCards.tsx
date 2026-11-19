@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import {
   Award,
@@ -13,7 +13,7 @@ import {
   X,
 } from "lucide-react";
 import { QuoteCurrency, ReceivedQuoteDocument } from "../types/receivedQuotes";
-import { buildComparisonMatrix } from "../utils/receivedQuotesParser";
+import { buildComparisonMatrix, normalizeQuoteText } from "../utils/receivedQuotesParser";
 
 const PRODUCT_SHEETS_STORAGE_KEY = "easy_accounting_product_quote_sheets_v1";
 
@@ -65,38 +65,22 @@ function formatMoneyValue(amount: number, currency: QuoteCurrency): string {
   })}`;
 }
 
-function createInitialSheets(): ProductQuoteSheet[] {
-  return [
-    {
-      id: `ps-demo-${Date.now()}`,
-      productName: "1 palet",
-      unitLabel: "1 palet",
-      requestedQty: "5",
-      vatRate: "20",
-      currency: "TRY",
-      suppliers: ["akas", "barış", "günerler"],
-      entries: {
-        akas: { unitPrice: "", shipping: "" },
-        "barış": { unitPrice: "4100", shipping: "1500" },
-        "günerler": { unitPrice: "3625", shipping: "2000" },
-      },
-    },
-  ];
-}
-
 function readInitialProductSheets(): ProductQuoteSheet[] {
-  if (typeof window === "undefined") return createInitialSheets();
+  if (typeof window === "undefined") return [];
   try {
     const raw = window.localStorage.getItem(PRODUCT_SHEETS_STORAGE_KEY);
-    if (!raw) return createInitialSheets();
+    if (!raw) return [];
     const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed) && parsed.length > 0) {
-      return parsed;
+    if (Array.isArray(parsed)) {
+      // Remove legacy demo card ("akas, barış, günerler") if present
+      return parsed.filter(
+        (s: ProductQuoteSheet) => !(typeof s?.id === "string" && s.id.startsWith("ps-demo-"))
+      );
     }
   } catch {
     // ignore storage errors
   }
-  return createInitialSheets();
+  return [];
 }
 
 interface ProductQuoteCardsProps {
@@ -295,48 +279,121 @@ export default function ProductQuoteCards({ quotes }: ProductQuoteCardsProps) {
     persistSheets(sheets.filter((s) => s.id !== sheetId));
   };
 
-  const handleImportFromUploadedQuotes = () => {
-    if (quotes.length === 0) return;
-    const matrix = buildComparisonMatrix(quotes);
-    if (matrix.length === 0) return;
+  const isShippingItemName = (name: string) =>
+    /(nakliye|sevkiyat|kargo|tasima|taşıma|ulasim|ulaşım)/i.test(normalizeQuoteText(name));
 
-    const quoteSuppliers = quotes.map((q) => q.supplierName);
-    const importedSheets: ProductQuoteSheet[] = matrix.map((row, idx) => {
-      const entries: Record<string, ProductQuoteSupplierEntry> = {};
+  const mergeQuotesIntoSheets = (
+    baseSheets: ProductQuoteSheet[],
+    sourceQuotes: ReceivedQuoteDocument[]
+  ): ProductQuoteSheet[] => {
+    if (sourceQuotes.length === 0) return baseSheets;
+
+    // 1. Compute shipping cost per quote from any shipping/nakliye line items
+    const shippingByQuoteId: Record<string, number> = {};
+    const productOnlyQuotes: ReceivedQuoteDocument[] = sourceQuotes.map((q) => {
+      let shipSum = 0;
+      const nonShippingItems = q.items.filter((it) => {
+        if (isShippingItemName(it.name)) {
+          shipSum += it.lineTotal > 0 ? it.lineTotal : it.unitPrice * (it.quantity || 1);
+          return false;
+        }
+        return true;
+      });
+      shippingByQuoteId[q.id] = Math.round(shipSum * 100) / 100;
+      return { ...q, items: nonShippingItems };
+    });
+
+    const matrix = buildComparisonMatrix(productOnlyQuotes);
+    if (matrix.length === 0) return baseSheets;
+
+    const quoteSuppliers = sourceQuotes.map((q) => q.supplierName);
+    const nextSheets = [...baseSheets];
+
+    for (let idx = 0; idx < matrix.length; idx++) {
+      const row = matrix[idx];
+      const existingIdx = nextSheets.findIndex(
+        (s) => normalizeQuoteText(s.productName) === normalizeQuoteText(row.displayName)
+      );
+
       let firstQty = 1;
       let firstVat = 20;
       let foundSample = false;
+      const newEntries: Record<string, ProductQuoteSupplierEntry> = {};
 
-      for (const q of quotes) {
+      for (const q of productOnlyQuotes) {
         const cell = row.cells[q.id];
+        const shipVal = shippingByQuoteId[q.id] || 0;
         if (cell) {
-          entries[q.supplierName] = {
+          newEntries[q.supplierName] = {
             unitPrice: cell.effectiveUnitPrice ? String(cell.effectiveUnitPrice) : "",
-            shipping: "",
+            shipping: shipVal > 0 ? String(shipVal) : "",
           };
           if (!foundSample) {
             firstQty = cell.item.quantity || 1;
             firstVat = cell.item.vatRate ?? 20;
             foundSample = true;
           }
-        } else {
-          entries[q.supplierName] = { unitPrice: "", shipping: "" };
         }
       }
 
-      return {
-        id: `ps-imp-${Date.now()}-${idx}`,
-        productName: row.displayName,
-        unitLabel: `1 ${row.canonicalUnit || "adet"}`,
-        requestedQty: String(firstQty),
-        vatRate: String(firstVat),
-        currency: quotes[0]?.currency || "TRY",
-        suppliers: quoteSuppliers,
-        entries,
-      };
-    });
+      if (existingIdx >= 0) {
+        const existing = nextSheets[existingIdx];
+        const mergedSuppliers = Array.from(new Set([...existing.suppliers, ...quoteSuppliers]));
+        nextSheets[existingIdx] = {
+          ...existing,
+          suppliers: mergedSuppliers,
+          entries: {
+            ...existing.entries,
+            ...newEntries,
+          },
+        };
+      } else {
+        const entriesWithDefaults: Record<string, ProductQuoteSupplierEntry> = {};
+        for (const sup of quoteSuppliers) {
+          entriesWithDefaults[sup] = newEntries[sup] || { unitPrice: "", shipping: "" };
+        }
+        nextSheets.unshift({
+          id: `ps-imp-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 5)}`,
+          productName: row.displayName,
+          unitLabel: `1 ${row.canonicalUnit || "adet"}`,
+          requestedQty: String(firstQty),
+          vatRate: String(firstVat),
+          currency: sourceQuotes[0]?.currency || "TRY",
+          suppliers: quoteSuppliers,
+          entries: entriesWithDefaults,
+        });
+      }
+    }
 
-    persistSheets([...importedSheets, ...sheets]);
+    return nextSheets;
+  };
+
+  const syncedQuoteIdsRef = useRef<Set<string>>(new Set(quotes.map((q) => q.id)));
+
+  useEffect(() => {
+    const newQuotes = quotes.filter((q) => !syncedQuoteIdsRef.current.has(q.id));
+    if (newQuotes.length === 0) return;
+    newQuotes.forEach((q) => syncedQuoteIdsRef.current.add(q.id));
+    const quotesWithItems = newQuotes.filter((q) => q.items.length > 0);
+    if (quotesWithItems.length === 0) return;
+
+    setSheets((prev) => {
+      const merged = mergeQuotesIntoSheets(prev, quotesWithItems);
+      if (typeof window !== "undefined") {
+        try {
+          window.localStorage.setItem(PRODUCT_SHEETS_STORAGE_KEY, JSON.stringify(merged));
+        } catch {
+          // ignore storage errors
+        }
+      }
+      return merged;
+    });
+  }, [quotes]);
+
+  const handleImportFromUploadedQuotes = () => {
+    if (quotes.length === 0) return;
+    const merged = mergeQuotesIntoSheets(sheets, quotes);
+    persistSheets(merged);
   };
 
   const computeSheetTotals = (sheet: ProductQuoteSheet) => {

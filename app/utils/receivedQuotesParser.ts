@@ -33,7 +33,12 @@ export function normalizeUnitLabel(unit?: string): string {
   if (["m", "mt", "metre", "meter", "mtr"].includes(raw)) return "Metre";
   if (["m2", "metrekare"].includes(raw)) return "m²";
   if (["m3", "metrekup"].includes(raw)) return "m³";
-  if (["kutu", "box", "pkt", "paket"].includes(raw)) return "Paket";
+  if (["kutu", "box"].includes(raw)) return "Kutu";
+  if (["pkt", "paket"].includes(raw)) return "Paket";
+  if (["palet", "paleti", "plt"].includes(raw)) return "Palet";
+  if (["sefer", "sfr"].includes(raw)) return "Sefer";
+  if (["torba", "cuval"].includes(raw)) return "Torba";
+  if (["kamyon", "tir"].includes(raw)) return "Sefer";
   if (["koli", "ctn"].includes(raw)) return "Koli";
   if (["set", "takim", "tkm"].includes(raw)) return "Takım";
   if (["saat", "hr", "hrs"].includes(raw)) return "Saat";
@@ -165,7 +170,7 @@ function round2(n: number): number {
 }
 
 const KNOWN_UNITS_REGEX =
-  /^(adet|ad|adt|kg|kilo|gr|gram|ton|lt|l|litre|m|mt|metre|mtr|m2|m3|kutu|pkt|paket|koli|set|takim|takım|saat|gun|gün|pcs|pc|ea)$/i;
+  /^(adet|ad|adt|kg|kilo|gr|gram|ton|lt|l|litre|m|mt|metre|mtr|m2|m3|kutu|pkt|paket|palet|paleti|plt|sefer|sfr|torba|cuval|çuval|kamyon|tir|tır|koli|set|takim|takım|saat|gun|gün|pcs|pc|ea)$/i;
 
 /**
  * Parses raw text (from PDF or Image OCR) into a structured ReceivedQuoteDocument payload.
@@ -192,6 +197,8 @@ export function parseQuoteTextToDocument(
   let detectedGrandTotal = 0;
   let detectedSubtotal = 0;
   let detectedVatTotal = 0;
+  let documentVatRate = 20;
+  let isVatIncluded = false;
 
   for (let i = 0; i < Math.min(lines.length, 35); i++) {
     const line = lines[i];
@@ -204,8 +211,8 @@ export function parseQuoteTextToDocument(
       if (explicitSup && explicitSup[1]?.trim().length >= 3) {
         supplierName = explicitSup[1].trim();
       } else if (
-        /(a\.ş\.|a\.s\.|ltd\.|şti\.|sti\.|san\.|tic\.|limited|anonim)/i.test(line) &&
-        !/(sayin|sayın|alici|alıcı|musteri|müşteri)/i.test(lower) &&
+        /(a\.ş\.|a\.s\.|ltd\.|şti\.|sti\.|san\.|tic\.|limited|anonim|yapı malzemeleri|yapi malzemeleri|inşaat|insaat)/i.test(line) &&
+        !/(sayin|sayın|alici|alıcı|musteri|müşteri|mail\s*:|e-?posta|www\.)/i.test(lower) &&
         line.length <= 90
       ) {
         supplierName = line;
@@ -245,12 +252,30 @@ export function parseQuoteTextToDocument(
   }
 
   if (!supplierName) {
-    supplierName = cleanSupplierFromFileName(fileName);
+    // Try extracting company name from email domain if present (e.g. murat@gunerlerinsaat.com)
+    const mailMatch = rawText.match(/@([a-z0-9-]+)\.(?:com|net|org|com\.tr)/i);
+    if (mailMatch && mailMatch[1] && !/^(gmail|hotmail|outlook|yahoo|icloud|yandex)$/i.test(mailMatch[1])) {
+      supplierName = mailMatch[1].charAt(0).toUpperCase() + mailMatch[1].slice(1);
+    } else {
+      supplierName = cleanSupplierFromFileName(fileName);
+    }
   }
 
-  // 2. Scan for summary totals
+  // 2. Scan for summary totals & VAT inclusion / rate
   for (const line of lines) {
     const lower = normalizeQuoteText(line);
+
+    if (/\bkdv\s*dahil\b/i.test(lower)) {
+      isVatIncluded = true;
+    }
+    const vatRateMatch = line.match(/kdv\s*%?\s*(\d{1,2})/i);
+    if (vatRateMatch) {
+      const r = Number(vatRateMatch[1]);
+      if ([0, 1, 8, 10, 18, 20].includes(r)) {
+        documentVatRate = r;
+      }
+    }
+
     const numMatches = line.match(/(\d[\d.,]*)/g);
     const lastNum = numMatches ? parseFlexibleNumber(numMatches[numMatches.length - 1]) : 0;
     if (lastNum <= 0) continue;
@@ -264,20 +289,31 @@ export function parseQuoteTextToDocument(
     }
   }
 
+  // If explicit separate VAT amount was found (e.g. KDV %20 ₺ 4.025,00), prices are KDV Hariç
+  if (detectedVatTotal > 0) {
+    isVatIncluded = false;
+  }
+
   // 3. Extract line items
   const items: ReceivedQuoteItem[] = [];
   const skipLineRegex =
-    /^(ara toplam|genel toplam|toplam|kdv|iskonto|indirim|vergi|sayin|sayın|teklif|tarih|adres|tel|telefon|faks|eposta|e-posta|iban|banka|vade|odeme|ödeme|teslim|notlar|aciklama|açıklama|sıra|sira no|malzeme|ürün|urun|hizmet|birim fiyat)/i;
+    /^(ara toplam|genel toplam|toplam|kdv|iskonto|indirim|vergi|sayin|sayın|teklif|tarih|adres|tel|telefon|cep|faks|eposta|e-posta|mail|iban|banka|vade|odeme|ödeme|teslim|notlar|aciklama|açıklama|sıra|sira no|malzeme|ürün|urun|hizmet|birim fiyat)/i;
+  let lastUnit = "Adet";
 
   for (let idx = 0; idx < lines.length; idx++) {
-    const line = lines[idx];
-    if (line.length < 5) continue;
-    const normLine = normalizeQuoteText(line);
+    // Strip trailing WhatsApp/chat timestamp like "12:32"
+    const rawLine = lines[idx].replace(/\s+\d{1,2}:\d{2}$/, "").trim();
+    if (rawLine.length < 5) continue;
+    // Skip pure time, phone number, or date lines
+    if (/^\d{1,2}:\d{2}$/.test(rawLine)) continue;
+    if (/^(?:\+?90|0)\s*\d{3}[\s.-]*\d{3}/.test(rawLine)) continue;
+
+    const normLine = normalizeQuoteText(rawLine);
     if (skipLineRegex.test(normLine)) continue;
-    if (/(genel toplam|ara toplam|toplam kdv|banka hesap|iban\s*:)/i.test(normLine)) continue;
+    if (/(genel toplam|ara toplam|toplam kdv|banka hesap|iban\s*:|kdv dahil)/i.test(normLine)) continue;
 
     // Strategy A: Tab/pipe or multi-space delimited columns
-    const cols = line
+    const cols = rawLine
       .split(/\t|\s*\|\s*|\s{2,}/)
       .map((c) => c.trim())
       .filter(Boolean);
@@ -288,13 +324,44 @@ export function parseQuoteTextToDocument(
       parsedItem = tryParseColumnsToItem(cols, idx);
     }
 
-    // Strategy B: Regex trailing numbers on single-space OCR/PDF lines
-    // e.g. "12mm İnşaat Demiri 100 Kg 28,50 20 2.850,00" or "Laptop Dell 2 Adet 25.000,00 50.000,00"
+    // Strategy B: Leading qty + unit (or ditto ") + name + "=" / price(s)
+    // e.g. "2 palet 13,5 luk Ytong = 4725 = 9.450" or "3 \" 8,5 luk Ytong = 4725 = 14.175"
     if (!parsedItem) {
-      parsedItem = tryParseInlineTextToItem(line, idx);
+      parsedItem = tryParseLeadingQtyItem(rawLine, idx, lastUnit);
+    }
+
+    // Strategy C: Regex trailing numbers on single-space OCR/PDF lines
+    if (!parsedItem) {
+      parsedItem = tryParseInlineTextToItem(rawLine, idx);
+    }
+
+    // Strategy D: Single-price WhatsApp / short note lines
+    // e.g. "Paleti 4100 tl", "Nakliye 1500 tl"
+    if (!parsedItem) {
+      parsedItem = tryParseSinglePriceLine(rawLine, idx);
     }
 
     if (parsedItem && parsedItem.name.length >= 2 && (parsedItem.unitPrice > 0 || parsedItem.lineTotal > 0)) {
+      lastUnit = parsedItem.unit;
+      // Apply document VAT rate & KDV Dahil conversion if detected
+      if (isVatIncluded && documentVatRate > 0) {
+        const div = 1 + documentVatRate / 100;
+        const netUnit = round2(parsedItem.unitPrice / div);
+        const netLine = round2(parsedItem.lineTotal / div);
+        parsedItem = {
+          ...parsedItem,
+          unitPrice: netUnit,
+          vatRate: documentVatRate,
+          lineTotal: netLine,
+          lineTotalWithVat: round2(parsedItem.lineTotal),
+        };
+      } else if (documentVatRate !== 20 && parsedItem.vatRate === 20) {
+        parsedItem = {
+          ...parsedItem,
+          vatRate: documentVatRate,
+          lineTotalWithVat: round2(parsedItem.lineTotal * (1 + documentVatRate / 100)),
+        };
+      }
       items.push(parsedItem);
     }
   }
@@ -375,6 +442,122 @@ function tryParseColumnsToItem(cols: string[], idx: number): ReceivedQuoteItem |
   }));
 
   return buildItemFromTrailingTokens(name, unit, nums, idx);
+}
+
+function tryParseLeadingQtyItem(
+  line: string,
+  idx: number,
+  lastUnit: string
+): ReceivedQuoteItem | null {
+  const tokens = line
+    .replace(/=/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(" ");
+  if (tokens.length < 3) return null;
+
+  const qtyRaw = tokens[0];
+  if (!/^\d+(?:[.,]\d+)?$/.test(qtyRaw)) return null;
+  const qty = parseFlexibleNumber(qtyRaw);
+  if (qty <= 0 || qty > 100000) return null;
+
+  const unitTok = tokens[1];
+  const isDitto = /^["”'’“]{1,2}$/.test(unitTok);
+  const isKnownUnit = KNOWN_UNITS_REGEX.test(normalizeQuoteText(unitTok));
+  if (!isDitto && !isKnownUnit) return null;
+
+  const unit = isDitto ? lastUnit : normalizeUnitLabel(unitTok);
+
+  // Collect trailing numbers from the rest of the line
+  const restTokens = tokens.slice(2);
+  const trailingNums: number[] = [];
+  let cutIndex = restTokens.length;
+
+  for (let i = restTokens.length - 1; i >= 0; i--) {
+    const cleanTok = restTokens[i].replace(/\.+$/, "");
+    if (/^[₺$€£]?\d[\d.,]*(?:[₺$€£]|TL|TRY|USD|EUR)?$/i.test(cleanTok)) {
+      const val = parseFlexibleNumber(cleanTok);
+      if (val > 0) {
+        trailingNums.unshift(val);
+        cutIndex = i;
+        continue;
+      }
+    }
+    if (/^(TL|TRY|USD|EUR|₺|\$|€)$/i.test(restTokens[i]) && trailingNums.length >= 1) {
+      cutIndex = i;
+      continue;
+    }
+    break;
+  }
+
+  if (trailingNums.length === 0) return null;
+
+  const name = restTokens.slice(0, cutIndex).join(" ").trim();
+  if (!name || name.length < 2) return null;
+
+  let unitPrice = 0;
+  let lineTotal = 0;
+  if (trailingNums.length === 1) {
+    unitPrice = trailingNums[0];
+    lineTotal = round2(qty * unitPrice);
+  } else {
+    unitPrice = trailingNums[0];
+    lineTotal = trailingNums[trailingNums.length - 1];
+    if (unitPrice <= 0 && lineTotal > 0) {
+      unitPrice = round2(lineTotal / qty);
+    }
+  }
+
+  if (unitPrice <= 0 && lineTotal <= 0) return null;
+
+  const vatRate = 20;
+  return {
+    id: `rq-item-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 6)}`,
+    name,
+    normalizedName: normalizeQuoteText(name),
+    quantity: qty,
+    unit,
+    unitPrice: round2(unitPrice),
+    vatRate,
+    lineTotal: round2(lineTotal),
+    lineTotalWithVat: round2(lineTotal * (1 + vatRate / 100)),
+  };
+}
+
+function tryParseSinglePriceLine(line: string, idx: number): ReceivedQuoteItem | null {
+  const m = line.match(
+    /^([a-zA-ZçğıöşüÇĞİÖŞÜ0-9\s.,()\/-]{2,50}?)\s*[:=\-]?\s*[₺$€£]?\s*(\d[\d.,]*)\s*(₺|TL|TRY|USD|EUR|\$|€)\s*\.?$/i
+  );
+  if (!m) return null;
+
+  const rawName = m[1].trim();
+  const price = parseFlexibleNumber(m[2]);
+  if (!rawName || price <= 0) return null;
+
+  const norm = normalizeQuoteText(rawName);
+  if (/(toplam|kdv|tevkifat|iskonto|tarih|teklif|tel|cep|adres|iban)/i.test(norm)) {
+    return null;
+  }
+
+  let unit = "Adet";
+  if (/\bpalet/i.test(norm)) unit = "Palet";
+  else if (/\bnakliye|sefer/i.test(norm)) unit = "Sefer";
+  else if (/\btorba/i.test(norm)) unit = "Torba";
+  else if (/\bton\b/i.test(norm)) unit = "Ton";
+  else if (/\bkg\b/i.test(norm)) unit = "Kg";
+
+  const vatRate = 20;
+  return {
+    id: `rq-item-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 6)}`,
+    name: rawName,
+    normalizedName: norm,
+    quantity: 1,
+    unit,
+    unitPrice: round2(price),
+    vatRate,
+    lineTotal: round2(price),
+    lineTotalWithVat: round2(price * (1 + vatRate / 100)),
+  };
 }
 
 function tryParseInlineTextToItem(line: string, idx: number): ReceivedQuoteItem | null {

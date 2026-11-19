@@ -143,6 +143,7 @@ export type AppMenuId =
   | "proposal-history"
   | "proposal-comparison"
   | "received-quotes"
+  | "sales-records"
   | "stock-tracking"
   | "kurban-reporting"
   | "settings"

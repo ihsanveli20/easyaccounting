@@ -42,6 +42,7 @@ import {
   GitCompareArrows,
   LayoutGrid,
   SlidersHorizontal,
+  ShoppingBag,
 } from "lucide-react";
 import {
   AccountRecord,
@@ -67,6 +68,7 @@ import PriceQuoteView from "./components/PriceQuoteView";
 import ProposalHistoryView from "./components/ProposalHistoryView";
 import ProposalComparisonView from "./components/ProposalComparisonView";
 import ReceivedQuotesComparisonView from "./components/ReceivedQuotesComparisonView";
+import SalesRecordsView from "./components/SalesRecordsView";
 import ProductManagementView, { DEFAULT_SAMPLE_PRODUCTS } from "./components/ProductManagementView";
 import KurbanReportingView from "./components/KurbanReportingView";
 import KurbanProcessModuleView from "./components/KurbanProcessModuleView";
@@ -102,7 +104,7 @@ export default function Home() {
 
   // Navigation Tab: "summary" = Hesap Planı / Bakiye Listesi, "details" = Firma Detay Hareketleri, "calculator" = Ayrıntılı Hesap Makinesi, "reconciliation" = Ekstre & Luca Mutabakat, "invoice-extractor" = Toplu Fatura -> Excel, "quote" = Fiyat Teklifi, "proposal-history" = Teklif Geçmişi, "proposal-comparison" = Teklif Karşılaştırma, "stock-tracking" = Ürün Stok Takibi, "kurban-reporting" = Kurban Raporlama & Takip, "admin-users" = Kullanıcı & Yetki Yönetimi
   const [activeTab, setActiveTab] = useState<
-    "summary" | "details" | "calculator" | "reconciliation" | "invoice-extractor" | "invoice-comparison" | "quote" | "proposal-history" | "proposal-comparison" | "received-quotes" | "stock-tracking" | "kurban-reporting" | "settings" | "admin-users"
+    "summary" | "details" | "calculator" | "reconciliation" | "invoice-extractor" | "invoice-comparison" | "quote" | "proposal-history" | "proposal-comparison" | "received-quotes" | "sales-records" | "stock-tracking" | "kurban-reporting" | "settings" | "admin-users"
   >("summary");
 
   // State for proposal editing when navigating from history to editor
@@ -830,6 +832,17 @@ export default function Home() {
       tag: "YENİ",
     },
     {
+      id: "sales-records" as const,
+      name: "Satış Kayıtları",
+      shortName: "Satışlar",
+      description: "Kime, Ne Kadar & Ne Zaman Satıldı",
+      icon: ShoppingBag,
+      activeBg: "bg-emerald-600 text-white shadow-md shadow-emerald-600/25",
+      badge: null,
+      badgeStyle: "bg-white/20 text-white",
+      tag: "YENİ",
+    },
+    {
       id: "stock-tracking" as const,
       name: "Ürün & Stok Yönetimi",
       shortName: "Ürün Yönetimi",
@@ -1481,7 +1494,9 @@ export default function Home() {
                                   ? "bg-gradient-to-tr from-purple-700 via-indigo-600 to-purple-900 shadow-purple-600/20"
                                   : activeTab === "received-quotes"
                                     ? "bg-gradient-to-tr from-indigo-600 via-blue-600 to-cyan-500 shadow-indigo-600/20"
-                                    : activeTab === "stock-tracking"
+                                    : activeTab === "sales-records"
+                                      ? "bg-gradient-to-tr from-emerald-600 to-green-500 shadow-emerald-600/20"
+                                      : activeTab === "stock-tracking"
                                       ? "bg-gradient-to-tr from-amber-600 to-orange-500 shadow-amber-500/20"
                                       : activeTab === "kurban-reporting"
                                         ? "bg-gradient-to-tr from-amber-600 via-emerald-600 to-teal-700 shadow-amber-600/20"
@@ -1510,6 +1525,8 @@ export default function Home() {
                   <ArrowLeftRight className="w-4 h-4 sm:w-5 sm:h-5 text-amber-300" />
                 ) : activeTab === "received-quotes" ? (
                   <GitCompareArrows className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+                ) : activeTab === "sales-records" ? (
+                  <ShoppingBag className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
                 ) : activeTab === "stock-tracking" ? (
                   <Package className="w-4 h-4 sm:w-5 sm:h-5" />
                 ) : activeTab === "kurban-reporting" ? (
@@ -1544,7 +1561,9 @@ export default function Home() {
                                       ? "Fiyat & Tedarikçi Kıyaslama"
                                       : activeTab === "received-quotes"
                                         ? "Gelen Teklif Karşılaştırma"
-                                        : activeTab === "stock-tracking"
+                                        : activeTab === "sales-records"
+                                          ? "Satış Kayıtları"
+                                          : activeTab === "stock-tracking"
                                           ? "Ürün Stok Takibi"
                                           : activeTab === "kurban-reporting"
                                             ? "Kurban Kesim ve Süreç Takip Raporu"
@@ -1571,7 +1590,9 @@ export default function Home() {
                                     ? "bg-emerald-100 text-emerald-900 border-emerald-300 font-extrabold"
                                     : activeTab === "received-quotes"
                                       ? "bg-indigo-100 text-indigo-900 border-indigo-300 font-extrabold"
-                                      : activeTab === "stock-tracking"
+                                      : activeTab === "sales-records"
+                                        ? "bg-emerald-100 text-emerald-900 border-emerald-300 font-extrabold"
+                                        : activeTab === "stock-tracking"
                                         ? "bg-blue-50 text-blue-700 border-blue-200"
                                         : activeTab === "kurban-reporting"
                                           ? "bg-amber-100 text-amber-900 border-amber-300 font-extrabold"
@@ -1600,7 +1621,9 @@ export default function Home() {
                                       ? "En Uygun Fiyat"
                                       : activeTab === "received-quotes"
                                         ? "PDF / Excel / Görsel"
-                                        : activeTab === "stock-tracking"
+                                        : activeTab === "sales-records"
+                                          ? "Satış Defteri"
+                                          : activeTab === "stock-tracking"
                                           ? "Ürün Kataloğu"
                                           : activeTab === "kurban-reporting"
                                             ? "Resmî Denetim Raporu"
@@ -1630,7 +1653,9 @@ export default function Home() {
                                     ? "Ürün bazında farklı tedarikçi ve internet fiyatlarını çekin, en uygun maliyeti bulun"
                                     : activeTab === "received-quotes"
                                       ? "Tedarikçilerden gelen birden fazla PDF, Excel ve Görsel teklifleri yükleyip kalem bazında kıyaslayın"
-                                      : activeTab === "stock-tracking"
+                                      : activeTab === "sales-records"
+                                        ? "Kime, hangi ürünü, ne kadar ve ne zaman sattığınızı hızlıca kaydedin"
+                                        : activeTab === "stock-tracking"
                                         ? "Excel ile ürün listenizi içe aktarın, kaydedin ve teklif hazırlarken anında çekin"
                                         : activeTab === "kurban-reporting"
                                           ? "350 canlı hayvan alımı, 8 tır sevkiyatı, 2 kesimhanede kesim, soğuk depolama ve iki ayrı resmî denetim raporu"
@@ -2485,6 +2510,16 @@ export default function Home() {
               {/* ========================================================================= */}
               {activeTab === "received-quotes" && hasMenuAccess("received-quotes") && (
                 <ReceivedQuotesComparisonView />
+              )}
+
+              {/* ========================================================================= */}
+              {/* TAB 5.8: SALES RECORDS (SATIŞ KAYITLARI)                                   */}
+              {/* ========================================================================= */}
+              {activeTab === "sales-records" && hasMenuAccess("sales-records") && (
+                <SalesRecordsView
+                  products={products}
+                  companyNames={records.map((r) => r.name).filter(Boolean)}
+                />
               )}
 
               {/* ========================================================================= */}

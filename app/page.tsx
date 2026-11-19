@@ -68,6 +68,7 @@ import PriceQuoteView from "./components/PriceQuoteView";
 import ProposalHistoryView from "./components/ProposalHistoryView";
 import ProposalComparisonView from "./components/ProposalComparisonView";
 import ReceivedQuotesComparisonView from "./components/ReceivedQuotesComparisonView";
+import ProcurementComparisonView from "./components/ProcurementComparisonView";
 import SalesRecordsView from "./components/SalesRecordsView";
 import ProductManagementView, { DEFAULT_SAMPLE_PRODUCTS } from "./components/ProductManagementView";
 import KurbanReportingView from "./components/KurbanReportingView";
@@ -104,7 +105,7 @@ export default function Home() {
 
   // Navigation Tab: "summary" = Hesap Planı / Bakiye Listesi, "details" = Firma Detay Hareketleri, "calculator" = Ayrıntılı Hesap Makinesi, "reconciliation" = Ekstre & Luca Mutabakat, "invoice-extractor" = Toplu Fatura -> Excel, "quote" = Fiyat Teklifi, "proposal-history" = Teklif Geçmişi, "proposal-comparison" = Teklif Karşılaştırma, "stock-tracking" = Ürün Stok Takibi, "kurban-reporting" = Kurban Raporlama & Takip, "admin-users" = Kullanıcı & Yetki Yönetimi
   const [activeTab, setActiveTab] = useState<
-    "summary" | "details" | "calculator" | "reconciliation" | "invoice-extractor" | "invoice-comparison" | "quote" | "proposal-history" | "proposal-comparison" | "received-quotes" | "sales-records" | "stock-tracking" | "kurban-reporting" | "settings" | "admin-users"
+    "summary" | "details" | "calculator" | "reconciliation" | "invoice-extractor" | "invoice-comparison" | "quote" | "proposal-history" | "proposal-comparison" | "received-quotes" | "procurement-comparison" | "sales-records" | "stock-tracking" | "kurban-reporting" | "settings" | "admin-users"
   >("summary");
 
   // State for proposal editing when navigating from history to editor
@@ -832,6 +833,17 @@ export default function Home() {
       tag: "YENİ",
     },
     {
+      id: "procurement-comparison" as const,
+      name: "Satın Alma Yönetimi → Teklif Karşılaştırma",
+      shortName: "Satın Alma Teklif",
+      description: "İhtiyaç Listesi, AI Analiz & Maliyet Raporu",
+      icon: Layers,
+      activeBg: "bg-emerald-600 text-white shadow-md shadow-emerald-600/25",
+      badge: null,
+      badgeStyle: "bg-white/20 text-white",
+      tag: "ERP",
+    },
+    {
       id: "sales-records" as const,
       name: "Satış Kayıtları",
       shortName: "Satışlar",
@@ -1494,7 +1506,9 @@ export default function Home() {
                                   ? "bg-gradient-to-tr from-purple-700 via-indigo-600 to-purple-900 shadow-purple-600/20"
                                   : activeTab === "received-quotes"
                                     ? "bg-gradient-to-tr from-indigo-600 via-blue-600 to-cyan-500 shadow-indigo-600/20"
-                                    : activeTab === "sales-records"
+                                    : activeTab === "procurement-comparison"
+                                      ? "bg-gradient-to-tr from-emerald-600 via-teal-600 to-indigo-600 shadow-emerald-600/20"
+                                      : activeTab === "sales-records"
                                       ? "bg-gradient-to-tr from-emerald-600 to-green-500 shadow-emerald-600/20"
                                       : activeTab === "stock-tracking"
                                       ? "bg-gradient-to-tr from-amber-600 to-orange-500 shadow-amber-500/20"
@@ -1525,6 +1539,8 @@ export default function Home() {
                   <ArrowLeftRight className="w-4 h-4 sm:w-5 sm:h-5 text-amber-300" />
                 ) : activeTab === "received-quotes" ? (
                   <GitCompareArrows className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+                ) : activeTab === "procurement-comparison" ? (
+                  <Layers className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
                 ) : activeTab === "sales-records" ? (
                   <ShoppingBag className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
                 ) : activeTab === "stock-tracking" ? (
@@ -1561,7 +1577,9 @@ export default function Home() {
                                       ? "Fiyat & Tedarikçi Kıyaslama"
                                       : activeTab === "received-quotes"
                                         ? "Gelen Teklif Karşılaştırma"
-                                        : activeTab === "sales-records"
+                                        : activeTab === "procurement-comparison"
+                                          ? "Satın Alma Yönetimi → Teklif Karşılaştırma"
+                                          : activeTab === "sales-records"
                                           ? "Satış Kayıtları"
                                           : activeTab === "stock-tracking"
                                           ? "Ürün Stok Takibi"
@@ -1590,7 +1608,9 @@ export default function Home() {
                                     ? "bg-emerald-100 text-emerald-900 border-emerald-300 font-extrabold"
                                     : activeTab === "received-quotes"
                                       ? "bg-indigo-100 text-indigo-900 border-indigo-300 font-extrabold"
-                                      : activeTab === "sales-records"
+                                      : activeTab === "procurement-comparison"
+                                        ? "bg-emerald-100 text-emerald-900 border-emerald-300 font-extrabold"
+                                        : activeTab === "sales-records"
                                         ? "bg-emerald-100 text-emerald-900 border-emerald-300 font-extrabold"
                                         : activeTab === "stock-tracking"
                                         ? "bg-blue-50 text-blue-700 border-blue-200"
@@ -1621,7 +1641,9 @@ export default function Home() {
                                       ? "En Uygun Fiyat"
                                       : activeTab === "received-quotes"
                                         ? "PDF / Excel / Görsel"
-                                        : activeTab === "sales-records"
+                                        : activeTab === "procurement-comparison"
+                                          ? "Satın Alma ERP"
+                                          : activeTab === "sales-records"
                                           ? "Satış Defteri"
                                           : activeTab === "stock-tracking"
                                           ? "Ürün Kataloğu"
@@ -1653,7 +1675,9 @@ export default function Home() {
                                     ? "Ürün bazında farklı tedarikçi ve internet fiyatlarını çekin, en uygun maliyeti bulun"
                                     : activeTab === "received-quotes"
                                       ? "Tedarikçilerden gelen birden fazla PDF, Excel ve Görsel teklifleri yükleyip kalem bazında kıyaslayın"
-                                      : activeTab === "sales-records"
+                                      : activeTab === "procurement-comparison"
+                                        ? "İhtiyaç listesi oluşturun, yapay zekâ ile teklifleri ayrıştırıp onaylayın ve gerçek satın alma maliyetini kıyaslayın"
+                                        : activeTab === "sales-records"
                                         ? "Kime, hangi ürünü, ne kadar ve ne zaman sattığınızı hızlıca kaydedin"
                                         : activeTab === "stock-tracking"
                                         ? "Excel ile ürün listenizi içe aktarın, kaydedin ve teklif hazırlarken anında çekin"
@@ -2510,6 +2534,13 @@ export default function Home() {
               {/* ========================================================================= */}
               {activeTab === "received-quotes" && hasMenuAccess("received-quotes") && (
                 <ReceivedQuotesComparisonView />
+              )}
+
+              {/* ========================================================================= */}
+              {/* TAB 5.7.5: PROCUREMENT COMPARISON (SATIN ALMA YÖNETİMİ)                   */}
+              {/* ========================================================================= */}
+              {activeTab === "procurement-comparison" && hasMenuAccess("procurement-comparison") && (
+                <ProcurementComparisonView />
               )}
 
               {/* ========================================================================= */}

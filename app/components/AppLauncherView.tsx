@@ -99,6 +99,11 @@ const TILE_STYLES: Record<
     iconColor: "text-indigo-600",
     accentDot: "bg-cyan-500",
   },
+  "procurement-comparison": {
+    iconBg: "bg-gradient-to-br from-emerald-50 to-indigo-100 border-emerald-200/70",
+    iconColor: "text-emerald-700",
+    accentDot: "bg-emerald-500",
+  },
   "sales-records": {
     iconBg: "bg-gradient-to-br from-emerald-50 to-green-100 border-emerald-200/70",
     iconColor: "text-emerald-600",

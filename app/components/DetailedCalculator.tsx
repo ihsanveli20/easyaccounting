@@ -54,6 +54,7 @@ export default function DetailedCalculator() {
   const [isNewEntry, setIsNewEntry] = useState<boolean>(true);
   const [memory, setMemory] = useState<number>(0);
   const [expression, setExpression] = useState<string>("");
+  const [customVatInput, setCustomVatInput] = useState<string>("");
   const [tape, setTape] = useState<TapeItem[]>(() => {
     // Initial sample tape for accountants
     return [
@@ -178,6 +179,16 @@ export default function DetailedCalculator() {
       },
       ...prev,
     ]);
+  };
+
+  const handleManualVatApply = (forceAddition?: boolean) => {
+    const raw = customVatInput.trim().replace(/%/g, "").replace(",", ".");
+    if (!raw) return;
+    const isNegative = raw.startsWith("-");
+    const numericRate = Math.abs(parseFloat(raw));
+    if (!Number.isFinite(numericRate) || numericRate <= 0) return;
+    const isAddition = forceAddition !== undefined ? forceAddition : !isNegative;
+    handleVatShortcut(numericRate, isAddition);
   };
 
   // Execute mathematical operator (+, -, *, /)
@@ -684,6 +695,43 @@ export default function DetailedCalculator() {
                 title="Tutara %1 KDV ekler"
               >
                 +%1 KDV
+              </button>
+            </div>
+
+            {/* Manual VAT Input Bar (e.g. +20, -20, 18) */}
+            <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl p-1.5">
+              <span className="text-[11px] font-bold text-slate-500 pl-1.5 shrink-0">
+                Manuel KDV:
+              </span>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={customVatInput}
+                onChange={(e) => setCustomVatInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleManualVatApply();
+                  }
+                }}
+                placeholder="Örn: +20, -10, 8"
+                className="flex-1 min-w-0 px-2.5 py-1 rounded-lg border border-slate-300 bg-white text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <button
+                type="button"
+                onClick={() => handleManualVatApply(true)}
+                className="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-bold transition-colors shrink-0"
+                title="Girilen oranda KDV ekle"
+              >
+                + KDV
+              </button>
+              <button
+                type="button"
+                onClick={() => handleManualVatApply(false)}
+                className="px-2.5 py-1 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-700 text-[11px] font-bold transition-colors shrink-0"
+                title="Girilen oranda KDV çıkar (Hariç)"
+              >
+                - KDV
               </button>
             </div>
 

@@ -210,6 +210,9 @@ export function standardizeRawUnit(codeOrText?: string | null): string {
     MT: "Mt",
     MTK: "m²",
     MTQ: "m³",
+    SET: "Set",
+    PLT: "Palet",
+    SFR: "Sefer"
   };
   return map[upper] || raw;
 }
@@ -292,9 +295,9 @@ export function parseInvoiceXmlSecure(
 
   const invoiceDate = normalizeDateString(
     extractXmlTagValue(beforeSupplier, "IssueDate") ||
-      extractXmlTagValue(strippedXml, "IssueDate") ||
-      extractXmlTagValue(strippedXml, "FaturaTarihi") ||
-      ""
+    extractXmlTagValue(strippedXml, "IssueDate") ||
+    extractXmlTagValue(strippedXml, "FaturaTarihi") ||
+    ""
   );
 
   const rawCurrency =
@@ -349,28 +352,28 @@ export function parseInvoiceXmlSecure(
 
     const netAmount = parseNullableNumber(
       extractXmlTagValue(lineXml, "LineExtensionAmount") ||
-        extractXmlTagValue(lineXml, "NetAmount") ||
-        extractXmlTagValue(lineXml, "SatirToplami")
+      extractXmlTagValue(lineXml, "NetAmount") ||
+      extractXmlTagValue(lineXml, "SatirToplami")
     );
 
     const priceBlock = extractXmlTagValue(lineXml, "Price");
     const unitPrice = parseNullableNumber(
       extractXmlTagValue(priceBlock || lineXml, "PriceAmount") ||
-        extractXmlTagValue(lineXml, "UnitPrice") ||
-        extractXmlTagValue(lineXml, "BirimFiyat")
+      extractXmlTagValue(lineXml, "UnitPrice") ||
+      extractXmlTagValue(lineXml, "BirimFiyat")
     );
 
     const taxTotalBlock = extractXmlTagValue(lineXml, "TaxTotal");
     const taxSubtotalBlock = extractXmlTagValue(taxTotalBlock, "TaxSubtotal");
     const vatRate = parseNullableNumber(
       extractXmlTagValue(taxSubtotalBlock || taxTotalBlock || itemBlock || lineXml, "Percent") ||
-        extractXmlTagValue(lineXml, "VatRate") ||
-        extractXmlTagValue(lineXml, "KdvOrani")
+      extractXmlTagValue(lineXml, "VatRate") ||
+      extractXmlTagValue(lineXml, "KdvOrani")
     );
     const vatAmount = parseNullableNumber(
       extractXmlTagValue(taxTotalBlock || taxSubtotalBlock || lineXml, "TaxAmount") ||
-        extractXmlTagValue(lineXml, "VatAmount") ||
-        extractXmlTagValue(lineXml, "KdvTutari")
+      extractXmlTagValue(lineXml, "VatAmount") ||
+      extractXmlTagValue(lineXml, "KdvTutari")
     );
 
     const lineGrandTotal =
@@ -398,11 +401,11 @@ export function parseInvoiceXmlSecure(
   const monetaryBlock = extractXmlTagValue(strippedXml, "LegalMonetaryTotal");
   const subtotalAmount = parseNullableNumber(
     extractXmlTagValue(monetaryBlock, "TaxExclusiveAmount") ||
-      extractXmlTagValue(monetaryBlock, "LineExtensionAmount")
+    extractXmlTagValue(monetaryBlock, "LineExtensionAmount")
   );
   const grandTotalAmount = parseNullableNumber(
     extractXmlTagValue(monetaryBlock, "PayableAmount") ||
-      extractXmlTagValue(monetaryBlock, "TaxInclusiveAmount")
+    extractXmlTagValue(monetaryBlock, "TaxInclusiveAmount")
   );
   const withoutLines = strippedXml.replace(
     /<(?:[a-zA-Z0-9_]+:)?InvoiceLine[\s\S]*?<\/(?:[a-zA-Z0-9_]+:)?InvoiceLine>/gi,

@@ -60,6 +60,8 @@ const COMMON_UNITS = [
   "Saat",
   "Gün",
   "Hizmet",
+  "Sefer",
+  "Palet"
 ];
 
 interface ProductManagementViewProps {
@@ -693,11 +695,10 @@ export default function ProductManagementView({
             }
           }}
           onClick={() => fileInputRef.current?.click()}
-          className={`border-2 border-dashed rounded-2xl p-8 sm:p-12 text-center cursor-pointer transition-all flex flex-col items-center justify-center gap-3 ${
-            isDragging
+          className={`border-2 border-dashed rounded-2xl p-8 sm:p-12 text-center cursor-pointer transition-all flex flex-col items-center justify-center gap-3 ${isDragging
               ? "border-blue-500 bg-blue-50/50 scale-[1.01]"
               : "border-slate-300 hover:border-blue-400 bg-white hover:bg-slate-50/50"
-          }`}
+            }`}
         >
           <div className="w-16 h-16 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center shadow-inner">
             <UploadCloud className="w-8 h-8" />
@@ -872,11 +873,10 @@ export default function ProductManagementView({
                         <td className="py-2.5 px-4 text-right font-mono text-slate-600">
                           {p.stockQuantity !== undefined ? (
                             <span
-                              className={`font-semibold ${
-                                p.stockQuantity <= 10
+                              className={`font-semibold ${p.stockQuantity <= 10
                                   ? "text-amber-600"
                                   : "text-slate-700"
-                              }`}
+                                }`}
                             >
                               {p.stockQuantity.toLocaleString("tr-TR")} {p.unit}
                             </span>

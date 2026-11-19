@@ -34,6 +34,7 @@ import {
   parseQuoteTextToDocument,
   recalculateQuoteTotals,
 } from "../utils/receivedQuotesParser";
+import ProductQuoteCards from "./ProductQuoteCards";
 
 const STORAGE_KEY = "easy_accounting_received_quotes_v1";
 
@@ -267,7 +268,7 @@ export default function ReceivedQuotesComparisonView() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [progressText, setProgressText] = useState<string>("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [activeSubTab, setActiveSubTab] = useState<"summary" | "matrix" | "optimal">("matrix");
+  const [activeSubTab, setActiveSubTab] = useState<"products" | "summary" | "matrix" | "optimal">("products");
   const [searchQuery, setSearchQuery] = useState("");
   const [onlyMultiMatched, setOnlyMultiMatched] = useState(false);
   const [editingQuoteId, setEditingQuoteId] = useState<string | null>(null);
@@ -1155,9 +1156,9 @@ export default function ReceivedQuotesComparisonView() {
       )}
 
       {/* Comparison Section */}
-      {quotes.length >= 1 && (
-        <div className="space-y-4">
-          {/* KPI Cards */}
+      <div className="space-y-4">
+        {/* KPI Cards (when uploaded/manual quotes exist) */}
+        {quotes.length >= 1 && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
               <div className="text-[11px] font-bold uppercase text-slate-400">
@@ -1209,68 +1210,91 @@ export default function ReceivedQuotesComparisonView() {
               </div>
             </div>
           </div>
+        )}
 
-          {/* Sub-tab Switcher */}
-          <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-5 py-4 border-b border-slate-200 bg-slate-50/70">
-              <div className="flex flex-wrap items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => setActiveSubTab("matrix")}
-                  className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-colors ${activeSubTab === "matrix"
-                    ? "bg-indigo-600 text-white shadow-sm"
-                    : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200"
-                    }`}
-                >
-                  Kalem Bazlı Fiyat Matrisi ({matrixRows.length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveSubTab("summary")}
-                  className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-colors ${activeSubTab === "summary"
-                    ? "bg-indigo-600 text-white shadow-sm"
-                    : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200"
-                    }`}
-                >
-                  Tedarikçi Genel Özeti ({quotes.length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveSubTab("optimal")}
-                  className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-colors ${activeSubTab === "optimal"
-                    ? "bg-indigo-600 text-white shadow-sm"
-                    : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200"
-                    }`}
-                >
-                  Karma Sipariş Önerisi
-                </button>
-              </div>
-
-              {activeSubTab === "matrix" && (
-                <div className="flex flex-wrap items-center gap-2">
-                  <div className="relative">
-                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="text"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder="Kalem ara..."
-                      className="pl-8 pr-3 py-1.5 rounded-xl border border-slate-300 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    />
-                  </div>
-                  <label className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={onlyMultiMatched}
-                      onChange={(e) => setOnlyMultiMatched(e.target.checked)}
-                      className="rounded border-slate-300 text-indigo-600"
-                    />
-                    <span>Sadece Ortak Kalemler</span>
-                  </label>
-                </div>
-              )}
+        {/* Sub-tab Switcher */}
+        <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-5 py-4 border-b border-slate-200 bg-slate-50/70">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setActiveSubTab("products")}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-colors ${activeSubTab === "products"
+                  ? "bg-indigo-600 text-white shadow-sm"
+                  : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200"
+                  }`}
+              >
+                Ürün Bazlı Karşılaştırma
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveSubTab("matrix")}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-colors ${activeSubTab === "matrix"
+                  ? "bg-indigo-600 text-white shadow-sm"
+                  : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200"
+                  }`}
+              >
+                Kalem Bazlı Fiyat Matrisi ({matrixRows.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveSubTab("summary")}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-colors ${activeSubTab === "summary"
+                  ? "bg-indigo-600 text-white shadow-sm"
+                  : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200"
+                  }`}
+              >
+                Tedarikçi Genel Özeti ({quotes.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveSubTab("optimal")}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-colors ${activeSubTab === "optimal"
+                  ? "bg-indigo-600 text-white shadow-sm"
+                  : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200"
+                  }`}
+              >
+                Karma Sipariş Önerisi
+              </button>
             </div>
 
+            {activeSubTab === "matrix" && quotes.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Kalem ara..."
+                    className="pl-8 pr-3 py-1.5 rounded-xl border border-slate-300 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+                <label className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={onlyMultiMatched}
+                    onChange={(e) => setOnlyMultiMatched(e.target.checked)}
+                    className="rounded border-slate-300 text-indigo-600"
+                  />
+                  <span>Sadece Ortak Kalemler</span>
+                </label>
+              </div>
+            )}
+          </div>
+
+          {/* Sub-tab 0: Product-by-Product Comparison Cards */}
+          {activeSubTab === "products" && <ProductQuoteCards quotes={quotes} />}
+
+          {/* Empty state for file-based sub-tabs when no quotes uploaded */}
+          {activeSubTab !== "products" && quotes.length === 0 && (
+            <div className="p-10 text-center text-sm text-slate-500">
+              Bu görünüm için yukarıdan en az bir PDF, Excel, Görsel veya Manuel teklif ekleyin.
+            </div>
+          )}
+
+          {quotes.length > 0 && (
+            <>
             {/* Sub-tab 1: Item Comparison Matrix */}
             {activeSubTab === "matrix" && (
               <div className="overflow-x-auto">
@@ -1523,9 +1547,10 @@ export default function ReceivedQuotesComparisonView() {
                 </div>
               </div>
             )}
+            </>
+          )}
           </div>
         </div>
-      )}
     </div>
   );
 }

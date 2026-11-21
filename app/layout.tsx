@@ -15,6 +15,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Hesap Planı & Bakiye Listesi | Excel Görüntüleyici",
   description: "Excel dosyalarınızı yükleyin, isim veya hesap adına göre anında arayın, borç, alacak ve bakiye tutarlarını listeleyin.",
+  manifest: "/manifest.webmanifest",
 };
 
 import { AuthProvider } from "./context/AuthContext";

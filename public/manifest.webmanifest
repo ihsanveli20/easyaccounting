@@ -1,0 +1,17 @@
+{
+  "name": "Hesap Planı & ERP Yönetim Merkezi",
+  "short_name": "Hesap Planı",
+  "description": "Muhasebe, Satış Kayıtları ve Teklif Karşılaştırma Sistemi",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#059669",
+  "icons": [
+    {
+      "src": "/a-logo.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg"
+    }
+  ]
+}
+

@@ -22,7 +22,7 @@ import {
   X,
 } from "lucide-react";
 import { ProductItem } from "../types/accounting";
-import { createWhatsAppShareUrl } from "../utils/whatsapp";
+import { createWhatsAppWebUrl, openWhatsAppAppOrWeb } from "../utils/whatsapp";
 
 export interface SalesRecordItem {
   id: string;
@@ -1099,10 +1099,19 @@ export default function SalesRecordsView({
                 <button
                   type="button"
                   onClick={() => {
-                    const url = createWhatsAppShareUrl(waPhone, waMessage);
-                    window.open(url, "_blank", "noopener,noreferrer");
+                    const webUrl = createWhatsAppWebUrl(waPhone, waMessage);
+                    window.open(webUrl, "_blank", "noopener,noreferrer");
                   }}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-bold"
+                  title="Doğrudan WhatsApp Web üzerinden aç"
+                >
+                  <span>WhatsApp Web</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openWhatsAppAppOrWeb(waPhone, waMessage)}
                   className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#25D366] hover:bg-[#1fb858] text-white text-xs font-bold shadow-sm"
+                  title="PC'de yüklüyse uygulamayı açar, değilse WhatsApp Web'e yönlendirir"
                 >
                   <Send className="w-3.5 h-3.5" />
                   <span>WhatsApp&apos;ta Gönder</span>

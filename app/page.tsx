@@ -70,6 +70,7 @@ import ProposalComparisonView from "./components/ProposalComparisonView";
 import ReceivedQuotesComparisonView from "./components/ReceivedQuotesComparisonView";
 import ProcurementComparisonView from "./components/ProcurementComparisonView";
 import SalesRecordsView from "./components/SalesRecordsView";
+import WebPushControl from "./components/WebPushControl";
 import ProductManagementView, { DEFAULT_SAMPLE_PRODUCTS } from "./components/ProductManagementView";
 import KurbanReportingView from "./components/KurbanReportingView";
 import KurbanProcessModuleView from "./components/KurbanProcessModuleView";
@@ -1760,6 +1761,17 @@ export default function Home() {
                   )}
                 </div>
               )}
+
+              {/* Web Push Notifications */}
+              <WebPushControl
+                userId={user?.id}
+                userName={
+                  profile?.full_name ||
+                  profile?.user_name ||
+                  user?.email?.split("@")[0] ||
+                  "Kullanıcı"
+                }
+              />
 
               {/* User profile chip & quick logout */}
               <div className="flex items-center gap-2 pl-2 border-l border-slate-200">

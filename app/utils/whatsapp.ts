@@ -119,6 +119,79 @@ export function createWhatsAppShareUrl(phone: string, text: string): string {
 }
 
 /**
+ * Generate native WhatsApp desktop/mobile protocol URL (Windows / macOS / Mobile)
+ */
+export function createWhatsAppAppUrl(phone: string, text: string): string {
+  const cleanPhone = formatPhoneNumberForWhatsApp(phone);
+  const encodedText = encodeURIComponent(text);
+  if (cleanPhone) {
+    return `whatsapp://send?phone=${cleanPhone}&text=${encodedText}`;
+  }
+  return `whatsapp://send?text=${encodedText}`;
+}
+
+/**
+ * Generate WhatsApp Web URL
+ */
+export function createWhatsAppWebUrl(phone: string, text: string): string {
+  const cleanPhone = formatPhoneNumberForWhatsApp(phone);
+  const encodedText = encodeURIComponent(text);
+  if (cleanPhone) {
+    return `https://web.whatsapp.com/send?phone=${cleanPhone}&text=${encodedText}`;
+  }
+  return `https://web.whatsapp.com/send?text=${encodedText}`;
+}
+
+/**
+ * Try opening the native WhatsApp Desktop app (Windows/macOS) via whatsapp:// protocol.
+ * If the app is not installed (browser stays focused), automatically fall back to WhatsApp Web.
+ */
+export function openWhatsAppAppOrWeb(phone: string, text: string): void {
+  if (typeof window === "undefined") return;
+
+  const appUrl = createWhatsAppAppUrl(phone, text);
+  const webUrl = createWhatsAppWebUrl(phone, text);
+
+  let appOpened = false;
+
+  const markOpened = () => {
+    appOpened = true;
+    cleanup();
+  };
+
+  const onVisibilityChange = () => {
+    if (document.hidden) markOpened();
+  };
+
+  const cleanup = () => {
+    window.removeEventListener("blur", markOpened);
+    document.removeEventListener("visibilitychange", onVisibilityChange);
+  };
+
+  window.addEventListener("blur", markOpened);
+  document.addEventListener("visibilitychange", onVisibilityChange);
+
+  // Trigger native whatsapp:// protocol
+  const anchor = document.createElement("a");
+  anchor.href = appUrl;
+  anchor.style.display = "none";
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+
+  // If native app didn't take focus within 1400ms, fall back to WhatsApp Web
+  setTimeout(() => {
+    cleanup();
+    if (!appOpened) {
+      const win = window.open(webUrl, "_blank", "noopener,noreferrer");
+      if (!win) {
+        window.location.href = webUrl;
+      }
+    }
+  }, 1400);
+}
+
+/**
  * Format quantity in Turkish notation (e.g. 14000 -> 14.000)
  */
 function formatQty(qty: number | string): string {

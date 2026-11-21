@@ -71,6 +71,7 @@ const MENU_ICONS: Record<AppMenuId, React.ComponentType<{ className?: string }>>
   "stock-tracking": Package,
   "kurban-reporting": ScrollText,
   settings: Settings2,
+  integrations: Settings2,
   "admin-users": UserCheck,
 };
 

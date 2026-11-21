@@ -72,6 +72,7 @@ import ProcurementComparisonView from "./components/ProcurementComparisonView";
 import SalesRecordsView from "./components/SalesRecordsView";
 import WebPushControl from "./components/WebPushControl";
 import CurrentAccountsView from "./components/CurrentAccountsView";
+import IntegrationsView from "./components/IntegrationsView";
 import ProductManagementView, { DEFAULT_SAMPLE_PRODUCTS } from "./components/ProductManagementView";
 import KurbanReportingView from "./components/KurbanReportingView";
 import KurbanProcessModuleView from "./components/KurbanProcessModuleView";
@@ -107,7 +108,7 @@ export default function Home() {
 
   // Navigation Tab: "summary" = Hesap Planı / Bakiye Listesi, "details" = Firma Detay Hareketleri, "calculator" = Ayrıntılı Hesap Makinesi, "reconciliation" = Ekstre & Luca Mutabakat, "invoice-extractor" = Toplu Fatura -> Excel, "quote" = Fiyat Teklifi, "proposal-history" = Teklif Geçmişi, "proposal-comparison" = Teklif Karşılaştırma, "stock-tracking" = Ürün Stok Takibi, "kurban-reporting" = Kurban Raporlama & Takip, "admin-users" = Kullanıcı & Yetki Yönetimi
   const [activeTab, setActiveTab] = useState<
-    "summary" | "details" | "current-accounts" | "calculator" | "reconciliation" | "invoice-extractor" | "invoice-comparison" | "quote" | "proposal-history" | "proposal-comparison" | "received-quotes" | "procurement-comparison" | "sales-records" | "stock-tracking" | "kurban-reporting" | "settings" | "admin-users"
+    "summary" | "details" | "current-accounts" | "calculator" | "reconciliation" | "invoice-extractor" | "invoice-comparison" | "quote" | "proposal-history" | "proposal-comparison" | "received-quotes" | "procurement-comparison" | "sales-records" | "stock-tracking" | "kurban-reporting" | "settings" | "integrations" | "admin-users"
   >("summary");
 
   // State for proposal editing when navigating from history to editor
@@ -900,6 +901,21 @@ export default function Home() {
       badgeStyle: "bg-white/20 text-white",
       tag: null,
     },
+    ...(isAdmin
+      ? [
+        {
+          id: "integrations" as const,
+          name: "Ayarlar → Dış Sistem Entegrasyonları",
+          shortName: "Entegrasyonlar",
+          description: "Odoo, NES, TÜRMOB, Banka, WA, SMTP",
+          icon: Settings2,
+          activeBg: "bg-indigo-600 text-white shadow-md shadow-indigo-600/25",
+          badge: null,
+          badgeStyle: "bg-white/20 text-white",
+          tag: "MERKEZ",
+        },
+      ]
+      : []),
     ...(isAdmin
       ? [
         {
@@ -2621,6 +2637,13 @@ export default function Home() {
                   onSaveToSupabase={saveMenuPrefsToSupabase}
                   onOpenLauncher={() => setShowAppLauncher(true)}
                 />
+              )}
+
+              {/* ========================================================================= */}
+              {/* TAB 6.5: EXTERNAL INTEGRATIONS (DIŞ SİSTEM ENTEGRASYONLARI)              */}
+              {/* ========================================================================= */}
+              {activeTab === "integrations" && isAdmin && hasMenuAccess("integrations") && (
+                <IntegrationsView />
               )}
 
               {/* ========================================================================= */}

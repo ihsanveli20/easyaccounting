@@ -129,6 +129,11 @@ const TILE_STYLES: Record<
     iconColor: "text-orange-600",
     accentDot: "bg-orange-500",
   },
+  integrations: {
+    iconBg: "bg-gradient-to-br from-indigo-50 to-purple-100 border-indigo-200/70",
+    iconColor: "text-indigo-700",
+    accentDot: "bg-indigo-500",
+  },
   "admin-users": {
     iconBg: "bg-gradient-to-br from-fuchsia-50 to-purple-100 border-fuchsia-200/70",
     iconColor: "text-purple-700",

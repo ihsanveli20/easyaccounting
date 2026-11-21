@@ -121,6 +121,13 @@ export const SYSTEM_MENUS: MenuItemDefinition[] = [
     category: "admin",
   },
   {
+    id: "integrations",
+    name: "Ayarlar → Dış Sistem Entegrasyonları",
+    shortName: "Entegrasyonlar",
+    description: "Odoo, NES e-Fatura, TÜRMOB, Banka, WhatsApp Business ve SMTP merkezi yönetimi",
+    category: "admin",
+  },
+  {
     id: "admin-users",
     name: "Kullanıcı & Yetki Yönetimi",
     shortName: "Yetki Paneli",
@@ -147,6 +154,7 @@ export const DEFAULT_ROLE_PERMISSIONS: RoleMenuPermissions = {
     "stock-tracking",
     "kurban-reporting",
     "settings",
+    "integrations",
     "admin-users",
   ],
   sales: [

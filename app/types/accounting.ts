@@ -149,6 +149,7 @@ export type AppMenuId =
   | "stock-tracking"
   | "kurban-reporting"
   | "settings"
+  | "integrations"
   | "admin-users";
 
 export * from "./kurban";

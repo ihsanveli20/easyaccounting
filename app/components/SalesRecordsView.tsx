@@ -12,14 +12,17 @@ import {
   Download,
   Edit3,
   Loader2,
+  MessageCircle,
   Package,
   Plus,
   Search,
+  Send,
   ShoppingBag,
   Trash2,
   X,
 } from "lucide-react";
 import { ProductItem } from "../types/accounting";
+import { createWhatsAppShareUrl } from "../utils/whatsapp";
 
 export interface SalesRecordItem {
   id: string;
@@ -102,6 +105,12 @@ export default function SalesRecordsView({
   // Editing row state
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<Partial<SalesRecordItem>>({});
+
+  // WhatsApp share modal state
+  const [waModalOpen, setWaModalOpen] = useState(false);
+  const [waPhone, setWaPhone] = useState("");
+  const [waMessage, setWaMessage] = useState("");
+  const [waCopied, setWaCopied] = useState(false);
 
   const saveLocalFallback = (next: SalesRecordItem[]) => {
     try {
@@ -455,6 +464,22 @@ export default function SalesRecordsView({
     setTimeout(() => setCopiedSql(false), 2000);
   };
 
+  const buildSalesWhatsAppMessage = () => {
+    const header = `*📋 SATIŞ LİSTESİ*\n📅 ${formatDisplayDate(getTodayDateString())} | Toplam: ${stats.totalRecords} Kayıt (${stats.officialCount} Resmî İşlendi, ${stats.pendingCount} Bekliyor)\n`;
+    const lines = filteredRecords.map((r, idx) => {
+      const statusText = r.is_official_recorded ? "✅ Resmî İşlendi" : "⏳ Bekliyor";
+      const noteLine = r.notes ? `\n   📝 Not: ${r.notes}` : "";
+      return `\n${idx + 1}. *${formatDisplayDate(r.sale_date)}* | *${r.product_name}* — ${r.quantity.toLocaleString("tr-TR")} ${r.unit}\n   🏢 Firma: ${r.customer_name}\n   ${statusText}${noteLine}`;
+    });
+    return `${header}${lines.join("")}`;
+  };
+
+  const handleOpenWhatsAppModal = () => {
+    setWaMessage(buildSalesWhatsAppMessage());
+    setWaCopied(false);
+    setWaModalOpen(true);
+  };
+
   return (
     <div className="space-y-6">
       {/* Supabase Table Notice if missing */}
@@ -782,14 +807,24 @@ export default function SalesRecordsView({
             </div>
 
             {filteredRecords.length > 0 && (
-              <button
-                type="button"
-                onClick={handleExportExcel}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-bold transition-colors"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>Excel İndir</span>
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={handleOpenWhatsAppModal}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#25D366] hover:bg-[#1fb858] text-white text-xs font-bold shadow-xs transition-colors"
+                >
+                  <MessageCircle className="w-3.5 h-3.5" />
+                  <span>WhatsApp&apos;tan Paylaş</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExportExcel}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-bold transition-colors"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Excel İndir</span>
+                </button>
+              </>
             )}
           </div>
         </div>
@@ -999,6 +1034,84 @@ export default function SalesRecordsView({
           </div>
         )}
       </div>
+
+      {/* WhatsApp Share Modal */}
+      {waModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl border border-slate-200">
+            <div className="px-5 py-4 border-b border-slate-200 bg-[#075E54] text-white flex items-center justify-between">
+              <div className="flex items-center gap-2 font-black text-sm">
+                <MessageCircle className="w-4 h-4" />
+                <span>Satış Listesini WhatsApp&apos;tan Paylaş</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setWaModalOpen(false)}
+                className="p-1 rounded-lg hover:bg-white/15 text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                  Alıcı Telefon Numarası (Opsiyonel)
+                </label>
+                <input
+                  type="tel"
+                  value={waPhone}
+                  onChange={(e) => setWaPhone(e.target.value)}
+                  placeholder="Örn: 0532 123 45 67 (Boş bırakırsanız WhatsApp'ta kişi seçebilirsiniz)"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                  Gönderilecek Mesaj ({filteredRecords.length} Kayıt)
+                </label>
+                <textarea
+                  rows={10}
+                  value={waMessage}
+                  onChange={(e) => setWaMessage(e.target.value)}
+                  className="w-full px-3 py-2.5 rounded-2xl border border-slate-300 text-xs font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(waMessage);
+                    setWaCopied(true);
+                    setTimeout(() => setWaCopied(false), 2000);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-bold"
+                >
+                  {waCopied ? (
+                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                  ) : (
+                    <Copy className="w-3.5 h-3.5" />
+                  )}
+                  <span>{waCopied ? "Kopyalandı" : "Metni Kopyala"}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const url = createWhatsAppShareUrl(waPhone, waMessage);
+                    window.open(url, "_blank", "noopener,noreferrer");
+                  }}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#25D366] hover:bg-[#1fb858] text-white text-xs font-bold shadow-sm"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>WhatsApp&apos;ta Gönder</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

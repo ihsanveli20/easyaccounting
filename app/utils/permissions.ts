@@ -128,6 +128,13 @@ export const SYSTEM_MENUS: MenuItemDefinition[] = [
     category: "admin",
   },
   {
+    id: "audit-logs",
+    name: "İşlem Geçmişi (Audit Log)",
+    shortName: "İşlem Geçmişi",
+    description: "Hangi kullanıcı hangi kaydı ne zaman oluşturdu, değiştirdi veya sildi",
+    category: "admin",
+  },
+  {
     id: "admin-users",
     name: "Kullanıcı & Yetki Yönetimi",
     shortName: "Yetki Paneli",
@@ -155,6 +162,7 @@ export const DEFAULT_ROLE_PERMISSIONS: RoleMenuPermissions = {
     "kurban-reporting",
     "settings",
     "integrations",
+    "audit-logs",
     "admin-users",
   ],
   sales: [

@@ -150,6 +150,7 @@ export type AppMenuId =
   | "kurban-reporting"
   | "settings"
   | "integrations"
+  | "audit-logs"
   | "admin-users";
 
 export * from "./kurban";

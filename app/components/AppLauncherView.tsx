@@ -134,6 +134,11 @@ const TILE_STYLES: Record<
     iconColor: "text-indigo-700",
     accentDot: "bg-indigo-500",
   },
+  "audit-logs": {
+    iconBg: "bg-gradient-to-br from-slate-100 to-indigo-100 border-slate-200",
+    iconColor: "text-slate-700",
+    accentDot: "bg-indigo-500",
+  },
   "admin-users": {
     iconBg: "bg-gradient-to-br from-fuchsia-50 to-purple-100 border-fuchsia-200/70",
     iconColor: "text-purple-700",

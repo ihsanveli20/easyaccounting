@@ -72,6 +72,7 @@ const MENU_ICONS: Record<AppMenuId, React.ComponentType<{ className?: string }>>
   "kurban-reporting": ScrollText,
   settings: Settings2,
   integrations: Settings2,
+  "audit-logs": History,
   "admin-users": UserCheck,
 };
 

@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { ProductItem } from "../types/accounting";
 import { createWhatsAppWebUrl, openWhatsAppAppOrWeb } from "../utils/whatsapp";
+import { logSystemAudit } from "../utils/auditClient";
 
 export interface SalesRecordItem {
   id: string;
@@ -318,6 +319,15 @@ export default function SalesRecordsView({
       }).catch(() => {
         // ignore push errors so sale saving is never blocked
       });
+
+      logSystemAudit({
+        user_name: "Kullanıcı",
+        action: "CREATE",
+        module: "sales-records",
+        entity_type: "sale",
+        record_label: `${cName} — ${pName} (${qtyNum} ${payload.unit})`,
+        details: payload.notes || null,
+      });
     } catch {
       const localRec: SalesRecordItem = {
         id: `local-${Date.now()}`,
@@ -394,9 +404,21 @@ export default function SalesRecordsView({
   };
 
   const handleDeleteRecord = async (id: string) => {
+    const target = records.find((r) => r.id === id);
     const next = records.filter((r) => r.id !== id);
     setRecords(next);
     saveLocalFallback(next);
+
+    if (target) {
+      logSystemAudit({
+        user_name: "Kullanıcı",
+        action: "DELETE",
+        module: "sales-records",
+        entity_type: "sale",
+        entity_id: id,
+        record_label: `${target.customer_name} — ${target.product_name}`,
+      });
+    }
 
     if (!id.startsWith("local-")) {
       try {

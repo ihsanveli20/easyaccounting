@@ -52,6 +52,9 @@ export default function WebPushControl({
   // Send notification form
   const [devices, setDevices] = useState<SubscribedDevice[]>([]);
   const [tableMissing, setTableMissing] = useState(false);
+  const [runtimeVapidKey, setRuntimeVapidKey] = useState<string>(
+    () => process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || ""
+  );
   const [targetEndpointFilter, setTargetEndpointFilter] = useState<string>("all");
   const [notifTitle, setNotifTitle] = useState("Hesap Planı Bildirimi");
   const [notifBody, setNotifBody] = useState("");
@@ -64,6 +67,9 @@ export default function WebPushControl({
       if (data?.success && Array.isArray(data.subscriptions)) {
         setDevices(data.subscriptions);
         setTableMissing(Boolean(data.tableMissing));
+        if (data.vapidPublicKey) {
+          setRuntimeVapidKey(data.vapidPublicKey);
+        }
       }
     } catch {
       // ignore
@@ -102,9 +108,11 @@ export default function WebPushControl({
   const handleSubscribe = async () => {
     setErrorMsg(null);
     setStatusMsg(null);
-    const vapidPublicKey = process.env.VAPID_PUBLIC_KEY;
+    const vapidPublicKey = runtimeVapidKey || process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
     if (!vapidPublicKey) {
-      setErrorMsg("VAPID public key tanımlanmamış.");
+      setErrorMsg(
+        "VAPID public key tanımlanmamış. Vercel Environment Variables içine .env.local dosyasındaki VAPID anahtarlarını ekleyip yeniden deploy edin."
+      );
       return;
     }
 

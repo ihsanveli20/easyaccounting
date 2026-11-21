@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   Bell,
   BellOff,
@@ -235,24 +236,26 @@ export default function WebPushControl({
         )}
       </button>
 
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full overflow-hidden shadow-2xl border border-slate-200">
-            <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
-              <div className="flex items-center gap-2 font-black text-sm text-slate-900">
-                <BellRing className="w-4 h-4 text-emerald-600" />
-                <span>Web Push Bildirim Merkezi</span>
+      {isModalOpen &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl max-w-md w-full max-h-[90dvh] flex flex-col overflow-hidden shadow-2xl border border-slate-200">
+              <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50 shrink-0">
+                <div className="flex items-center gap-2 font-black text-sm text-slate-900">
+                  <BellRing className="w-4 h-4 text-emerald-600" />
+                  <span>Web Push Bildirim Merkezi</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  className="p-1 rounded-lg hover:bg-slate-200 text-slate-500"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => setIsModalOpen(false)}
-                className="p-1 rounded-lg hover:bg-slate-200 text-slate-500"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
 
-            <div className="p-5 space-y-5">
+              <div className="p-5 space-y-5 overflow-y-auto">
               {statusMsg && (
                 <div className="rounded-xl bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs font-bold text-emerald-800 flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 shrink-0" />
@@ -370,8 +373,9 @@ export default function WebPushControl({
               </form>
             </div>
           </div>
-        </div>
-      )}
+        </div>,
+          document.body
+        )}
     </>
   );
 }

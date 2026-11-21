@@ -99,7 +99,7 @@ export default function WebPushControl({
   const handleSubscribe = async () => {
     setErrorMsg(null);
     setStatusMsg(null);
-    const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+    const vapidPublicKey = process.env.VAPID_PUBLIC_KEY;
     if (!vapidPublicKey) {
       setErrorMsg("VAPID public key tanımlanmamış.");
       return;
@@ -216,11 +216,10 @@ export default function WebPushControl({
       <button
         type="button"
         onClick={handleOpenModal}
-        className={`relative inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-bold transition-colors ${
-          isSubscribed
-            ? "bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100"
-            : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"
-        }`}
+        className={`relative inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-bold transition-colors ${isSubscribed
+          ? "bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100"
+          : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"
+          }`}
         title="Web Push Bildirimleri"
       >
         {isSubscribed ? (

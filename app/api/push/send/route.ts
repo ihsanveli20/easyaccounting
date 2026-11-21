@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import webpush from "web-push";
+import { sendNotification, setVapidDetails } from "web-push";
 import {
   listPushSubscriptions,
   removePushSubscription,
@@ -10,7 +10,7 @@ function normalizeDigits(phone: string): string {
 }
 
 export async function POST(request: Request) {
-  const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+  const publicKey = process.env.VAPID_PUBLIC_KEY;
   const privateKey = process.env.VAPID_PRIVATE_KEY;
   const subject = process.env.VAPID_SUBJECT || "mailto:admin@hesap-plani.local";
 
@@ -21,7 +21,7 @@ export async function POST(request: Request) {
     );
   }
 
-  webpush.setVapidDetails(subject, publicKey, privateKey);
+  setVapidDetails(subject, publicKey, privateKey);
 
   try {
     const body = await request.json();
@@ -73,7 +73,7 @@ export async function POST(request: Request) {
     await Promise.all(
       targets.map(async (sub) => {
         try {
-          await webpush.sendNotification(
+          await sendNotification(
             {
               endpoint: sub.endpoint,
               keys: {

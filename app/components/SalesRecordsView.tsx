@@ -770,11 +770,10 @@ export default function SalesRecordsView({
                   key={key}
                   type="button"
                   onClick={() => setDateFilter(key)}
-                  className={`px-2.5 py-1 rounded-lg transition-colors ${
-                    dateFilter === key
-                      ? "bg-emerald-600 text-white"
-                      : "text-slate-600 hover:bg-slate-100"
-                  }`}
+                  className={`px-2.5 py-1 rounded-lg transition-colors ${dateFilter === key
+                    ? "bg-emerald-600 text-white"
+                    : "text-slate-600 hover:bg-slate-100"
+                    }`}
                 >
                   {label}
                 </button>
@@ -793,13 +792,12 @@ export default function SalesRecordsView({
                   key={key}
                   type="button"
                   onClick={() => setOfficialFilter(key)}
-                  className={`px-2.5 py-1 rounded-lg transition-colors ${
-                    officialFilter === key
-                      ? key === "pending"
-                        ? "bg-amber-500 text-white"
-                        : "bg-indigo-600 text-white"
-                      : "text-slate-600 hover:bg-slate-100"
-                  }`}
+                  className={`px-2.5 py-1 rounded-lg transition-colors ${officialFilter === key
+                    ? key === "pending"
+                      ? "bg-amber-500 text-white"
+                      : "bg-indigo-600 text-white"
+                    : "text-slate-600 hover:bg-slate-100"
+                    }`}
                 >
                   {label}
                 </button>
@@ -985,11 +983,10 @@ export default function SalesRecordsView({
                         <button
                           type="button"
                           onClick={() => handleToggleOfficial(rec)}
-                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold border transition-colors ${
-                            rec.is_official_recorded
-                              ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
-                              : "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100"
-                          }`}
+                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold border transition-colors ${rec.is_official_recorded
+                            ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
+                            : "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100"
+                            }`}
                           title="Resmî sisteme işlenme durumunu değiştir"
                         >
                           {rec.is_official_recorded ? (

@@ -980,6 +980,19 @@ export default function PriceQuoteView({
               ? `Teklif (${data.proposal.proposal_number}) başarıyla güncellendi!`
               : `Teklif (${data.proposal.proposal_number}) kaydedildi!`
           );
+
+          // Trigger Web Push notification to subscribed devices
+          fetch("/api/push/send", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              title: editingProposalId ? "Teklif Güncellendi" : "Yeni Teklif Kaydı",
+              body: `${customerName.trim() || "Müşteri"} — ${data.proposal.proposal_number} (${formatCurrency(grandTotal)})`,
+              url: "/",
+            }),
+          }).catch(() => {
+            // ignore push errors so proposal saving is never blocked
+          });
         } else {
           showToast(`Kayıt hatası: ${data.error || "İşlem başarısız"}`);
         }

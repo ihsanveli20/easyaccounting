@@ -135,6 +135,7 @@ export interface UserProfile {
 export type AppMenuId =
   | "summary"
   | "details"
+  | "current-accounts"
   | "calculator"
   | "reconciliation"
   | "invoice-extractor"

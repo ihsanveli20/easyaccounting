@@ -57,6 +57,7 @@ import {
 const MENU_ICONS: Record<AppMenuId, React.ComponentType<{ className?: string }>> = {
   summary: FileSpreadsheet,
   details: Layers,
+  "current-accounts": Layers,
   calculator: Calculator,
   reconciliation: Scale,
   "invoice-extractor": FileSpreadsheet,

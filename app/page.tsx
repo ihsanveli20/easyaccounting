@@ -71,6 +71,7 @@ import ReceivedQuotesComparisonView from "./components/ReceivedQuotesComparisonV
 import ProcurementComparisonView from "./components/ProcurementComparisonView";
 import SalesRecordsView from "./components/SalesRecordsView";
 import WebPushControl from "./components/WebPushControl";
+import CurrentAccountsView from "./components/CurrentAccountsView";
 import ProductManagementView, { DEFAULT_SAMPLE_PRODUCTS } from "./components/ProductManagementView";
 import KurbanReportingView from "./components/KurbanReportingView";
 import KurbanProcessModuleView from "./components/KurbanProcessModuleView";
@@ -106,7 +107,7 @@ export default function Home() {
 
   // Navigation Tab: "summary" = Hesap Planı / Bakiye Listesi, "details" = Firma Detay Hareketleri, "calculator" = Ayrıntılı Hesap Makinesi, "reconciliation" = Ekstre & Luca Mutabakat, "invoice-extractor" = Toplu Fatura -> Excel, "quote" = Fiyat Teklifi, "proposal-history" = Teklif Geçmişi, "proposal-comparison" = Teklif Karşılaştırma, "stock-tracking" = Ürün Stok Takibi, "kurban-reporting" = Kurban Raporlama & Takip, "admin-users" = Kullanıcı & Yetki Yönetimi
   const [activeTab, setActiveTab] = useState<
-    "summary" | "details" | "calculator" | "reconciliation" | "invoice-extractor" | "invoice-comparison" | "quote" | "proposal-history" | "proposal-comparison" | "received-quotes" | "procurement-comparison" | "sales-records" | "stock-tracking" | "kurban-reporting" | "settings" | "admin-users"
+    "summary" | "details" | "current-accounts" | "calculator" | "reconciliation" | "invoice-extractor" | "invoice-comparison" | "quote" | "proposal-history" | "proposal-comparison" | "received-quotes" | "procurement-comparison" | "sales-records" | "stock-tracking" | "kurban-reporting" | "settings" | "admin-users"
   >("summary");
 
   // State for proposal editing when navigating from history to editor
@@ -744,6 +745,17 @@ export default function Home() {
       badge: companies.length > 0 ? companies.length : null,
       badgeStyle: "bg-white/20 text-white",
       tag: companies.length === 0 ? "YENİ" : null,
+    },
+    {
+      id: "current-accounts" as const,
+      name: "Cari Hesap & Müşteri/Tedarikçi",
+      shortName: "Cari Hesaplar",
+      description: "Cari Kart, Tahsilat, Ödeme & Mutabakat",
+      icon: Building2,
+      activeBg: "bg-indigo-700 text-white shadow-md shadow-indigo-700/25",
+      badge: null,
+      badgeStyle: "bg-white/20 text-white",
+      tag: "ERP",
     },
     {
       id: "calculator" as const,
@@ -1524,6 +1536,8 @@ export default function Home() {
                   <FileSpreadsheet className="w-4 h-4 sm:w-5 sm:h-5" />
                 ) : activeTab === "details" ? (
                   <Layers className="w-4 h-4 sm:w-5 sm:h-5" />
+                ) : activeTab === "current-accounts" ? (
+                  <Building2 className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
                 ) : activeTab === "calculator" ? (
                   <Calculator className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-400" />
                 ) : activeTab === "reconciliation" ? (
@@ -1562,7 +1576,9 @@ export default function Home() {
                       ? "Hesap Planı & Bakiyeler"
                       : activeTab === "details"
                         ? "Firma Detay Hareketleri"
-                        : activeTab === "calculator"
+                        : activeTab === "current-accounts"
+                          ? "Cari Hesap Yönetimi"
+                          : activeTab === "calculator"
                           ? "Ayrıntılı Hesap Makinesi"
                           : activeTab === "reconciliation"
                             ? "Ekstre & Luca Karşılaştırma"
@@ -2467,6 +2483,13 @@ export default function Home() {
                   summaryRecords={records}
                   onSwitchToSummary={() => setActiveTab("summary")}
                 />
+              )}
+
+              {/* ========================================================================= */}
+              {/* TAB 2.5: CURRENT ACCOUNTS (CARİ HESAP YÖNETİMİ)                           */}
+              {/* ========================================================================= */}
+              {activeTab === "current-accounts" && hasMenuAccess("current-accounts") && (
+                <CurrentAccountsView />
               )}
 
               {/* ========================================================================= */}

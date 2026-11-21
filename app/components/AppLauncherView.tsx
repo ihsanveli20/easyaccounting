@@ -59,6 +59,11 @@ const TILE_STYLES: Record<
     iconColor: "text-indigo-600",
     accentDot: "bg-sky-500",
   },
+  "current-accounts": {
+    iconBg: "bg-gradient-to-br from-emerald-50 to-indigo-100 border-emerald-200/70",
+    iconColor: "text-indigo-700",
+    accentDot: "bg-emerald-500",
+  },
   calculator: {
     iconBg: "bg-gradient-to-br from-slate-100 to-slate-200 border-slate-300/70",
     iconColor: "text-slate-800",

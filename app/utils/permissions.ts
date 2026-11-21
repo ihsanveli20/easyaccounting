@@ -23,6 +23,13 @@ export const SYSTEM_MENUS: MenuItemDefinition[] = [
     category: "accounting",
   },
   {
+    id: "current-accounts",
+    name: "Cari Hesap & Müşteri/Tedarikçi",
+    shortName: "Cari Hesaplar",
+    description: "Cari kartlar, borç/alacak hareketleri, tahsilat, ödeme, ekstre ve mutabakat",
+    category: "accounting",
+  },
+  {
     id: "calculator",
     name: "Ayrıntılı Hesap Makinesi",
     shortName: "Hesap Makinesi",
@@ -126,6 +133,7 @@ export const DEFAULT_ROLE_PERMISSIONS: RoleMenuPermissions = {
   admin: [
     "summary",
     "details",
+    "current-accounts",
     "calculator",
     "reconciliation",
     "invoice-extractor",
@@ -153,6 +161,7 @@ export const DEFAULT_ROLE_PERMISSIONS: RoleMenuPermissions = {
     "invoice-extractor",
     "invoice-comparison",
     "details",
+    "current-accounts",
     "calculator",
     "settings",
   ],

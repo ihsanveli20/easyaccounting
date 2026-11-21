@@ -12,7 +12,10 @@ function normalizeDigits(phone: string): string {
 export async function POST(request: Request) {
   const publicKey = process.env.VAPID_PUBLIC_KEY;
   const privateKey = process.env.VAPID_PRIVATE_KEY;
-  const subject = process.env.VAPID_SUBJECT || "mailto:admin@hesap-plani.local";
+  const rawSubject = process.env.VAPID_SUBJECT || "mailto:bildirim@hesapplani.com";
+  const subject = rawSubject.endsWith(".local")
+    ? "mailto:bildirim@hesapplani.com"
+    : rawSubject;
 
   if (!publicKey || !privateKey) {
     return NextResponse.json(

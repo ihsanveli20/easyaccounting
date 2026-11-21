@@ -50,6 +50,7 @@ export default function WebPushControl({
 
   // Send notification form
   const [devices, setDevices] = useState<SubscribedDevice[]>([]);
+  const [tableMissing, setTableMissing] = useState(false);
   const [targetEndpointFilter, setTargetEndpointFilter] = useState<string>("all");
   const [notifTitle, setNotifTitle] = useState("Hesap Planı Bildirimi");
   const [notifBody, setNotifBody] = useState("");
@@ -61,6 +62,7 @@ export default function WebPushControl({
       const data = await res.json();
       if (data?.success && Array.isArray(data.subscriptions)) {
         setDevices(data.subscriptions);
+        setTableMissing(Boolean(data.tableMissing));
       }
     } catch {
       // ignore
@@ -261,6 +263,12 @@ export default function WebPushControl({
               {errorMsg && (
                 <div className="rounded-xl bg-rose-50 border border-rose-200 px-3 py-2 text-xs font-bold text-rose-700">
                   {errorMsg}
+                </div>
+              )}
+
+              {tableMissing && (
+                <div className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-[11px] font-semibold text-amber-800">
+                  Supabase &quot;push_subscriptions&quot; tablosu henüz oluşturulmamış! Cihazlar arası (Mac → iPhone) bildirim için <code>data/push_subscriptions_schema.sql</code> dosyasını Supabase SQL Editor&apos;de çalıştırın.
                 </div>
               )}
 

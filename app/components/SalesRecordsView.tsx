@@ -305,6 +305,19 @@ export default function SalesRecordsView({
       setQuantity("1");
       setNotes("");
       setIsOfficialRecorded(false);
+
+      // Trigger Web Push notification to subscribed devices (e.g. iPhone / team)
+      fetch("/api/push/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: "Yeni Satış Kaydı",
+          body: `${cName} — ${pName} (${qtyNum} ${payload.unit})`,
+          url: "/",
+        }),
+      }).catch(() => {
+        // ignore push errors so sale saving is never blocked
+      });
     } catch {
       const localRec: SalesRecordItem = {
         id: `local-${Date.now()}`,

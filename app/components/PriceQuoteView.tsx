@@ -43,6 +43,7 @@ import WhatsAppShareModal from "./WhatsAppShareModal";
 import { WhatsAppProposalData, sharePdfViaWhatsApp } from "../utils/whatsapp";
 import { renderElementToPdf } from "../utils/pdfGenerator";
 import { useAuth } from "../context/AuthContext";
+import { logSystemAudit } from "../utils/auditClient";
 import teklifLogo from "../logo.jpg";
 
 export interface QuoteItem {
@@ -992,6 +993,21 @@ export default function PriceQuoteView({
             }),
           }).catch(() => {
             // ignore push errors so proposal saving is never blocked
+          });
+
+          logSystemAudit({
+            user_id: user?.id || null,
+            user_name:
+              profile?.full_name ||
+              profile?.user_name ||
+              user?.email?.split("@")[0] ||
+              "Kullanıcı",
+            action: editingProposalId ? "UPDATE" : "CREATE",
+            module: "quote",
+            entity_type: "proposal",
+            entity_id: data.proposal.id || editingProposalId || null,
+            record_label: `${customerName.trim() || "Müşteri"} — ${data.proposal.proposal_number}`,
+            details: `Toplam: ${formatCurrency(grandTotal)}`,
           });
         } else {
           showToast(`Kayıt hatası: ${data.error || "İşlem başarısız"}`);

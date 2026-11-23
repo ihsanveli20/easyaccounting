@@ -24,6 +24,7 @@ import {
 import { ProductItem } from "../types/accounting";
 import { createWhatsAppWebUrl, openWhatsAppAppOrWeb } from "../utils/whatsapp";
 import { logSystemAudit } from "../utils/auditClient";
+import { useAuth } from "../context/AuthContext";
 
 export interface SalesRecordItem {
   id: string;
@@ -73,6 +74,13 @@ export default function SalesRecordsView({
   products = [],
   companyNames = [],
 }: SalesRecordsViewProps) {
+  const { user, profile } = useAuth();
+  const currentUserName =
+    profile?.full_name ||
+    profile?.user_name ||
+    user?.email?.split("@")[0] ||
+    "Kullanıcı";
+
   const [records, setRecords] = useState<SalesRecordItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSaving, setIsSaving] = useState<boolean>(false);
@@ -313,7 +321,7 @@ export default function SalesRecordsView({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title: "Yeni Satış Kaydı",
-          body: `${cName} — ${pName} (${qtyNum} ${payload.unit})`,
+          body: `${cName} — ${pName} (${qtyNum} ${payload.unit}) • Ekleyen: ${currentUserName}`,
           url: "/",
         }),
       }).catch(() => {
@@ -321,7 +329,8 @@ export default function SalesRecordsView({
       });
 
       logSystemAudit({
-        user_name: "Kullanıcı",
+        user_id: user?.id || null,
+        user_name: currentUserName,
         action: "CREATE",
         module: "sales-records",
         entity_type: "sale",
@@ -364,10 +373,36 @@ export default function SalesRecordsView({
       is_official_recorded: Boolean(editDraft.is_official_recorded),
     };
 
+    const prevRec = records.find((r) => r.id === id);
     const next = records.map((r) => (r.id === id ? { ...r, ...updatedPayload } : r));
     setRecords(next);
     saveLocalFallback(next);
     setEditingId(null);
+
+    logSystemAudit({
+      user_id: user?.id || null,
+      user_name: currentUserName,
+      action: "UPDATE",
+      module: "sales-records",
+      entity_type: "sale",
+      entity_id: id,
+      record_label: `${cName} — ${pName} (${qtyNum} ${updatedPayload.unit})`,
+      details: updatedPayload.is_official_recorded
+        ? "Kayıt güncellendi (Resmî Sisteme İşlendi)"
+        : "Kayıt güncellendi",
+    });
+
+    if (prevRec && !prevRec.is_official_recorded && updatedPayload.is_official_recorded) {
+      fetch("/api/push/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: "Satış Resmî Sisteme İşlendi",
+          body: `${cName} — ${pName} (${qtyNum} ${updatedPayload.unit}) • İşleyen: ${currentUserName}`,
+          url: "/",
+        }),
+      }).catch(() => {});
+    }
 
     if (!id.startsWith("local-")) {
       try {
@@ -390,6 +425,31 @@ export default function SalesRecordsView({
     setRecords(next);
     saveLocalFallback(next);
 
+    logSystemAudit({
+      user_id: user?.id || null,
+      user_name: currentUserName,
+      action: "UPDATE",
+      module: "sales-records",
+      entity_type: "sale",
+      entity_id: rec.id,
+      record_label: `${rec.customer_name} — ${rec.product_name} (${rec.quantity} ${rec.unit})`,
+      details: nextVal
+        ? "Resmî sisteme işlendi olarak işaretlendi"
+        : "Resmî sistem işareti kaldırıldı",
+    });
+
+    if (nextVal) {
+      fetch("/api/push/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: "Satış Resmî Sisteme İşlendi",
+          body: `${rec.customer_name} — ${rec.product_name} (${rec.quantity} ${rec.unit}) • İşleyen: ${currentUserName}`,
+          url: "/",
+        }),
+      }).catch(() => {});
+    }
+
     if (!rec.id.startsWith("local-")) {
       try {
         await fetch("/api/sales-records", {
@@ -411,7 +471,8 @@ export default function SalesRecordsView({
 
     if (target) {
       logSystemAudit({
-        user_name: "Kullanıcı",
+        user_id: user?.id || null,
+        user_name: currentUserName,
         action: "DELETE",
         module: "sales-records",
         entity_type: "sale",

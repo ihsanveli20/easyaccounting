@@ -1015,176 +1015,176 @@ export default function Home() {
           className={`fixed inset-y-0 left-0 w-72 max-w-[85vw] bg-white z-50 shadow-2xl flex flex-col lg:hidden transition-transform duration-300 ease-in-out no-print ${mobileMenuOpen ? "translate-x-0" : "-translate-x-full"
             }`}
         >
-        <div className="h-16 border-b border-slate-100 flex items-center justify-between px-4">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-white p-1 border border-slate-200 shadow-2xs flex items-center justify-center shrink-0 overflow-hidden">
-              <img src="/logo.jpg" alt="Logo" className="w-full h-full object-contain" />
-            </div>
-            <div>
-              <h2 className="text-sm font-bold text-slate-900 tracking-tight flex items-center gap-1.5">
-                <span>Hesap & Cari</span>
-                <span className="text-[10px] font-semibold px-1.5 py-0.2 rounded bg-emerald-50 text-emerald-700 border border-emerald-200/60">
-                  PRO
-                </span>
-              </h2>
-              <p className="text-[11px] text-slate-400">Ön Muhasebe & Mizan</p>
-            </div>
-          </div>
-          <button
-            onClick={() => setMobileMenuOpen(false)}
-            className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        <div className="flex-1 py-4 px-3 overflow-y-auto no-scrollbar space-y-1.5">
-          <div className="flex items-center justify-between px-2 pb-2 gap-1.5">
-            <button
-              onClick={() => {
-                setShowAppLauncher((prev) => !prev);
-                setMobileMenuOpen(false);
-              }}
-              className={`flex-1 flex items-center gap-2 px-2.5 py-2 rounded-xl text-xs font-bold border transition-colors ${showAppLauncher
-                ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
-                : "bg-indigo-50/70 text-indigo-700 border-indigo-200/70 hover:bg-indigo-100"
-                }`}
-            >
-              <LayoutGrid className="w-3.5 h-3.5 shrink-0" />
-              <span>Uygulamalar</span>
-            </button>
-            <button
-              onClick={() => {
-                setActiveTab("settings");
-                setShowAppLauncher(false);
-                setMobileMenuOpen(false);
-              }}
-              className="p-2 rounded-xl border border-slate-200 text-slate-600 hover:text-indigo-700 hover:bg-indigo-50 transition-colors"
-              title="Ayarlar & Menü Yönetimi"
-            >
-              <SlidersHorizontal className="w-3.5 h-3.5" />
-            </button>
-          </div>
-          <div className="px-3 pb-1 text-[10px] font-bold tracking-wider text-slate-400 uppercase">
-            Ana Menü
-          </div>
-          <nav className="space-y-1.5">
-            {visibleNavItems.map((item) => {
-              const isActive = !showAppLauncher && activeTab === item.id;
-              const Icon = item.icon;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => {
-                    setActiveTab(item.id);
-                    setShowAppLauncher(false);
-                    setMobileMenuOpen(false);
-                  }}
-                  className={`w-full flex items-center justify-between p-3 rounded-xl text-left transition-all ${isActive
-                    ? item.activeBg
-                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-100/80"
-                    }`}
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div
-                      className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${isActive
-                        ? "bg-white/20 text-white"
-                        : "bg-slate-100 text-slate-600"
-                        }`}
-                    >
-                      <Icon className="w-4 h-4" />
-                    </div>
-                    <div className="min-w-0">
-                      <div
-                        className={`text-xs font-semibold truncate ${isActive ? "text-white" : "text-slate-800"
-                          }`}
-                      >
-                        {item.name}
-                      </div>
-                      <div
-                        className={`text-[10px] truncate ${isActive ? "text-white/80" : "text-slate-400"
-                          }`}
-                      >
-                        {item.description}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="shrink-0 flex items-center gap-1.5 pl-2">
-                    {item.badge !== null && (
-                      <span
-                        className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${isActive
-                          ? item.badgeStyle
-                          : "bg-slate-200/80 text-slate-700"
-                          }`}
-                      >
-                        {item.badge}
-                      </span>
-                    )}
-                    {item.tag && (
-                      <span
-                        className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider ${isActive
-                          ? "bg-white/20 text-white"
-                          : item.tag === "ÇOK YAKINDA"
-                            ? "bg-amber-100 text-amber-800 border border-amber-300 font-extrabold"
-                            : "bg-slate-100 text-slate-600 border border-slate-200"
-                          }`}
-                      >
-                        {item.tag}
-                      </span>
-                    )}
-                  </div>
-                </button>
-              );
-            })}
-          </nav>
-        </div>
-
-        <div className="p-3 border-t border-slate-100 bg-slate-50/80 space-y-2.5">
-          <div className="p-2.5 rounded-xl bg-white border border-slate-200/80 shadow-2xs flex items-center justify-between gap-2.5">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-purple-600 to-indigo-600 text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-2xs">
-                {(profile?.full_name || profile?.user_name || user?.email || "U").charAt(0).toUpperCase()}
+          <div className="h-16 border-b border-slate-100 flex items-center justify-between px-4">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-white p-1 border border-slate-200 shadow-2xs flex items-center justify-center shrink-0 overflow-hidden">
+                <img src="/logo.jpg" alt="Logo" className="w-full h-full object-contain" />
               </div>
-              <div className="min-w-0">
-                <div className="text-xs font-semibold text-slate-800 truncate">
-                  {profile?.full_name || profile?.user_name || user?.email?.split("@")[0]}
-                </div>
-                <div className="text-[10px] text-slate-500 truncate flex items-center gap-1.5">
-                  <span
-                    className={`inline-block w-1.5 h-1.5 rounded-full ${isAdmin ? "bg-purple-500" : isSales ? "bg-blue-500" : "bg-slate-400"
-                      }`}
-                  />
-                  <span className="font-medium text-slate-600">
-                    {isAdmin ? "Admin / Yönetici" : isSales ? "Satış Temsilcisi" : "Görüntüleyici"}
+              <div>
+                <h2 className="text-sm font-bold text-slate-900 tracking-tight flex items-center gap-1.5">
+                  <span>Hesap & Cari</span>
+                  <span className="text-[10px] font-semibold px-1.5 py-0.2 rounded bg-emerald-50 text-emerald-700 border border-emerald-200/60">
+                    PRO
                   </span>
-                </div>
+                </h2>
+                <p className="text-[11px] text-slate-400">Ön Muhasebe & Mizan</p>
               </div>
             </div>
             <button
-              onClick={() => {
-                setMobileMenuOpen(false);
-                signOut();
-              }}
-              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors shrink-0"
-              title="Güvenli Çıkış Yap"
+              onClick={() => setMobileMenuOpen(false)}
+              className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
             >
-              <LogOut className="w-4 h-4" />
+              <X className="w-5 h-5" />
             </button>
           </div>
 
-          <div className="p-2.5 rounded-xl bg-slate-100/70 border border-slate-200/50">
-            <div className="flex items-center gap-2 mb-0.5">
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-              <span className="text-[11px] font-semibold text-slate-700">
-                Anadolu Yapı Kolay Muhasebe Güvenli Oturum
-              </span>
+          <div className="flex-1 py-4 px-3 overflow-y-auto no-scrollbar space-y-1.5">
+            <div className="flex items-center justify-between px-2 pb-2 gap-1.5">
+              <button
+                onClick={() => {
+                  setShowAppLauncher((prev) => !prev);
+                  setMobileMenuOpen(false);
+                }}
+                className={`flex-1 flex items-center gap-2 px-2.5 py-2 rounded-xl text-xs font-bold border transition-colors ${showAppLauncher
+                  ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
+                  : "bg-indigo-50/70 text-indigo-700 border-indigo-200/70 hover:bg-indigo-100"
+                  }`}
+              >
+                <LayoutGrid className="w-3.5 h-3.5 shrink-0" />
+                <span>Uygulamalar</span>
+              </button>
+              <button
+                onClick={() => {
+                  setActiveTab("settings");
+                  setShowAppLauncher(false);
+                  setMobileMenuOpen(false);
+                }}
+                className="p-2 rounded-xl border border-slate-200 text-slate-600 hover:text-indigo-700 hover:bg-indigo-50 transition-colors"
+                title="Ayarlar & Menü Yönetimi"
+              >
+                <SlidersHorizontal className="w-3.5 h-3.5" />
+              </button>
             </div>
-            <p className="text-[10px] text-slate-500">
-              {isAdmin ? "Tüm sistem yetkileri aktif." : "Kullanıcı rolü yetkileri aktif."}
-            </p>
+            <div className="px-3 pb-1 text-[10px] font-bold tracking-wider text-slate-400 uppercase">
+              Ana Menü
+            </div>
+            <nav className="space-y-1.5">
+              {visibleNavItems.map((item) => {
+                const isActive = !showAppLauncher && activeTab === item.id;
+                const Icon = item.icon;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => {
+                      setActiveTab(item.id);
+                      setShowAppLauncher(false);
+                      setMobileMenuOpen(false);
+                    }}
+                    className={`w-full flex items-center justify-between p-3 rounded-xl text-left transition-all ${isActive
+                      ? item.activeBg
+                      : "text-slate-600 hover:text-slate-900 hover:bg-slate-100/80"
+                      }`}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div
+                        className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${isActive
+                          ? "bg-white/20 text-white"
+                          : "bg-slate-100 text-slate-600"
+                          }`}
+                      >
+                        <Icon className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <div
+                          className={`text-xs font-semibold truncate ${isActive ? "text-white" : "text-slate-800"
+                            }`}
+                        >
+                          {item.name}
+                        </div>
+                        <div
+                          className={`text-[10px] truncate ${isActive ? "text-white/80" : "text-slate-400"
+                            }`}
+                        >
+                          {item.description}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="shrink-0 flex items-center gap-1.5 pl-2">
+                      {item.badge !== null && (
+                        <span
+                          className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${isActive
+                            ? item.badgeStyle
+                            : "bg-slate-200/80 text-slate-700"
+                            }`}
+                        >
+                          {item.badge}
+                        </span>
+                      )}
+                      {item.tag && (
+                        <span
+                          className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider ${isActive
+                            ? "bg-white/20 text-white"
+                            : item.tag === "ÇOK YAKINDA"
+                              ? "bg-amber-100 text-amber-800 border border-amber-300 font-extrabold"
+                              : "bg-slate-100 text-slate-600 border border-slate-200"
+                            }`}
+                        >
+                          {item.tag}
+                        </span>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </nav>
           </div>
-        </div>
-      </aside>
+
+          <div className="p-3 border-t border-slate-100 bg-slate-50/80 space-y-2.5">
+            <div className="p-2.5 rounded-xl bg-white border border-slate-200/80 shadow-2xs flex items-center justify-between gap-2.5">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-purple-600 to-indigo-600 text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-2xs">
+                  {(profile?.full_name || profile?.user_name || user?.email || "U").charAt(0).toUpperCase()}
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs font-semibold text-slate-800 truncate">
+                    {profile?.full_name || profile?.user_name || user?.email?.split("@")[0]}
+                  </div>
+                  <div className="text-[10px] text-slate-500 truncate flex items-center gap-1.5">
+                    <span
+                      className={`inline-block w-1.5 h-1.5 rounded-full ${isAdmin ? "bg-purple-500" : isSales ? "bg-blue-500" : "bg-slate-400"
+                        }`}
+                    />
+                    <span className="font-medium text-slate-600">
+                      {isAdmin ? "Admin / Yönetici" : isSales ? "Satış Temsilcisi" : "Görüntüleyici"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  signOut();
+                }}
+                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors shrink-0"
+                title="Güvenli Çıkış Yap"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-2.5 rounded-xl bg-slate-100/70 border border-slate-200/50">
+              <div className="flex items-center gap-2 mb-0.5">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                <span className="text-[11px] font-semibold text-slate-700">
+                  Anadolu Yapı Kolay Muhasebe Güvenli Oturum
+                </span>
+              </div>
+              <p className="text-[10px] text-slate-500">
+                {isAdmin ? "Tüm sistem yetkileri aktif." : "Kullanıcı rolü yetkileri aktif."}
+              </p>
+            </div>
+          </div>
+        </aside>
       )}
 
       {/* Desktop Persistent Left Sidebar Navigation */}
@@ -1555,14 +1555,14 @@ export default function Home() {
                                     : activeTab === "procurement-comparison"
                                       ? "bg-gradient-to-tr from-emerald-600 via-teal-600 to-indigo-600 shadow-emerald-600/20"
                                       : activeTab === "sales-records"
-                                      ? "bg-gradient-to-tr from-emerald-600 to-green-500 shadow-emerald-600/20"
-                                      : activeTab === "stock-tracking"
-                                      ? "bg-gradient-to-tr from-amber-600 to-orange-500 shadow-amber-500/20"
-                                      : activeTab === "kurban-reporting"
-                                        ? "bg-gradient-to-tr from-amber-600 via-emerald-600 to-teal-700 shadow-amber-600/20"
-                                        : activeTab === "settings"
-                                          ? "bg-gradient-to-tr from-amber-500 to-orange-600 shadow-amber-500/20"
-                                          : "bg-gradient-to-tr from-purple-600 to-indigo-600 shadow-purple-500/20"
+                                        ? "bg-gradient-to-tr from-emerald-600 to-green-500 shadow-emerald-600/20"
+                                        : activeTab === "stock-tracking"
+                                          ? "bg-gradient-to-tr from-amber-600 to-orange-500 shadow-amber-500/20"
+                                          : activeTab === "kurban-reporting"
+                                            ? "bg-gradient-to-tr from-amber-600 via-emerald-600 to-teal-700 shadow-amber-600/20"
+                                            : activeTab === "settings"
+                                              ? "bg-gradient-to-tr from-amber-500 to-orange-600 shadow-amber-500/20"
+                                              : "bg-gradient-to-tr from-purple-600 to-indigo-600 shadow-purple-500/20"
                   }`}
               >
                 {activeTab === "summary" ? (
@@ -1612,32 +1612,32 @@ export default function Home() {
                         : activeTab === "current-accounts"
                           ? "Cari Hesap Yönetimi"
                           : activeTab === "calculator"
-                          ? "Ayrıntılı Hesap Makinesi"
-                          : activeTab === "reconciliation"
-                            ? "Ekstre & Luca Karşılaştırma"
-                            : activeTab === "invoice-extractor"
-                              ? "Toplu Fatura Aktarım & Excel Merkezi"
-                              : activeTab === "invoice-comparison"
-                                ? "Fatura Karşılaştırma ve Analiz"
-                                : activeTab === "quote"
-                                  ? "Fiyat Teklifi"
-                                  : activeTab === "proposal-history"
-                                    ? "Teklif Geçmişi"
-                                    : activeTab === "proposal-comparison"
-                                      ? "Fiyat & Tedarikçi Kıyaslama"
-                                      : activeTab === "received-quotes"
-                                        ? "Gelen Teklif Karşılaştırma"
-                                        : activeTab === "procurement-comparison"
-                                          ? "Satın Alma Yönetimi → Teklif Karşılaştırma"
-                                          : activeTab === "sales-records"
-                                          ? "Satış Kayıtları"
-                                          : activeTab === "stock-tracking"
-                                          ? "Ürün Stok Takibi"
-                                          : activeTab === "kurban-reporting"
-                                            ? "Kurban Kesim ve Süreç Takip Raporu"
-                                            : activeTab === "settings"
-                                              ? "Ayarlar & Menü Yönetimi"
-                                              : "Kullanıcı & Yetki Yönetimi"}
+                            ? "Ayrıntılı Hesap Makinesi"
+                            : activeTab === "reconciliation"
+                              ? "Ekstre & Luca Karşılaştırma"
+                              : activeTab === "invoice-extractor"
+                                ? "Toplu Fatura Aktarım & Excel Merkezi"
+                                : activeTab === "invoice-comparison"
+                                  ? "Fatura Karşılaştırma ve Analiz"
+                                  : activeTab === "quote"
+                                    ? "Fiyat Teklifi"
+                                    : activeTab === "proposal-history"
+                                      ? "Teklif Geçmişi"
+                                      : activeTab === "proposal-comparison"
+                                        ? "Fiyat & Tedarikçi Kıyaslama"
+                                        : activeTab === "received-quotes"
+                                          ? "Gelen Teklif Karşılaştırma"
+                                          : activeTab === "procurement-comparison"
+                                            ? "Satın Alma Yönetimi → Teklif Karşılaştırma"
+                                            : activeTab === "sales-records"
+                                              ? "Satış Kayıtları"
+                                              : activeTab === "stock-tracking"
+                                                ? "Ürün Stok Takibi"
+                                                : activeTab === "kurban-reporting"
+                                                  ? "Kurban Kesim ve Süreç Takip Raporu"
+                                                  : activeTab === "settings"
+                                                    ? "Ayarlar & Menü Yönetimi"
+                                                    : "Kullanıcı & Yetki Yönetimi"}
                   </span>
                   <span
                     className={`hidden sm:inline-block text-xs font-semibold px-2 py-0.5 rounded-full border ${activeTab === "summary"
@@ -1661,14 +1661,14 @@ export default function Home() {
                                       : activeTab === "procurement-comparison"
                                         ? "bg-emerald-100 text-emerald-900 border-emerald-300 font-extrabold"
                                         : activeTab === "sales-records"
-                                        ? "bg-emerald-100 text-emerald-900 border-emerald-300 font-extrabold"
-                                        : activeTab === "stock-tracking"
-                                        ? "bg-blue-50 text-blue-700 border-blue-200"
-                                        : activeTab === "kurban-reporting"
-                                          ? "bg-amber-100 text-amber-900 border-amber-300 font-extrabold"
-                                          : activeTab === "settings"
-                                            ? "bg-orange-100 text-orange-900 border-orange-300 font-bold"
-                                            : "bg-purple-50 text-purple-700 border-purple-200"
+                                          ? "bg-emerald-100 text-emerald-900 border-emerald-300 font-extrabold"
+                                          : activeTab === "stock-tracking"
+                                            ? "bg-blue-50 text-blue-700 border-blue-200"
+                                            : activeTab === "kurban-reporting"
+                                              ? "bg-amber-100 text-amber-900 border-amber-300 font-extrabold"
+                                              : activeTab === "settings"
+                                                ? "bg-orange-100 text-orange-900 border-orange-300 font-bold"
+                                                : "bg-purple-50 text-purple-700 border-purple-200"
                       }`}
                   >
                     {activeTab === "summary"
@@ -1694,14 +1694,14 @@ export default function Home() {
                                         : activeTab === "procurement-comparison"
                                           ? "Satın Alma ERP"
                                           : activeTab === "sales-records"
-                                          ? "Satış Defteri"
-                                          : activeTab === "stock-tracking"
-                                          ? "Ürün Kataloğu"
-                                          : activeTab === "kurban-reporting"
-                                            ? "Resmî Denetim Raporu"
-                                            : activeTab === "settings"
-                                              ? "Menü & Görünüm"
-                                              : "Admin Paneli"}
+                                            ? "Satış Defteri"
+                                            : activeTab === "stock-tracking"
+                                              ? "Ürün Kataloğu"
+                                              : activeTab === "kurban-reporting"
+                                                ? "Resmî Denetim Raporu"
+                                                : activeTab === "settings"
+                                                  ? "Menü & Görünüm"
+                                                  : "Admin Paneli"}
                   </span>
                 </h1>
                 <p className="text-xs text-slate-500 hidden md:block truncate">
@@ -1728,14 +1728,14 @@ export default function Home() {
                                       : activeTab === "procurement-comparison"
                                         ? "İhtiyaç listesi oluşturun, yapay zekâ ile teklifleri ayrıştırıp onaylayın ve gerçek satın alma maliyetini kıyaslayın"
                                         : activeTab === "sales-records"
-                                        ? "Kime, hangi ürünü, ne kadar ve ne zaman sattığınızı hızlıca kaydedin"
-                                        : activeTab === "stock-tracking"
-                                        ? "Excel ile ürün listenizi içe aktarın, kaydedin ve teklif hazırlarken anında çekin"
-                                        : activeTab === "kurban-reporting"
-                                          ? "350 canlı hayvan alımı, 8 tır sevkiyatı, 2 kesimhanede kesim, soğuk depolama ve iki ayrı resmî denetim raporu"
-                                          : activeTab === "settings"
-                                            ? "Yan menüyü gizleyin, modülleri sıralayın ve tercihlerinizi Supabase'e kaydedin"
-                                            : "Kullanıcıları görüntüleyin, rolleri güncelleyin ve yetki matrisini yönetin"}
+                                          ? "Kime, hangi ürünü, ne kadar ve ne zaman sattığınızı hızlıca kaydedin"
+                                          : activeTab === "stock-tracking"
+                                            ? "Excel ile ürün listenizi içe aktarın, kaydedin ve teklif hazırlarken anında çekin"
+                                            : activeTab === "kurban-reporting"
+                                              ? "350 canlı hayvan alımı, 8 tır sevkiyatı, 2 kesimhanede kesim, soğuk depolama ve iki ayrı resmî denetim raporu"
+                                              : activeTab === "settings"
+                                                ? "Yan menüyü gizleyin, modülleri sıralayın ve tercihlerinizi Supabase'e kaydedin"
+                                                : "Kullanıcıları görüntüleyin, rolleri güncelleyin ve yetki matrisini yönetin"}
                 </p>
               </div>
             </div>

@@ -33,14 +33,14 @@ export interface MenuPreferences {
   sidebarCollapsed: boolean;
 }
 
-export const MENU_PREFS_STORAGE_KEY = "easy_accounting_menu_prefs_v1";
+export const MENU_PREFS_STORAGE_KEY = "easy_accounting_menu_prefs_v2";
 
 export const DEFAULT_MENU_PREFS: MenuPreferences = {
   order: [],
   hiddenIds: [],
-  startInLauncher: false,
-  hideSidebarInLauncher: false,
-  sidebarHidden: false,
+  startInLauncher: true,
+  hideSidebarInLauncher: true,
+  sidebarHidden: true,
   sidebarCollapsed: false,
 };
 

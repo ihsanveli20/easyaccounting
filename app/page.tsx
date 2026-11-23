@@ -130,14 +130,14 @@ export default function Home() {
     return DEFAULT_MENU_PREFS;
   });
   const [showAppLauncher, setShowAppLauncher] = useState<boolean>(() => {
-    if (typeof window === "undefined") return false;
+    if (typeof window === "undefined") return true;
     try {
       const raw = window.localStorage.getItem(MENU_PREFS_STORAGE_KEY);
-      if (raw) return Boolean(JSON.parse(raw)?.startInLauncher);
+      if (raw) return Boolean(JSON.parse(raw)?.startInLauncher ?? true);
     } catch {
       // ignore
     }
-    return false;
+    return true;
   });
   const [prefsSource, setPrefsSource] = useState<string>("default");
   const [isSavingPrefs, setIsSavingPrefs] = useState<boolean>(false);
@@ -1002,7 +1002,7 @@ export default function Home() {
   return (
     <div className="min-h-screen flex bg-slate-50/60 font-sans">
       {/* Mobile Drawer Overlay */}
-      {mobileMenuOpen && (
+      {mobileMenuOpen && !menuPrefs.sidebarHidden && !(showAppLauncher && menuPrefs.hideSidebarInLauncher) && (
         <div
           className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-50 lg:hidden transition-opacity"
           onClick={() => setMobileMenuOpen(false)}
@@ -1010,10 +1010,11 @@ export default function Home() {
       )}
 
       {/* Mobile Slide-Over Sidebar Drawer */}
-      <aside
-        className={`fixed inset-y-0 left-0 w-72 max-w-[85vw] bg-white z-50 shadow-2xl flex flex-col lg:hidden transition-transform duration-300 ease-in-out no-print ${mobileMenuOpen ? "translate-x-0" : "-translate-x-full"
-          }`}
-      >
+      {!menuPrefs.sidebarHidden && !(showAppLauncher && menuPrefs.hideSidebarInLauncher) && (
+        <aside
+          className={`fixed inset-y-0 left-0 w-72 max-w-[85vw] bg-white z-50 shadow-2xl flex flex-col lg:hidden transition-transform duration-300 ease-in-out no-print ${mobileMenuOpen ? "translate-x-0" : "-translate-x-full"
+            }`}
+        >
         <div className="h-16 border-b border-slate-100 flex items-center justify-between px-4">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-white p-1 border border-slate-200 shadow-2xs flex items-center justify-center shrink-0 overflow-hidden">
@@ -1184,6 +1185,7 @@ export default function Home() {
           </div>
         </div>
       </aside>
+      )}
 
       {/* Desktop Persistent Left Sidebar Navigation */}
       {!menuPrefs.sidebarHidden && !(showAppLauncher && menuPrefs.hideSidebarInLauncher) && (
@@ -1472,14 +1474,16 @@ export default function Home() {
           <div className="max-w-[1600px] w-full mx-auto px-3 sm:px-6 lg:px-8 min-h-14 py-2 sm:h-16 sm:py-0 flex items-center justify-between gap-3">
             {/* Left: Mobile hamburger + Desktop collapse icon + Active Tab Title */}
             <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
-              {/* Mobile menu toggle */}
-              <button
-                onClick={() => setMobileMenuOpen(true)}
-                className="lg:hidden p-2 -ml-1 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors shrink-0"
-                title="Menüyü Aç"
-              >
-                <Menu className="w-5 h-5" />
-              </button>
+              {/* Mobile menu toggle (hidden when sidebar is hidden / Odoo-only mode) */}
+              {!menuPrefs.sidebarHidden && !(showAppLauncher && menuPrefs.hideSidebarInLauncher) && (
+                <button
+                  onClick={() => setMobileMenuOpen(true)}
+                  className="lg:hidden p-2 -ml-1 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors shrink-0"
+                  title="Menüyü Aç"
+                >
+                  <Menu className="w-5 h-5" />
+                </button>
+              )}
 
               {/* Desktop collapse toggle */}
               {!menuPrefs.sidebarHidden && !(showAppLauncher && menuPrefs.hideSidebarInLauncher) && (
@@ -1496,18 +1500,18 @@ export default function Home() {
                 </button>
               )}
 
-              {/* App Launcher Grid Toggle (Odoo-style menu) */}
+              {/* App Launcher Grid Toggle (Odoo-style Ana Menü) */}
               <button
                 onClick={() => setShowAppLauncher((prev) => !prev)}
-                className={`p-2 rounded-xl transition-colors shrink-0 flex items-center gap-1.5 text-xs font-bold ${showAppLauncher
+                className={`px-2.5 py-2 rounded-xl transition-colors shrink-0 flex items-center gap-1.5 text-xs font-bold ${showAppLauncher
                   ? "bg-indigo-600 text-white shadow-sm"
-                  : "text-slate-600 hover:text-indigo-700 hover:bg-indigo-50"
+                  : "bg-slate-100 text-slate-700 hover:text-indigo-700 hover:bg-indigo-50"
                   }`}
-                title={showAppLauncher ? "Modüle Dön" : "Uygulamalar (Izgara Menü)"}
+                title={showAppLauncher ? "Modüle Dön" : "Ana Menü (Uygulamalar)"}
               >
                 <LayoutGrid className="w-4 h-4 sm:w-5 sm:h-5" />
-                <span className="hidden xl:inline">
-                  {showAppLauncher ? "Modüle Dön" : "Uygulamalar"}
+                <span>
+                  {showAppLauncher ? "Modüle Dön" : "Ana Menü"}
                 </span>
               </button>
 

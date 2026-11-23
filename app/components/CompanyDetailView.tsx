@@ -642,7 +642,7 @@ export default function CompanyDetailView({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl w-full mt-6">
                 <div
                   onClick={loadSampleDetailData}
-                  className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-2xs hover:shadow-md hover:border-indigo-300 transition-all cursor-pointer group"
+                  className="hidden sm:block p-4 rounded-2xl bg-white border border-slate-200/80 shadow-2xs hover:shadow-md hover:border-indigo-300 transition-all cursor-pointer group"
                 >
                   <div className="flex items-start gap-3">
                     <div className="p-2.5 rounded-xl bg-indigo-50 text-indigo-600 group-hover:scale-110 transition-transform">

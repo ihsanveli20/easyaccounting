@@ -1756,11 +1756,10 @@ export default function Home() {
                   {records.length === 0 ? (
                     <button
                       onClick={loadSampleData}
-                      className="inline-flex items-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100/80 rounded-lg transition-colors border border-emerald-200 shadow-2xs"
+                      className="hidden sm:inline-flex items-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100/80 rounded-lg transition-colors border border-emerald-200 shadow-2xs"
                     >
                       <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
-                      <span className="hidden sm:inline">Örnek Veri ile Dene</span>
-                      <span className="sm:hidden">Örnek Veri</span>
+                      <span>Örnek Veri ile Dene</span>
                     </button>
                   ) : (
                     <div className="flex items-center gap-1 sm:gap-2">
@@ -1801,11 +1800,10 @@ export default function Home() {
                   {activeTab === "details" && companies.length === 0 && (
                     <button
                       onClick={() => setCompanies(SAMPLE_COMPANY_DETAILS)}
-                      className="inline-flex items-center gap-1 px-2.5 sm:px-3.5 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors border border-indigo-200 shadow-2xs"
+                      className="hidden sm:inline-flex items-center gap-1 px-2.5 sm:px-3.5 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors border border-indigo-200 shadow-2xs"
                     >
                       <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
-                      <span className="hidden sm:inline">Örnek Detay Yükle</span>
-                      <span className="sm:hidden">Örnek</span>
+                      <span>Örnek Detay Yükle</span>
                     </button>
                   )}
                 </div>
@@ -1984,7 +1982,7 @@ export default function Home() {
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl w-full mt-6">
                         <div
                           onClick={loadSampleData}
-                          className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-2xs hover:shadow-md hover:border-emerald-300 transition-all cursor-pointer group"
+                          className="hidden sm:block p-4 rounded-2xl bg-white border border-slate-200/80 shadow-2xs hover:shadow-md hover:border-emerald-300 transition-all cursor-pointer group"
                         >
                           <div className="flex items-start gap-3">
                             <div className="p-2.5 rounded-xl bg-emerald-50 text-emerald-600 group-hover:scale-110 transition-transform">

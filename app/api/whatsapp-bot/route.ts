@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import QRCode from "qrcode";
 import {
   getMemRulesStore,
   getRawAccessToken,
@@ -37,9 +38,161 @@ export async function POST(request: Request) {
       const updated = await saveBotSettings({
         settings: body.settings || {},
         newAccessToken: body.accessToken,
+        newBridgeApiKey: body.bridgeApiKey,
         actor,
       });
       return NextResponse.json({ success: true, settings: updated });
+    }
+
+    if (action === "fetch_qr") {
+      const { bridgeUrl, bridgeInstance, bridgeApiKey } = await getRawAccessToken();
+      const targetUrl = String(body.bridgeUrl || bridgeUrl || "").trim().replace(/\/+$/, "");
+      const instance = String(body.bridgeInstance || bridgeInstance || "anadolu_yapi").trim();
+      const apiKey = String(body.bridgeApiKey || bridgeApiKey || "").trim();
+
+      if (!targetUrl) {
+        return NextResponse.json({
+          success: false,
+          error:
+            "QR ile bağlanmak için bir WhatsApp Web Köprü Sunucusu (Evolution API / Baileys URL) girmelisiniz. Not: Resmî Meta Cloud API QR kod ile token vermez; QR okutma için köprü sunucusu gerekir.",
+        });
+      }
+
+      try {
+        const headers: Record<string, string> = {
+          Accept: "application/json",
+          ...(apiKey ? { apikey: apiKey, Authorization: `Bearer ${apiKey}` } : {}),
+        };
+
+        // Try Evolution API /instance/connect/{instance} first, then /qr fallback
+        let res = await fetch(
+          `${targetUrl}/instance/connect/${encodeURIComponent(instance)}`,
+          { method: "GET", headers, signal: AbortSignal.timeout(8000) }
+        );
+        if (res.status === 404) {
+          res = await fetch(`${targetUrl}/qr`, {
+            method: "GET",
+            headers,
+            signal: AbortSignal.timeout(8000),
+          });
+        }
+
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          return NextResponse.json({
+            success: false,
+            error: data?.message || `Köprü sunucusu HTTP ${res.status} döndürdü.`,
+          });
+        }
+
+        // Check if already connected
+        if (data?.instance?.state === "open" || data?.connected === true) {
+          const updated = await saveBotSettings({
+            settings: {
+              connection_mode: "qr_bridge",
+              bridge_url: targetUrl,
+              bridge_instance: instance,
+              bridge_connected: true,
+              is_active: true,
+            },
+            newBridgeApiKey: apiKey || undefined,
+            actor,
+          });
+          return NextResponse.json({
+            success: true,
+            connected: true,
+            settings: updated,
+            message: "Telefon zaten WhatsApp Web köprüsüne bağlı!",
+          });
+        }
+
+        let qrDataUrl = "";
+        if (typeof data?.base64 === "string" && data.base64.startsWith("data:image")) {
+          qrDataUrl = data.base64;
+        } else if (typeof data?.qrcode?.base64 === "string") {
+          qrDataUrl = data.qrcode.base64;
+        } else if (typeof data?.code === "string" || typeof data?.qr === "string") {
+          qrDataUrl = await QRCode.toDataURL(data.code || data.qr, { width: 260, margin: 2 });
+        }
+
+        if (!qrDataUrl) {
+          return NextResponse.json({
+            success: false,
+            error: "Köprü sunucusundan QR kodu alınamadı.",
+          });
+        }
+
+        // Save bridge config so polling works
+        await saveBotSettings({
+          settings: {
+            connection_mode: "qr_bridge",
+            bridge_url: targetUrl,
+            bridge_instance: instance,
+          },
+          newBridgeApiKey: apiKey || undefined,
+          actor,
+        });
+
+        return NextResponse.json({
+          success: true,
+          connected: false,
+          qrDataUrl,
+        });
+      } catch (err: unknown) {
+        return NextResponse.json({
+          success: false,
+          error:
+            err instanceof Error
+              ? `Köprü sunucusuna ulaşılamadı: ${err.message}`
+              : "QR alınırken bağlantı hatası.",
+        });
+      }
+    }
+
+    if (action === "check_qr_status") {
+      const { bridgeUrl, bridgeInstance, bridgeApiKey } = await getRawAccessToken();
+      if (!bridgeUrl) {
+        return NextResponse.json({ success: false, connected: false });
+      }
+      const base = bridgeUrl.trim().replace(/\/+$/, "");
+      try {
+        const res = await fetch(
+          `${base}/instance/connectionState/${encodeURIComponent(bridgeInstance || "anadolu_yapi")}`,
+          {
+            method: "GET",
+            headers: {
+              ...(bridgeApiKey ? { apikey: bridgeApiKey, Authorization: `Bearer ${bridgeApiKey}` } : {}),
+            },
+            signal: AbortSignal.timeout(6000),
+          }
+        );
+        const data = await res.json().catch(() => ({}));
+        const isConnected =
+          data?.instance?.state === "open" ||
+          data?.state === "open" ||
+          data?.connected === true;
+
+        if (isConnected) {
+          const updated = await saveBotSettings({
+            settings: {
+              connection_mode: "qr_bridge",
+              bridge_connected: true,
+              bridge_phone: data?.instance?.owner || data?.phone || "",
+              is_active: true,
+            },
+            newAccessToken: data?.token || undefined,
+            actor,
+          });
+          return NextResponse.json({
+            success: true,
+            connected: true,
+            settings: updated,
+          });
+        }
+        return NextResponse.json({ success: true, connected: false });
+      } catch {
+        return NextResponse.json({ success: false, connected: false });
+      }
     }
 
     if (action === "test_connection") {

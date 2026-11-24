@@ -5,10 +5,15 @@
 CREATE TABLE IF NOT EXISTS public.whatsapp_bot_settings (
   id TEXT PRIMARY KEY DEFAULT 'default',
   is_active BOOLEAN NOT NULL DEFAULT false,
+  connection_mode TEXT NOT NULL DEFAULT 'meta_cloud', -- meta_cloud | qr_bridge
   phone_number_id TEXT,
   waba_id TEXT,
   verify_token TEXT,
-  encrypted_access_token TEXT, -- AES-256-GCM şifreli Meta Permanent Access Token
+  bridge_url TEXT,
+  bridge_instance TEXT DEFAULT 'anadolu_yapi',
+  bridge_connected BOOLEAN NOT NULL DEFAULT false,
+  bridge_phone TEXT,
+  encrypted_access_token TEXT, -- AES-256-GCM şifreli Meta Token / Bridge API Key
   welcome_message TEXT DEFAULT 'Merhaba! Anadolu Yapı WhatsApp destek hattına hoş geldiniz. Fiyat teklifi, ürün bilgisi veya cari bakiye için mesaj yazabilirsiniz.',
   fallback_message TEXT DEFAULT 'Mesajınız alındı. Müşteri temsilcimiz en kısa sürede size dönüş yapacaktır.',
   auto_reply_enabled BOOLEAN NOT NULL DEFAULT true,
@@ -60,4 +65,12 @@ BEGIN
     EXECUTE format('CREATE POLICY "Allow all %s" ON public.%I FOR ALL USING (true) WITH CHECK (true);', tbl, tbl);
   END LOOP;
 END $$;
+
+-- Mevcut tabloya QR Köprü kolonlarını eklemek için:
+ALTER TABLE public.whatsapp_bot_settings
+  ADD COLUMN IF NOT EXISTS connection_mode TEXT NOT NULL DEFAULT 'meta_cloud',
+  ADD COLUMN IF NOT EXISTS bridge_url TEXT,
+  ADD COLUMN IF NOT EXISTS bridge_instance TEXT DEFAULT 'anadolu_yapi',
+  ADD COLUMN IF NOT EXISTS bridge_connected BOOLEAN NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS bridge_phone TEXT;
 

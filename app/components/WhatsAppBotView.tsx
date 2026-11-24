@@ -12,12 +12,16 @@ import {
   MessageCircle,
   MessageSquare,
   Plus,
+  QrCode,
+  RefreshCw,
   Send,
   Settings,
   ShieldCheck,
+  Smartphone,
   Sparkles,
   Trash2,
   Webhook,
+  Wifi,
   Zap,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
@@ -54,6 +58,9 @@ export default function WhatsAppBotView() {
 
   // Settings form
   const [accessTokenInput, setAccessTokenInput] = useState("");
+  const [bridgeApiKeyInput, setBridgeApiKeyInput] = useState("");
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+  const [isFetchingQr, setIsFetchingQr] = useState(false);
   const [copiedWebhook, setCopiedWebhook] = useState(false);
 
   // Inbox & simulation state
@@ -86,6 +93,32 @@ export default function WhatsAppBotView() {
   useEffect(() => {
     void loadBotState();
   }, []);
+
+  // Poll QR connection status every 3s while QR code is displayed
+  useEffect(() => {
+    if (!qrDataUrl) return;
+    const timer = setInterval(async () => {
+      try {
+        const res = await fetch("/api/whatsapp-bot", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "check_qr_status" }),
+        });
+        const data = await res.json();
+        if (data?.success && data?.connected) {
+          if (data.settings) setSettings(data.settings);
+          setQrDataUrl(null);
+          setFeedback({
+            ok: true,
+            msg: data.message || "Telefon QR ile bağlandı ve oturum tokenı alındı.",
+          });
+        }
+      } catch {
+        // Ignore transient polling errors
+      }
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [qrDataUrl]);
 
   // Group messages by phone for inbox conversation list
   const conversations = useMemo(() => {
@@ -134,18 +167,62 @@ export default function WhatsAppBotView() {
           actor: actorName,
           settings,
           accessToken: accessTokenInput,
+          bridgeApiKey: bridgeApiKeyInput,
         }),
       });
       const data = await res.json();
       if (data?.success) {
         setSettings(data.settings);
         setAccessTokenInput("");
+        setBridgeApiKeyInput("");
         setFeedback({ ok: true, msg: "WhatsApp Bot ayarları şifreli olarak kaydedildi." });
       } else {
         setFeedback({ ok: false, msg: data?.error || "Ayarlar kaydedilemedi." });
       }
     } finally {
       setIsSavingSettings(false);
+    }
+  };
+
+  const handleFetchQr = async () => {
+    if (!settings) return;
+    setIsFetchingQr(true);
+    setFeedback(null);
+    try {
+      const res = await fetch("/api/whatsapp-bot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "fetch_qr",
+          bridgeUrl: settings.bridge_url,
+          bridgeInstance: settings.bridge_instance,
+          bridgeApiKey: bridgeApiKeyInput,
+        }),
+      });
+      const data = await res.json();
+      if (data?.connected) {
+        setQrDataUrl(null);
+        if (data.settings) setSettings(data.settings);
+        setFeedback({
+          ok: true,
+          msg: data.message || "WhatsApp köprüsü zaten bağlı.",
+        });
+      } else if (data?.success && data?.qrDataUrl) {
+        setQrDataUrl(data.qrDataUrl);
+        setFeedback({
+          ok: true,
+          msg: "QR kod oluşturuldu. WhatsApp -> Bağlı Cihazlar ekranından okutun.",
+        });
+      } else {
+        setFeedback({
+          ok: false,
+          msg: data?.error || data?.message || "QR kod alınamadı.",
+        });
+      }
+    } catch {
+      setFeedback({ ok: false, msg: "QR kod alınırken ağ hatası oluştu." });
+    } finally {
+      setIsFetchingQr(false);
     }
   };
 
@@ -560,99 +637,286 @@ export default function WhatsAppBotView() {
             </div>
           )}
 
-          {/* TAB 3: META CLOUD API & WEBHOOK SETTINGS */}
+          {/* TAB 3: CONNECTION & WEBHOOK SETTINGS */}
           {activeTab === "settings" && settings && (
             <form
               onSubmit={handleSaveSettings}
               className="bg-white rounded-3xl border border-slate-200 p-5 sm:p-6 space-y-5 text-xs"
             >
-              <div className="flex items-center gap-2 text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl p-3 font-semibold">
-                <ShieldCheck className="w-4 h-4 shrink-0" />
-                <span>
-                  Meta WhatsApp Business Cloud API anahtarınız AES-256-GCM ile şifrelenerek saklanır.
-                </span>
-              </div>
-
-              {/* Webhook URL Copy Box */}
-              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
-                <div className="font-black text-slate-800 flex items-center gap-1.5">
-                  <Webhook className="w-4 h-4 text-indigo-600" />
-                  <span>Meta Developer Paneli Webhook Adresi (Callback URL)</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <code className="flex-1 p-2.5 rounded-xl bg-white border border-slate-200 font-mono text-[11px] select-all">
-                    {webhookUrl}
-                  </code>
+              {/* Connection Mode Switcher */}
+              <div className="space-y-2">
+                <label className="block font-black text-slate-800">Bağlantı Yöntemi</label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <button
                     type="button"
-                    onClick={() => {
-                      navigator.clipboard.writeText(webhookUrl);
-                      setCopiedWebhook(true);
-                      setTimeout(() => setCopiedWebhook(false), 2000);
-                    }}
-                    className="px-3 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 font-bold inline-flex items-center gap-1"
+                    onClick={() =>
+                      setSettings({ ...settings, connection_mode: "qr_bridge" })
+                    }
+                    className={`p-3.5 rounded-2xl border text-left transition flex items-start gap-3 ${
+                      settings.connection_mode === "qr_bridge"
+                        ? "border-emerald-500 bg-emerald-50/70 ring-2 ring-emerald-200"
+                        : "border-slate-200 hover:bg-slate-50"
+                    }`}
                   >
-                    <Copy className="w-3.5 h-3.5" />
-                    <span>{copiedWebhook ? "Kopyalandı" : "Kopyala"}</span>
+                    <QrCode className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                    <div>
+                      <div className="font-black text-slate-900">
+                        QR ile Bağla (WhatsApp Web Köprüsü)
+                      </div>
+                      <div className="text-[11px] text-slate-600 mt-0.5">
+                        Evolution API / Baileys köprüsü üzerinden telefondan QR okutarak oturum ve
+                        token alın.
+                      </div>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSettings({ ...settings, connection_mode: "meta_cloud" })
+                    }
+                    className={`p-3.5 rounded-2xl border text-left transition flex items-start gap-3 ${
+                      settings.connection_mode !== "qr_bridge"
+                        ? "border-indigo-500 bg-indigo-50/70 ring-2 ring-indigo-200"
+                        : "border-slate-200 hover:bg-slate-50"
+                    }`}
+                  >
+                    <ShieldCheck className="w-5 h-5 text-indigo-600 shrink-0 mt-0.5" />
+                    <div>
+                      <div className="font-black text-slate-900">Meta Business Cloud API</div>
+                      <div className="text-[11px] text-slate-600 mt-0.5">
+                        Resmi Meta Developer Permanent Access Token ve Webhook ile doğrudan bağlantı.
+                      </div>
+                    </div>
                   </button>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">Phone Number ID *</label>
-                  <input
-                    type="text"
-                    value={settings.phone_number_id}
-                    onChange={(e) =>
-                      setSettings({ ...settings, phone_number_id: e.target.value })
-                    }
-                    placeholder="Meta Developer -> WhatsApp -> API Setup"
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 font-mono"
-                  />
+              {settings.connection_mode === "qr_bridge" ? (
+                <div className="space-y-4">
+                  <div className="flex items-start gap-2.5 text-emerald-900 bg-emerald-50 border border-emerald-200 rounded-xl p-3.5 font-medium">
+                    <Smartphone className="w-4 h-4 shrink-0 mt-0.5 text-emerald-700" />
+                    <div>
+                      <div className="font-bold">
+                        QR Kod ile Telefon Bağlantısı (Evolution API / Baileys Köprüsü)
+                      </div>
+                      <p className="text-[11px] text-emerald-800 mt-0.5">
+                        Meta Cloud API QR ile token üretmez; QR ile telefon bağlamak için
+                        WhatsApp Web köprüsü (ör. self-hosted Evolution API veya Baileys sunucusu)
+                        adresinizi girip QR kodu telefonunuzdan okutun.
+                      </p>
+                    </div>
+                  </div>
+
+                  {settings.bridge_connected && (
+                    <div className="flex items-center justify-between gap-3 p-3.5 rounded-xl bg-emerald-600 text-white font-bold">
+                      <div className="flex items-center gap-2">
+                        <Wifi className="w-4 h-4 shrink-0" />
+                        <span>
+                          Telefon Bağlı ✓{" "}
+                          {settings.bridge_phone ? `(${settings.bridge_phone})` : ""}
+                        </span>
+                      </div>
+                      <span className="text-[11px] opacity-90">
+                        Instance: {settings.bridge_instance || "erp-bot"}
+                      </span>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div className="sm:col-span-2">
+                      <label className="block font-bold text-slate-700 mb-1">
+                        WhatsApp Web Köprü Sunucu URL *
+                      </label>
+                      <input
+                        type="url"
+                        value={settings.bridge_url}
+                        onChange={(e) =>
+                          setSettings({ ...settings, bridge_url: e.target.value })
+                        }
+                        placeholder="https://wa-bridge.sirketiniz.com"
+                        className="w-full px-3 py-2 rounded-xl border border-slate-300 font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1">
+                        Oturum / Instance Adı
+                      </label>
+                      <input
+                        type="text"
+                        value={settings.bridge_instance}
+                        onChange={(e) =>
+                          setSettings({ ...settings, bridge_instance: e.target.value })
+                        }
+                        placeholder="erp-bot"
+                        className="w-full px-3 py-2 rounded-xl border border-slate-300 font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">
+                      Köprü API Anahtarı (Opsiyonel){" "}
+                      {settings.has_bridge_api_key && (
+                        <span className="text-emerald-600">(Kayıtlı ✓)</span>
+                      )}
+                    </label>
+                    <input
+                      type="password"
+                      value={bridgeApiKeyInput}
+                      onChange={(e) => setBridgeApiKeyInput(e.target.value)}
+                      placeholder={
+                        settings.has_bridge_api_key
+                          ? "•••••••• (Değiştirmek için yazın)"
+                          : "Evolution / Baileys Global API Key"
+                      }
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 font-mono"
+                    />
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={handleFetchQr}
+                      disabled={isFetchingQr}
+                      className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold inline-flex items-center gap-2 disabled:opacity-50"
+                    >
+                      {isFetchingQr ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <QrCode className="w-4 h-4" />
+                      )}
+                      <span>QR Kod Oluştur &amp; Telefondan Okut</span>
+                    </button>
+                  </div>
+
+                  {qrDataUrl && (
+                    <div className="p-5 rounded-2xl border-2 border-dashed border-emerald-300 bg-emerald-50/40 flex flex-col sm:flex-row items-center gap-5">
+                      <img
+                        src={qrDataUrl}
+                        alt="WhatsApp Bağlantı QR Kodu"
+                        className="w-52 h-52 rounded-2xl bg-white p-2 border border-slate-200 shadow-sm"
+                      />
+                      <div className="space-y-2 text-slate-700">
+                        <div className="font-black text-sm text-slate-900 flex items-center gap-2">
+                          <RefreshCw className="w-4 h-4 text-emerald-600 animate-spin" />
+                          <span>Telefondan Okutulması Bekleniyor...</span>
+                        </div>
+                        <ol className="list-decimal list-inside space-y-1 text-[11px]">
+                          <li>Telefonunuzda WhatsApp Business uygulamasını açın.</li>
+                          <li>
+                            <strong>Ayarlar / Menü → Bağlı Cihazlar → Cihaz Bağla</strong> yolunu
+                            izleyin.
+                          </li>
+                          <li>Ekrandaki QR kodu okutun; oturum tokenı otomatik kaydedilir.</li>
+                        </ol>
+                        <button
+                          type="button"
+                          onClick={() => setQrDataUrl(null)}
+                          className="mt-2 px-3 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 font-bold text-[11px]"
+                        >
+                          QR Ekranını Kapat
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">
-                    WhatsApp Business Account ID (WABA)
-                  </label>
-                  <input
-                    type="text"
-                    value={settings.waba_id}
-                    onChange={(e) => setSettings({ ...settings, waba_id: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">
-                    Permanent Access Token{" "}
-                    {settings.has_access_token && (
-                      <span className="text-emerald-600">(Kayıtlı ✓)</span>
-                    )}
-                  </label>
-                  <input
-                    type="password"
-                    value={accessTokenInput}
-                    onChange={(e) => setAccessTokenInput(e.target.value)}
-                    placeholder={
-                      settings.has_access_token ? "•••••••• (Değiştirmek için yazın)" : "EAA..."
-                    }
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">
-                    Webhook Verify Token
-                  </label>
-                  <input
-                    type="text"
-                    value={settings.verify_token}
-                    onChange={(e) =>
-                      setSettings({ ...settings, verify_token: e.target.value })
-                    }
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 font-mono"
-                  />
-                </div>
-              </div>
+              ) : (
+                <>
+                  <div className="flex items-center gap-2 text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl p-3 font-semibold">
+                    <ShieldCheck className="w-4 h-4 shrink-0" />
+                    <span>
+                      Meta WhatsApp Business Cloud API anahtarınız AES-256-GCM ile şifrelenerek
+                      saklanır.
+                    </span>
+                  </div>
+
+                  {/* Webhook URL Copy Box */}
+                  <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
+                    <div className="font-black text-slate-800 flex items-center gap-1.5">
+                      <Webhook className="w-4 h-4 text-indigo-600" />
+                      <span>Meta Developer Paneli Webhook Adresi (Callback URL)</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 p-2.5 rounded-xl bg-white border border-slate-200 font-mono text-[11px] select-all">
+                        {webhookUrl}
+                      </code>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(webhookUrl);
+                          setCopiedWebhook(true);
+                          setTimeout(() => setCopiedWebhook(false), 2000);
+                        }}
+                        className="px-3 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 font-bold inline-flex items-center gap-1"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>{copiedWebhook ? "Kopyalandı" : "Kopyala"}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1">
+                        Phone Number ID *
+                      </label>
+                      <input
+                        type="text"
+                        value={settings.phone_number_id}
+                        onChange={(e) =>
+                          setSettings({ ...settings, phone_number_id: e.target.value })
+                        }
+                        placeholder="Meta Developer -> WhatsApp -> API Setup"
+                        className="w-full px-3 py-2 rounded-xl border border-slate-300 font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1">
+                        WhatsApp Business Account ID (WABA)
+                      </label>
+                      <input
+                        type="text"
+                        value={settings.waba_id}
+                        onChange={(e) => setSettings({ ...settings, waba_id: e.target.value })}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-300 font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1">
+                        Permanent Access Token{" "}
+                        {settings.has_access_token && (
+                          <span className="text-emerald-600">(Kayıtlı ✓)</span>
+                        )}
+                      </label>
+                      <input
+                        type="password"
+                        value={accessTokenInput}
+                        onChange={(e) => setAccessTokenInput(e.target.value)}
+                        placeholder={
+                          settings.has_access_token
+                            ? "•••••••• (Değiştirmek için yazın)"
+                            : "EAA..."
+                        }
+                        className="w-full px-3 py-2 rounded-xl border border-slate-300 font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1">
+                        Webhook Verify Token
+                      </label>
+                      <input
+                        type="text"
+                        value={settings.verify_token}
+                        onChange={(e) =>
+                          setSettings({ ...settings, verify_token: e.target.value })
+                        }
+                        className="w-full px-3 py-2 rounded-xl border border-slate-300 font-mono"
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>

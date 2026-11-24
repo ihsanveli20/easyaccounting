@@ -5,10 +5,16 @@ import { formatPhoneNumberForWhatsApp } from "./whatsapp";
 export interface WhatsAppBotSettings {
   id: string;
   is_active: boolean;
+  connection_mode: "meta_cloud" | "qr_bridge";
   phone_number_id: string;
   waba_id: string;
   verify_token: string;
+  bridge_url: string;
+  bridge_instance: string;
+  bridge_connected: boolean;
+  bridge_phone?: string;
   has_access_token?: boolean;
+  has_bridge_api_key?: boolean;
   encrypted_access_token?: string | null;
   welcome_message: string;
   fallback_message: string;
@@ -46,10 +52,15 @@ export interface WhatsAppBotMessage {
 const DEFAULT_SETTINGS: WhatsAppBotSettings = {
   id: "default",
   is_active: false,
+  connection_mode: "meta_cloud",
   phone_number_id: "",
   waba_id: "",
   verify_token: "anadolu_yapi_wa_bot_2026",
+  bridge_url: "",
+  bridge_instance: "anadolu_yapi",
+  bridge_connected: false,
   has_access_token: false,
+  has_bridge_api_key: false,
   welcome_message:
     "Merhaba! Anadolu Yapı WhatsApp destek hattına hoş geldiniz. Fiyat teklifi, ürün bilgisi veya cari bakiye için mesaj yazabilirsiniz.",
   fallback_message:
@@ -168,12 +179,18 @@ export async function loadWhatsAppBotState(): Promise<{
     }
 
     const dbSettings: WhatsAppBotSettings = sRes.data
-      ? {
-          ...DEFAULT_SETTINGS,
-          ...sRes.data,
-          has_access_token: Boolean(sRes.data.encrypted_access_token),
-          encrypted_access_token: undefined,
-        }
+      ? (() => {
+          const decrypted = sRes.data.encrypted_access_token
+            ? decryptSecrets(sRes.data.encrypted_access_token)
+            : {};
+          return {
+            ...DEFAULT_SETTINGS,
+            ...sRes.data,
+            has_access_token: Boolean(decrypted.access_token),
+            has_bridge_api_key: Boolean(decrypted.bridge_api_key),
+            encrypted_access_token: undefined,
+          };
+        })()
       : { ...mem.settings, encrypted_access_token: undefined };
 
     const rules =
@@ -198,6 +215,10 @@ export async function getRawAccessToken(): Promise<{
   phoneNumberId: string;
   accessToken: string;
   verifyToken: string;
+  connectionMode: "meta_cloud" | "qr_bridge";
+  bridgeUrl: string;
+  bridgeInstance: string;
+  bridgeApiKey: string;
 }> {
   const mem = getMem();
   const supabase = getSupabaseWaClient();
@@ -205,7 +226,7 @@ export async function getRawAccessToken(): Promise<{
   if (supabase) {
     const { data } = await supabase
       .from("whatsapp_bot_settings")
-      .select("phone_number_id, encrypted_access_token, verify_token")
+      .select("phone_number_id, encrypted_access_token, verify_token, connection_mode, bridge_url, bridge_instance")
       .eq("id", "default")
       .maybeSingle();
 
@@ -215,6 +236,10 @@ export async function getRawAccessToken(): Promise<{
         phoneNumberId: data.phone_number_id || mem.settings.phone_number_id || "",
         accessToken: dec.accessToken || "",
         verifyToken: data.verify_token || mem.settings.verify_token || "",
+        connectionMode: (data.connection_mode as "meta_cloud" | "qr_bridge") || "meta_cloud",
+        bridgeUrl: data.bridge_url || mem.settings.bridge_url || "",
+        bridgeInstance: data.bridge_instance || mem.settings.bridge_instance || "anadolu_yapi",
+        bridgeApiKey: dec.bridgeApiKey || "",
       };
     }
   }
@@ -224,12 +249,17 @@ export async function getRawAccessToken(): Promise<{
     phoneNumberId: mem.settings.phone_number_id || "",
     accessToken: dec.accessToken || "",
     verifyToken: mem.settings.verify_token || "",
+    connectionMode: mem.settings.connection_mode || "meta_cloud",
+    bridgeUrl: mem.settings.bridge_url || "",
+    bridgeInstance: mem.settings.bridge_instance || "anadolu_yapi",
+    bridgeApiKey: dec.bridgeApiKey || "",
   };
 }
 
 export async function saveBotSettings(params: {
   settings: Partial<WhatsAppBotSettings>;
   newAccessToken?: string;
+  newBridgeApiKey?: string;
   actor?: string;
 }): Promise<WhatsAppBotSettings> {
   const mem = getMem();
@@ -247,8 +277,20 @@ export async function saveBotSettings(params: {
     }
   }
 
+  const existingSecrets = decryptSecrets(encryptedToken);
+  const nextSecrets = { ...existingSecrets };
+  let secretChanged = false;
+
   if (params.newAccessToken && params.newAccessToken.trim().length > 0) {
-    encryptedToken = encryptSecrets({ accessToken: params.newAccessToken.trim() });
+    nextSecrets.accessToken = params.newAccessToken.trim();
+    secretChanged = true;
+  }
+  if (params.newBridgeApiKey && params.newBridgeApiKey.trim().length > 0) {
+    nextSecrets.bridgeApiKey = params.newBridgeApiKey.trim();
+    secretChanged = true;
+  }
+  if (secretChanged) {
+    encryptedToken = encryptSecrets(nextSecrets);
   }
 
   const merged: WhatsAppBotSettings = {
@@ -266,9 +308,14 @@ export async function saveBotSettings(params: {
     await supabase.from("whatsapp_bot_settings").upsert({
       id: "default",
       is_active: merged.is_active,
+      connection_mode: merged.connection_mode,
       phone_number_id: merged.phone_number_id,
       waba_id: merged.waba_id,
       verify_token: merged.verify_token,
+      bridge_url: merged.bridge_url,
+      bridge_instance: merged.bridge_instance,
+      bridge_connected: merged.bridge_connected,
+      bridge_phone: merged.bridge_phone || null,
       encrypted_access_token: encryptedToken,
       welcome_message: merged.welcome_message,
       fallback_message: merged.fallback_message,
@@ -324,17 +371,58 @@ export async function sendWhatsAppCloudText(params: {
   toPhone: string;
   text: string;
 }): Promise<{ ok: boolean; waMessageId?: string; error?: string }> {
-  const { phoneNumberId, accessToken } = await getRawAccessToken();
+  const {
+    phoneNumberId,
+    accessToken,
+    connectionMode,
+    bridgeUrl,
+    bridgeInstance,
+    bridgeApiKey,
+  } = await getRawAccessToken();
+
+  const cleanPhone = formatPhoneNumberForWhatsApp(params.toPhone);
+  if (!cleanPhone) {
+    return { ok: false, error: "Geçersiz telefon numarası." };
+  }
+
+  // Mode 1: QR / WhatsApp Web Bridge (Evolution API / Baileys Gateway)
+  if (connectionMode === "qr_bridge" && bridgeUrl) {
+    const base = bridgeUrl.trim().replace(/\/+$/, "");
+    try {
+      const res = await fetch(
+        `${base}/message/sendText/${encodeURIComponent(bridgeInstance || "anadolu_yapi")}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(bridgeApiKey ? { apikey: bridgeApiKey, Authorization: `Bearer ${bridgeApiKey}` } : {}),
+          },
+          signal: AbortSignal.timeout(8000),
+          body: JSON.stringify({
+            number: cleanPhone,
+            text: params.text,
+          }),
+        }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        return { ok: true, waMessageId: data?.key?.id || data?.id || undefined };
+      }
+      return { ok: false, error: data?.message || `Köprü API HTTP ${res.status}` };
+    } catch (err: unknown) {
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : "WhatsApp Köprü gönderim hatası.",
+      };
+    }
+  }
+
+  // Mode 2: Official Meta WhatsApp Business Cloud API
   if (!phoneNumberId || !accessToken) {
     return {
       ok: false,
       error: "Meta Phone Number ID veya Access Token tanımlanmamış.",
     };
-  }
-
-  const cleanPhone = formatPhoneNumberForWhatsApp(params.toPhone);
-  if (!cleanPhone) {
-    return { ok: false, error: "Geçersiz telefon numarası." };
   }
 
   try {

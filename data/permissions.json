@@ -45,7 +45,14 @@
       "custom": true,
       "allowedMenus": [
         "calculator",
-        "invoice-comparison"
+        "invoice-comparison",
+        "sales-records",
+        "received-quotes",
+        "procurement-comparison",
+        "stock-tracking",
+        "reconciliation",
+        "quote",
+        "proposal-comparison"
       ]
     },
     "veliihsan@ea.co": {
@@ -60,10 +67,15 @@
         "stock-tracking",
         "admin-users",
         "proposal-comparison",
-        "kurban-reporting",
-        "invoice-extractor",
         "received-quotes",
-        "settings"
+        "settings",
+        "sales-records",
+        "current-accounts",
+        "procurement-comparison",
+        "integrations",
+        "kurban-reporting",
+        "invoice-comparison",
+        "audit-logs"
       ]
     },
     "rustemskn@ea.co": {
@@ -72,7 +84,9 @@
         "quote",
         "proposal-history",
         "stock-tracking",
-        "calculator"
+        "calculator",
+        "received-quotes",
+        "sales-records"
       ]
     },
     "bilalersy@ea.co": {
@@ -80,7 +94,6 @@
       "allowedMenus": [
         "quote",
         "proposal-history",
-        "stock-tracking",
         "calculator",
         "summary",
         "details",
@@ -88,7 +101,9 @@
         "invoice-extractor",
         "invoice-comparison",
         "proposal-comparison",
-        "received-quotes"
+        "received-quotes",
+        "procurement-comparison",
+        "sales-records"
       ]
     },
     "zekeriyagzl@ea.co": {
@@ -103,7 +118,8 @@
         "proposal-comparison",
         "stock-tracking",
         "calculator",
-        "received-quotes"
+        "received-quotes",
+        "sales-records"
       ]
     },
     "ekremsyn@ea.co": {
@@ -111,7 +127,10 @@
       "allowedMenus": [
         "details",
         "calculator",
-        "summary"
+        "summary",
+        "current-accounts",
+        "reconciliation",
+        "invoice-comparison"
       ]
     },
     "ysftrz@ea.co": {

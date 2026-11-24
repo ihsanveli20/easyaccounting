@@ -114,6 +114,11 @@ const TILE_STYLES: Record<
     iconColor: "text-emerald-600",
     accentDot: "bg-emerald-500",
   },
+  "whatsapp-bot": {
+    iconBg: "bg-gradient-to-br from-green-50 to-emerald-100 border-green-200/70",
+    iconColor: "text-[#16a34a]",
+    accentDot: "bg-[#25D366]",
+  },
   "stock-tracking": {
     iconBg: "bg-gradient-to-br from-orange-50 to-amber-100 border-orange-200/70",
     iconColor: "text-orange-600",

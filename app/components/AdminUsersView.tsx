@@ -68,6 +68,7 @@ const MENU_ICONS: Record<AppMenuId, React.ComponentType<{ className?: string }>>
   "received-quotes": GitCompareArrows,
   "procurement-comparison": Layers,
   "sales-records": Package,
+  "whatsapp-bot": History,
   "stock-tracking": Package,
   "kurban-reporting": ScrollText,
   settings: Settings2,

@@ -146,6 +146,7 @@ export type AppMenuId =
   | "received-quotes"
   | "procurement-comparison"
   | "sales-records"
+  | "whatsapp-bot"
   | "stock-tracking"
   | "kurban-reporting"
   | "settings"

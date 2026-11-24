@@ -75,6 +75,7 @@ import CurrentAccountsView from "./components/CurrentAccountsView";
 import IntegrationsView from "./components/IntegrationsView";
 import GlobalSearchModal from "./components/GlobalSearchModal";
 import AuditLogView from "./components/AuditLogView";
+import WhatsAppBotView from "./components/WhatsAppBotView";
 import ProductManagementView, { DEFAULT_SAMPLE_PRODUCTS } from "./components/ProductManagementView";
 import KurbanReportingView from "./components/KurbanReportingView";
 import KurbanProcessModuleView from "./components/KurbanProcessModuleView";
@@ -110,7 +111,7 @@ export default function Home() {
 
   // Navigation Tab: "summary" = Hesap Planı / Bakiye Listesi, "details" = Firma Detay Hareketleri, "calculator" = Ayrıntılı Hesap Makinesi, "reconciliation" = Ekstre & Luca Mutabakat, "invoice-extractor" = Toplu Fatura -> Excel, "quote" = Fiyat Teklifi, "proposal-history" = Teklif Geçmişi, "proposal-comparison" = Teklif Karşılaştırma, "stock-tracking" = Ürün Stok Takibi, "kurban-reporting" = Kurban Raporlama & Takip, "admin-users" = Kullanıcı & Yetki Yönetimi
   const [activeTab, setActiveTab] = useState<
-    "summary" | "details" | "current-accounts" | "calculator" | "reconciliation" | "invoice-extractor" | "invoice-comparison" | "quote" | "proposal-history" | "proposal-comparison" | "received-quotes" | "procurement-comparison" | "sales-records" | "stock-tracking" | "kurban-reporting" | "settings" | "integrations" | "audit-logs" | "admin-users"
+    "summary" | "details" | "current-accounts" | "calculator" | "reconciliation" | "invoice-extractor" | "invoice-comparison" | "quote" | "proposal-history" | "proposal-comparison" | "received-quotes" | "procurement-comparison" | "sales-records" | "whatsapp-bot" | "stock-tracking" | "kurban-reporting" | "settings" | "integrations" | "audit-logs" | "admin-users"
   >("summary");
 
   // State for proposal editing when navigating from history to editor
@@ -869,6 +870,17 @@ export default function Home() {
       badge: null,
       badgeStyle: "bg-white/20 text-white",
       tag: "YENİ",
+    },
+    {
+      id: "whatsapp-bot" as const,
+      name: "WhatsApp Business Bot",
+      shortName: "WA Bot",
+      description: "Otomatik Yanıt & Canlı Destek",
+      icon: Sparkles,
+      activeBg: "bg-[#25D366] text-white shadow-md shadow-emerald-600/25",
+      badge: null,
+      badgeStyle: "bg-white/20 text-white",
+      tag: "BOT",
     },
     {
       id: "stock-tracking" as const,
@@ -2624,6 +2636,13 @@ export default function Home() {
                   products={products}
                   companyNames={records.map((r) => r.name).filter(Boolean)}
                 />
+              )}
+
+              {/* ========================================================================= */}
+              {/* TAB 5.9: WHATSAPP BUSINESS BOT                                            */}
+              {/* ========================================================================= */}
+              {activeTab === "whatsapp-bot" && hasMenuAccess("whatsapp-bot") && (
+                <WhatsAppBotView />
               )}
 
               {/* ========================================================================= */}

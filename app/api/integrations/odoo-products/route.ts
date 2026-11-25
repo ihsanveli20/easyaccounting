@@ -10,6 +10,7 @@ function getSupabaseServer() {
     process.env.NEXT_PUBLIC_SUPABASE_URL ||
     "https://qcndlfastbrezugknkho.supabase.co";
   const key =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
     process.env.SUPABASE_PUBLISHABLE_KEY ||
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
     process.env.SUPABASE_ANON_KEY ||
@@ -80,6 +81,7 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({}));
     const offset = Math.max(0, Number(body?.offset) || 0);
     const limit = Math.min(1000, Math.max(50, Number(body?.limit) || 500));
+    const replaceAll = body?.replaceAll !== false;
 
     // 1. Load saved Odoo connection settings (Supabase or in-memory fallback)
     const { data: dbConn } = await supabase
@@ -228,39 +230,24 @@ export async function POST(request: Request) {
     }
 
     const safeBatch = Array.isArray(batch) ? batch : [];
-    const batchNames = Array.from(
-      new Set(
-        safeBatch
-          .map((p) => String(p.name || "").trim())
-          .filter(Boolean)
-      )
-    );
 
-    // 4. Query Supabase ONLY for names in this slice (fast O(batch) lookup)
-    const existingByName = new Map<
-      string,
-      { id: string; sale_price: number; unit_of_measure: string; stock_quantity: number }
-    >();
-    for (let i = 0; i < batchNames.length; i += 150) {
-      const nameChunk = batchNames.slice(i, i + 150);
-      const { data: existingRows } = await supabase
+    let dbError: string | null = null;
+    let deletedOld = false;
+
+    // 4. On first chunk, clear existing products table ONLY after Odoo returned real data
+    if (replaceAll && offset === 0 && safeBatch.length > 0) {
+      const { error: delErr } = await supabase
         .from("products")
-        .select("id, name, sale_price, unit_of_measure, stock_quantity")
-        .in("name", nameChunk);
-      for (const r of existingRows || []) {
-        if (r.name) {
-          existingByName.set(String(r.name).trim().toLowerCase(), {
-            id: String(r.id),
-            sale_price: Number(r.sale_price) || 0,
-            unit_of_measure: String(r.unit_of_measure || "Adet"),
-            stock_quantity: Number(r.stock_quantity) || 0,
-          });
-        }
+        .delete()
+        .not("id", "is", null);
+      if (delErr) {
+        dbError = `Eski ürünler silinemedi (${delErr.message})`;
+      } else {
+        deletedOld = true;
       }
     }
 
     const toInsert: Array<Record<string, unknown>> = [];
-    const toUpdate: Array<Record<string, unknown>> = [];
     const seenInBatch = new Set<string>();
     const clientProducts: Array<{
       id: string;
@@ -290,72 +277,38 @@ export async function POST(request: Request) {
         (typeof p.barcode === "string" && p.barcode.trim()) ||
         `ODOO-${p.id}`;
 
-      const rowPayload: Record<string, unknown> = {
+      toInsert.push({
         name,
         sale_price: unitPrice,
         unit_of_measure: unit,
         stock_quantity: stockQuantity,
         ...(category ? { tags: [category] } : {}),
-      };
+      });
 
-      const existing = existingByName.get(lower);
-      if (existing) {
-        const changed =
-          Math.abs(existing.sale_price - unitPrice) > 0.001 ||
-          existing.unit_of_measure !== unit ||
-          Math.abs(existing.stock_quantity - stockQuantity) > 0.001;
-        if (changed) {
-          toUpdate.push({ id: existing.id, ...rowPayload });
-        }
-        clientProducts.push({
-          id: existing.id,
-          code,
-          name,
-          unit,
-          unitPrice,
-          category,
-          stockQuantity,
-          updatedAt: todayTr,
-        });
-      } else {
-        toInsert.push(rowPayload);
-        clientProducts.push({
-          id: `odoo-${p.id}`,
-          code,
-          name,
-          unit,
-          unitPrice,
-          category,
-          stockQuantity,
-          updatedAt: todayTr,
-        });
-      }
+      clientProducts.push({
+        id: `odoo-${p.id}`,
+        code,
+        name,
+        unit,
+        unitPrice,
+        category,
+        stockQuantity,
+        updatedAt: todayTr,
+      });
     }
 
     let insertedCount = 0;
-    let updatedCount = 0;
-    let dbError: string | null = null;
+    const updatedCount = 0;
 
-    if (toInsert.length > 0) {
+    if (toInsert.length > 0 && !(replaceAll && offset === 0 && dbError)) {
       const { data: insData, error: insErr } = await supabase
         .from("products")
         .insert(toInsert)
         .select("id");
       if (insErr) {
-        dbError = insErr.message;
+        dbError = dbError ? `${dbError}; ${insErr.message}` : insErr.message;
       } else {
         insertedCount = insData?.length || toInsert.length;
-      }
-    }
-
-    if (toUpdate.length > 0) {
-      const { error: upErr } = await supabase
-        .from("products")
-        .upsert(toUpdate, { onConflict: "id" });
-      if (upErr) {
-        if (!dbError) dbError = upErr.message;
-      } else {
-        updatedCount = toUpdate.length;
       }
     }
 
@@ -366,8 +319,7 @@ export async function POST(request: Request) {
       const finishedAt = new Date().toISOString();
       if (memStore?.connections?.get("odoo")) {
         const memConn = memStore.connections.get("odoo")!;
-        memConn.synced_record_count =
-          (Number(memConn.synced_record_count) || 0) + nextOffset;
+        memConn.synced_record_count = nextOffset;
       }
       try {
         await supabase
@@ -376,6 +328,7 @@ export async function POST(request: Request) {
             status: "connected",
             last_sync_at: finishedAt,
             last_error_message: dbError,
+            synced_record_count: nextOffset,
             updated_at: finishedAt,
           })
           .eq("provider_key", "odoo");
@@ -390,6 +343,7 @@ export async function POST(request: Request) {
       fetchedCount: safeBatch.length,
       insertedCount,
       updatedCount,
+      deletedOld,
       hasMore,
       nextOffset,
       dbWarning: dbError,

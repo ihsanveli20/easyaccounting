@@ -87,6 +87,44 @@ export default function ProductManagementView({
   // Pagination state (smooth performance for 35,000+ items)
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
+  const [isPullingOdoo, setIsPullingOdoo] = useState(false);
+
+  const handlePullFromOdoo = async () => {
+    setIsPullingOdoo(true);
+    try {
+      const res = await fetch("/api/integrations/odoo-products", {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (!data?.success) {
+        setToastMsg(`Odoo Hatası: ${data?.error || "Ürünler çekilemedi."}`);
+        setTimeout(() => setToastMsg(null), 6000);
+        return;
+      }
+
+      if (onRefreshFromSupabase && !data.dbWarning) {
+        await onRefreshFromSupabase(true);
+      } else if (Array.isArray(data.products) && data.products.length > 0) {
+        setProducts((prev) => {
+          const byName = new Map(prev.map((p) => [p.name.trim().toLowerCase(), p]));
+          for (const item of data.products as ProductItem[]) {
+            byName.set(item.name.trim().toLowerCase(), item);
+          }
+          return Array.from(byName.values());
+        });
+      }
+
+      setToastMsg(
+        `Odoo'dan ${data.fetchedCount} ürün çekildi (${data.insertedCount} yeni, ${data.updatedCount} güncellendi).`
+      );
+      setTimeout(() => setToastMsg(null), 6000);
+    } catch {
+      setToastMsg("Odoo ürün senkronizasyonu sırasında ağ hatası oluştu.");
+      setTimeout(() => setToastMsg(null), 6000);
+    } finally {
+      setIsPullingOdoo(false);
+    }
+  };
 
   // Reset to page 1 on filter or search change
   useEffect(() => {
@@ -555,6 +593,20 @@ export default function ProductManagementView({
 
         {/* Action Buttons */}
         <div className="flex items-center flex-wrap gap-2">
+          <button
+            onClick={() => void handlePullFromOdoo()}
+            disabled={isPullingOdoo}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-60 text-white rounded-xl text-xs font-semibold shadow-xs transition-colors"
+            title="Bağlı Odoo ERP veritabanından aktif ürünleri anlık çek"
+          >
+            {isPullingOdoo ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <RefreshCw className="w-4 h-4" />
+            )}
+            <span>{isPullingOdoo ? "Odoo'dan Çekiliyor..." : "Odoo'dan Çek"}</span>
+          </button>
+
           <button
             onClick={() => fileInputRef.current?.click()}
             className="flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold shadow-xs transition-colors"

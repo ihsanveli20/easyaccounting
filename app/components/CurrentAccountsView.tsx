@@ -13,6 +13,7 @@ import {
   Database,
   Download,
   Edit3,
+  ExternalLink,
   FileText,
   Filter,
   History,
@@ -27,10 +28,12 @@ import {
   SlidersHorizontal,
   TrendingDown,
   TrendingUp,
+  Upload,
   Users,
   Wallet,
   X,
 } from "lucide-react";
+import CurrentAccountsImportModal from "./CurrentAccountsImportModal";
 import {
   AccountTransaction,
   AccountTransactionType,
@@ -201,6 +204,12 @@ export default function CurrentAccountsView() {
   const [noteContent, setNoteContent] = useState("");
   const [docTitle, setDocTitle] = useState("");
   const [docFileName, setDocFileName] = useState("");
+  const [isUploadingDoc, setIsUploadingDoc] = useState(false);
+
+  // Excel / PDF Import Modal
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [importMode, setImportMode] = useState<"contacts" | "transactions">("contacts");
+  const [importContactId, setImportContactId] = useState("");
 
   // Reports State
   const [activeReport, setActiveReport] = useState<ReportTypeId>("all_balances");
@@ -218,6 +227,24 @@ export default function CurrentAccountsView() {
       window.localStorage.setItem(LOCAL_CARI_KEY, JSON.stringify(snapshot));
     } catch {
       // ignore quota errors
+    }
+  };
+
+  const reloadCurrentAccounts = async () => {
+    try {
+      const cariRes = await fetch("/api/current-accounts");
+      const cariData = await cariRes.json();
+      if (cariData?.success) {
+        setContacts(cariData.contacts || []);
+        setTransactions(cariData.transactions || []);
+        setCollectionsPayments(cariData.collectionsPayments || []);
+        setReconciliations(cariData.reconciliations || []);
+        setNotes(cariData.notes || []);
+        setDocuments(cariData.documents || []);
+        setAuditLogs(cariData.auditLogs || []);
+      }
+    } catch {
+      // ignore reload errors
     }
   };
 
@@ -959,6 +986,18 @@ export default function CurrentAccountsView() {
                 </button>
                 <button
                   type="button"
+                  onClick={() => {
+                    setImportMode("contacts");
+                    setImportContactId("");
+                    setImportModalOpen(true);
+                  }}
+                  className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold"
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>Excel / PDF Yükle</span>
+                </button>
+                <button
+                  type="button"
                   onClick={handleExportContactsExcel}
                   className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold"
                 >
@@ -1370,6 +1409,25 @@ export default function CurrentAccountsView() {
           {/* Tab 2: Cari Hareketler */}
           {profileTab === "transactions" && (
             <div className="space-y-4">
+              {perms.has("tx_create") && (
+                <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-50 border border-slate-200 rounded-2xl px-4 py-2.5 text-xs">
+                  <span className="font-bold text-slate-700">
+                    Toplu Hareket / Ekstre Aktarımı
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setImportMode("transactions");
+                      setImportContactId(selectedContact.id);
+                      setImportModalOpen(true);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold"
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>Excel / PDF Ekstre Yükle</span>
+                  </button>
+                </div>
+              )}
               {perms.has("tx_create") && (
                 <form
                   onSubmit={handleAddTransaction}
@@ -1817,20 +1875,69 @@ export default function CurrentAccountsView() {
           {/* Tab 10: Belgeler */}
           {profileTab === "documents" && (
             <div className="bg-white rounded-2xl border border-slate-200 p-5 space-y-4">
-              <div className="flex flex-wrap gap-2 text-xs">
+              <div className="flex flex-wrap items-center gap-2 text-xs">
                 <input
                   type="text"
                   value={docTitle}
                   onChange={(e) => setDocTitle(e.target.value)}
-                  placeholder="Belge başlığı (ör: Vergi Levhası)"
-                  className="flex-1 px-3 py-2 rounded-xl border border-slate-300"
+                  placeholder="Belge başlığı (ör: Vergi Levhası / Ekstre)"
+                  className="flex-1 min-w-[180px] px-3 py-2 rounded-xl border border-slate-300"
                 />
+                <label className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold inline-flex items-center gap-1.5 cursor-pointer">
+                  {isUploadingDoc ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Upload className="w-3.5 h-3.5" />
+                  )}
+                  <span>PDF / Excel Dosyası Yükle</span>
+                  <input
+                    type="file"
+                    accept=".pdf,.xlsx,.xls,.csv,.png,.jpg,.jpeg,.webp"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      setIsUploadingDoc(true);
+                      try {
+                        const fd = new FormData();
+                        fd.append("file", file);
+                        fd.append("folder", "cari-documents");
+                        const res = await fetch("/api/upload", { method: "POST", body: fd });
+                        const up = await res.json();
+                        const newDoc: ContactDocumentItem = {
+                          id: `doc-${Date.now()}`,
+                          contact_id: selectedContact.id,
+                          title: docTitle.trim() || file.name,
+                          file_name: file.name,
+                          file_type: file.type || file.name.split(".").pop() || null,
+                          file_url: up?.url || null,
+                          uploaded_by: actorName,
+                          created_at: new Date().toISOString(),
+                        };
+                        setDocuments([newDoc, ...documents]);
+                        setDocTitle("");
+                        await fetch("/api/current-accounts", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            action: "add_document",
+                            actor: actorName,
+                            document: newDoc,
+                          }),
+                        }).catch(() => {});
+                      } finally {
+                        setIsUploadingDoc(false);
+                        e.target.value = "";
+                      }
+                    }}
+                  />
+                </label>
                 <input
                   type="text"
                   value={docFileName}
                   onChange={(e) => setDocFileName(e.target.value)}
-                  placeholder="Dosya adı / bağlantı"
-                  className="flex-1 px-3 py-2 rounded-xl border border-slate-300"
+                  placeholder="veya dosya adı / link"
+                  className="flex-1 min-w-[150px] px-3 py-2 rounded-xl border border-slate-300"
                 />
                 <button
                   type="button"
@@ -1866,9 +1973,23 @@ export default function CurrentAccountsView() {
                 {documents
                   .filter((d) => d.contact_id === selectedContact.id)
                   .map((d) => (
-                    <div key={d.id} className="py-2 flex justify-between">
-                      <span className="font-bold">{d.title}</span>
-                      <span className="text-slate-500">{d.file_name}</span>
+                    <div key={d.id} className="py-2.5 flex items-center justify-between gap-2">
+                      <div>
+                        <span className="font-bold text-slate-800">{d.title}</span>
+                        <span className="ml-2 text-slate-400 text-[11px]">{d.file_name}</span>
+                      </div>
+                      {d.file_url ? (
+                        <a
+                          href={d.file_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 font-bold hover:bg-indigo-100"
+                        >
+                          <ExternalLink className="w-3 h-3" /> Aç / İndir
+                        </a>
+                      ) : (
+                        <span className="text-slate-400">Kayıtlı</span>
+                      )}
                     </div>
                   ))}
               </div>
@@ -2333,6 +2454,18 @@ export default function CurrentAccountsView() {
             </div>
           </form>
         </div>
+      )}
+
+      {importModalOpen && (
+        <CurrentAccountsImportModal
+          isOpen={importModalOpen}
+          onClose={() => setImportModalOpen(false)}
+          contacts={contacts}
+          initialMode={importMode}
+          initialContactId={importContactId}
+          actorName={actorName}
+          onImported={reloadCurrentAccounts}
+        />
       )}
     </div>
   );

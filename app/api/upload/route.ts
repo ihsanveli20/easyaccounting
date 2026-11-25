@@ -24,10 +24,10 @@ const BUCKET_NAME = "qurban-media";
 /**
  * Ensures the target storage bucket exists and is public
  */
-async function ensureBucketExists(supabase: any) {
+async function ensureBucketExists(supabase: ReturnType<typeof getSupabaseAdmin>) {
   try {
     const { data: buckets } = await supabase.storage.listBuckets();
-    const exists = buckets?.some((b: any) => b.name === BUCKET_NAME);
+    const exists = buckets?.some((b: { name: string }) => b.name === BUCKET_NAME);
     if (!exists) {
       await supabase.storage.createBucket(BUCKET_NAME, {
         public: true,
@@ -99,10 +99,11 @@ export async function POST(req: NextRequest) {
 
       if (targetFolder) folder = targetFolder.replace(/[^a-zA-Z0-9_-]/g, "");
 
-      mimeType = file.type || "image/webp";
+      mimeType = file.type || "application/octet-stream";
       const arrayBuffer = await file.arrayBuffer();
       buffer = Buffer.from(arrayBuffer);
-      const ext = mimeType.split("/")[1] || "webp";
+      const nameExtMatch = file.name.match(/\.([a-zA-Z0-9]+)$/);
+      const ext = (nameExtMatch ? nameExtMatch[1].toLowerCase() : mimeType.split("/")[1]) || "bin";
       const cleanName = file.name
         .replace(/\.[^/.]+$/, "")
         .replace(/[^a-zA-Z0-9_-]/g, "_");
@@ -151,10 +152,10 @@ export async function POST(req: NextRequest) {
       mimeType,
       cacheControl: "31536000, public",
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("Upload API error:", err);
     return NextResponse.json(
-      { success: false, error: err.message || "Bilinmeyen sunucu hatası" },
+      { success: false, error: err instanceof Error ? err.message : "Bilinmeyen sunucu hatası" },
       { status: 500 }
     );
   }

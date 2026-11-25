@@ -480,6 +480,191 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true, document: data });
     }
 
+    if (action === "bulk_import_contacts") {
+      const incoming: Array<Record<string, unknown>> = Array.isArray(body.contacts)
+        ? body.contacts
+        : [];
+      if (incoming.length === 0) {
+        return NextResponse.json(
+          { success: false, error: "İçe aktarılacak cari satırı bulunamadı." },
+          { status: 400 }
+        );
+      }
+
+      const { data: existing } = await supabase
+        .from("contacts")
+        .select("id, code, tax_number");
+      const usedCodes = new Set(
+        (existing || []).map((r) => String(r.code || "").trim().toLowerCase())
+      );
+      const usedTax = new Set(
+        (existing || [])
+          .map((r) => String(r.tax_number || "").trim())
+          .filter(Boolean)
+      );
+
+      const insertedContacts: unknown[] = [];
+      const insertedTransactions: unknown[] = [];
+      let skipped = 0;
+
+      for (const item of incoming) {
+        const name = String(item.name || "").trim();
+        const code = String(item.code || "").trim();
+        const taxNumber = String(item.tax_number || "").trim();
+        if (!name || !code) {
+          skipped++;
+          continue;
+        }
+        if (usedCodes.has(code.toLowerCase())) {
+          skipped++;
+          continue;
+        }
+        if (taxNumber && usedTax.has(taxNumber)) {
+          skipped++;
+          continue;
+        }
+
+        const { data: cData, error: cErr } = await supabase
+          .from("contacts")
+          .insert([
+            {
+              code,
+              name,
+              contact_type: item.contact_type || "customer",
+              company_type: "limited",
+              tax_office: item.tax_office || null,
+              tax_number: taxNumber || null,
+              authorized_person: item.authorized_person || null,
+              phone: item.phone || null,
+              email: item.email || null,
+              country: "Türkiye",
+              city: item.city || null,
+              district: item.district || null,
+              address: item.address || null,
+              currency: item.currency || "TRY",
+              payment_term_days: Number(item.payment_term_days) || 0,
+              risk_limit: Number(item.risk_limit) || 0,
+              tags: ["Dosya Aktarımı"],
+              is_active: true,
+              created_by: actor,
+              updated_at: new Date().toISOString(),
+            },
+          ])
+          .select()
+          .single();
+
+        if (cErr || !cData) {
+          skipped++;
+          continue;
+        }
+
+        usedCodes.add(code.toLowerCase());
+        if (taxNumber) usedTax.add(taxNumber);
+        insertedContacts.push(cData);
+
+        const openDebit = round2(Number(item.opening_debit) || 0);
+        const openCredit = round2(Number(item.opening_credit) || 0);
+        if (openDebit > 0 || openCredit > 0) {
+          const today = new Date().toISOString().slice(0, 10);
+          const { data: txData } = await supabase
+            .from("account_transactions")
+            .insert([
+              {
+                contact_id: cData.id,
+                transaction_date: today,
+                document_date: today,
+                transaction_type: "opening",
+                description: "Excel / PDF Açılış Bakiyesi",
+                debit: openDebit,
+                credit: openCredit,
+                currency: item.currency || "TRY",
+                exchange_rate: 1,
+                tl_debit: openDebit,
+                tl_credit: openCredit,
+                created_by: actor,
+              },
+            ])
+            .select()
+            .single();
+          if (txData) insertedTransactions.push(txData);
+        }
+      }
+
+      await writeAudit(
+        null,
+        "BULK_IMPORT_CONTACTS",
+        "contacts",
+        null,
+        `Eklenen: ${insertedContacts.length}, Atlanan (mükerrer/eksik): ${skipped}`
+      );
+
+      return NextResponse.json({
+        success: true,
+        inserted: insertedContacts.length,
+        skipped,
+        contacts: insertedContacts,
+        transactions: insertedTransactions,
+      });
+    }
+
+    if (action === "bulk_import_transactions") {
+      const contactId = String(body.contact_id || "").trim();
+      const rows: Array<Record<string, unknown>> = Array.isArray(body.transactions)
+        ? body.transactions
+        : [];
+      if (!contactId || rows.length === 0) {
+        return NextResponse.json(
+          { success: false, error: "Cari seçimi ve en az 1 hareket satırı zorunludur." },
+          { status: 400 }
+        );
+      }
+
+      const payload = rows.map((r) => {
+        const debit = round2(Number(r.debit) || 0);
+        const credit = round2(Number(r.credit) || 0);
+        const rate = Number(r.exchange_rate) || 1;
+        return {
+          contact_id: contactId,
+          transaction_date: String(r.transaction_date || new Date().toISOString().slice(0, 10)),
+          document_date: String(r.transaction_date || new Date().toISOString().slice(0, 10)),
+          due_date: r.due_date ? String(r.due_date) : null,
+          document_no: r.document_no ? String(r.document_no) : null,
+          transaction_type: String(r.transaction_type || "other"),
+          description: String(r.description || "Dosya İçe Aktarımı"),
+          debit,
+          credit,
+          currency: String(r.currency || "TRY"),
+          exchange_rate: rate,
+          tl_debit: round2(debit * rate),
+          tl_credit: round2(credit * rate),
+          created_by: actor,
+        };
+      });
+
+      const { data, error } = await supabase
+        .from("account_transactions")
+        .insert(payload)
+        .select();
+
+      if (error) {
+        return NextResponse.json({ success: false, error: error.message });
+      }
+
+      await writeAudit(
+        contactId,
+        "BULK_IMPORT_TRANSACTIONS",
+        "account_transactions",
+        null,
+        `${(data || []).length} hareket satırı içe aktarıldı`
+      );
+
+      return NextResponse.json({
+        success: true,
+        inserted: (data || []).length,
+        transactions: data || [],
+      });
+    }
+
     return NextResponse.json({ success: false, error: "Geçersiz işlem." }, { status: 400 });
   } catch (err: unknown) {
     return NextResponse.json(

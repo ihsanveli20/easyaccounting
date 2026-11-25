@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { decryptSecrets } from "../../../utils/integrationCrypto";
 
+export const maxDuration = 60;
+
 function getSupabaseServer() {
   const url =
     process.env.SUPABASE_URL ||
@@ -155,8 +157,8 @@ export async function POST() {
       "write_date",
     ];
     const allOdooProducts: OdooProductTemplate[] = [];
-    const batchSize = 500;
-    const maxPages = 20; // up to 10,000 products
+    const batchSize = 1000;
+    const maxPages = 15; // up to 15,000 products
 
     for (let page = 0; page < maxPages; page++) {
       let batch: OdooProductTemplate[];
@@ -219,24 +221,45 @@ export async function POST() {
       if (batch.length < batchSize) break;
     }
 
-    // 4. Load existing product names from Supabase to update vs insert cleanly
-    const existingByName = new Map<string, string>();
-    let offset = 0;
-    while (true) {
-      const { data: existingRows, error: exErr } = await supabase
-        .from("products")
-        .select("id, name")
-        .range(offset, offset + 999);
-      if (exErr || !existingRows || existingRows.length === 0) break;
-      for (const r of existingRows) {
-        if (r.name) existingByName.set(String(r.name).trim().toLowerCase(), String(r.id));
+    // 4. Load existing products from Supabase in parallel pages for fast diffing
+    const existingByName = new Map<
+      string,
+      { id: string; sale_price: number; unit_of_measure: string; stock_quantity: number }
+    >();
+    const { count: totalExisting } = await supabase
+      .from("products")
+      .select("id", { count: "exact", head: true });
+
+    const pageCount = Math.ceil((totalExisting || 0) / 1000);
+    for (let pStart = 0; pStart < pageCount; pStart += 8) {
+      const batchPages = Array.from(
+        { length: Math.min(8, pageCount - pStart) },
+        (_, i) => pStart + i
+      );
+      const pageResults = await Promise.all(
+        batchPages.map((pg) =>
+          supabase
+            .from("products")
+            .select("id, name, sale_price, unit_of_measure, stock_quantity")
+            .range(pg * 1000, pg * 1000 + 999)
+        )
+      );
+      for (const res of pageResults) {
+        for (const r of res.data || []) {
+          if (r.name) {
+            existingByName.set(String(r.name).trim().toLowerCase(), {
+              id: String(r.id),
+              sale_price: Number(r.sale_price) || 0,
+              unit_of_measure: String(r.unit_of_measure || "Adet"),
+              stock_quantity: Number(r.stock_quantity) || 0,
+            });
+          }
+        }
       }
-      if (existingRows.length < 1000) break;
-      offset += 1000;
     }
 
     const toInsert: Array<Record<string, unknown>> = [];
-    const toUpdate: Array<{ id: string; payload: Record<string, unknown> }> = [];
+    const toUpdate: Array<Record<string, unknown>> = [];
     const clientProducts: Array<{
       id: string;
       code?: string;
@@ -270,11 +293,17 @@ export async function POST() {
         ...(category ? { tags: [category] } : {}),
       };
 
-      const existingId = existingByName.get(name.toLowerCase());
-      if (existingId) {
-        toUpdate.push({ id: existingId, payload: rowPayload });
+      const existing = existingByName.get(name.toLowerCase());
+      if (existing) {
+        const changed =
+          Math.abs(existing.sale_price - unitPrice) > 0.001 ||
+          existing.unit_of_measure !== unit ||
+          Math.abs(existing.stock_quantity - stockQuantity) > 0.001;
+        if (changed) {
+          toUpdate.push({ id: existing.id, ...rowPayload });
+        }
         clientProducts.push({
-          id: existingId,
+          id: existing.id,
           code,
           name,
           unit,
@@ -302,9 +331,9 @@ export async function POST() {
     let updatedCount = 0;
     let dbError: string | null = null;
 
-    // Batch insert new products
-    for (let i = 0; i < toInsert.length; i += 200) {
-      const chunk = toInsert.slice(i, i + 200);
+    // Batch insert new products (chunks of 500)
+    for (let i = 0; i < toInsert.length; i += 500) {
+      const chunk = toInsert.slice(i, i + 500);
       const { data: insData, error: insErr } = await supabase
         .from("products")
         .insert(chunk)
@@ -316,21 +345,17 @@ export async function POST() {
       insertedCount += insData?.length || chunk.length;
     }
 
-    // Batch update existing products (concurrency 20)
-    for (let i = 0; i < toUpdate.length; i += 20) {
-      const batch = toUpdate.slice(i, i + 20);
-      const results = await Promise.all(
-        batch.map((u) =>
-          supabase.from("products").update(u.payload).eq("id", u.id)
-        )
-      );
-      for (const r of results) {
-        if (r.error) {
-          if (!dbError) dbError = r.error.message;
-        } else {
-          updatedCount++;
-        }
+    // Batch upsert changed existing products (chunks of 500 -> single HTTP call per 500 rows)
+    for (let i = 0; i < toUpdate.length; i += 500) {
+      const chunk = toUpdate.slice(i, i + 500);
+      const { error: upErr } = await supabase
+        .from("products")
+        .upsert(chunk, { onConflict: "id" });
+      if (upErr) {
+        if (!dbError) dbError = upErr.message;
+        break;
       }
+      updatedCount += chunk.length;
     }
 
     // Update integration connection status & log (safe even if tables missing)

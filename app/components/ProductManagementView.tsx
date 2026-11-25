@@ -94,6 +94,7 @@ export default function ProductManagementView({
     try {
       const res = await fetch("/api/integrations/odoo-products", {
         method: "POST",
+        signal: AbortSignal.timeout(55000),
       });
       const data = await res.json();
       if (!data?.success) {

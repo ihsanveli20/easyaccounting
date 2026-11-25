@@ -234,16 +234,51 @@ export async function POST(request: Request) {
     let dbError: string | null = null;
     let deletedOld = false;
 
-    // 4. On first chunk, clear existing products table ONLY after Odoo returned real data
+    // 4. On first chunk, clear existing products table in safe 500-ID batches ONLY after Odoo returned real data
     if (replaceAll && offset === 0 && safeBatch.length > 0) {
-      const { error: delErr } = await supabase
-        .from("products")
-        .delete()
-        .not("id", "is", null);
-      if (delErr) {
-        dbError = `Eski ürünler silinemedi (${delErr.message})`;
-      } else {
+      for (let round = 0; round < 100; round++) {
+        const { data: oldIds, error: selErr } = await supabase
+          .from("products")
+          .select("id")
+          .limit(500);
+        if (selErr) {
+          dbError = `Eski ürünler okunamadı (${selErr.message})`;
+          break;
+        }
+        if (!oldIds || oldIds.length === 0) {
+          deletedOld = true;
+          break;
+        }
+        const ids = oldIds.map((r) => r.id);
+        const { error: delErr } = await supabase
+          .from("products")
+          .delete()
+          .in("id", ids);
+        if (delErr) {
+          dbError = `Eski ürünler silinemedi (${delErr.message}). Supabase SQL Editor'de DELETE izni veya TRUNCATE TABLE public.products çalıştırın.`;
+          break;
+        }
+        // Verify rows were actually deleted (RLS can silently ignore DELETE without error)
+        const { count: checkAfter } = await supabase
+          .from("products")
+          .select("id", { count: "exact", head: true })
+          .in("id", ids);
+        if ((checkAfter || 0) >= ids.length) {
+          dbError =
+            "Supabase RLS politikası 'products' tablosunda silmeye izin vermiyor. Supabase SQL Editor'de şu komutu çalıştırın: CREATE POLICY \"Allow delete products\" ON public.products FOR DELETE USING (true);";
+          break;
+        }
         deletedOld = true;
+      }
+
+      if (dbError) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: dbError,
+          },
+          { status: 403 }
+        );
       }
     }
 

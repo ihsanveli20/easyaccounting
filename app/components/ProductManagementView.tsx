@@ -143,6 +143,12 @@ export default function ProductManagementView({
         offset = Number(data.nextOffset) || offset + limit;
       }
 
+      try {
+        window.localStorage.removeItem("easy_accounting_products_catalog_v1");
+      } catch {
+        // ignore storage errors
+      }
+
       if (onRefreshFromSupabase && !firstDbWarning) {
         await onRefreshFromSupabase(true);
       } else if (collectedFallback.length > 0) {

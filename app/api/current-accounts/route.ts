@@ -503,8 +503,11 @@ export async function POST(request: Request) {
           .filter(Boolean)
       );
 
-      const insertedContacts: unknown[] = [];
-      const insertedTransactions: unknown[] = [];
+      const toInsertContacts: Array<Record<string, unknown>> = [];
+      const pendingOpeningsByCode = new Map<
+        string,
+        { openDebit: number; openCredit: number; currency: string }
+      >();
       let skipped = 0;
 
       for (const item of incoming) {
@@ -524,69 +527,88 @@ export async function POST(request: Request) {
           continue;
         }
 
-        const { data: cData, error: cErr } = await supabase
-          .from("contacts")
-          .insert([
-            {
-              code,
-              name,
-              contact_type: item.contact_type || "customer",
-              company_type: "limited",
-              tax_office: item.tax_office || null,
-              tax_number: taxNumber || null,
-              authorized_person: item.authorized_person || null,
-              phone: item.phone || null,
-              email: item.email || null,
-              country: "Türkiye",
-              city: item.city || null,
-              district: item.district || null,
-              address: item.address || null,
-              currency: item.currency || "TRY",
-              payment_term_days: Number(item.payment_term_days) || 0,
-              risk_limit: Number(item.risk_limit) || 0,
-              tags: ["Dosya Aktarımı"],
-              is_active: true,
-              created_by: actor,
-              updated_at: new Date().toISOString(),
-            },
-          ])
-          .select()
-          .single();
-
-        if (cErr || !cData) {
-          skipped++;
-          continue;
-        }
-
         usedCodes.add(code.toLowerCase());
         if (taxNumber) usedTax.add(taxNumber);
-        insertedContacts.push(cData);
 
         const openDebit = round2(Number(item.opening_debit) || 0);
         const openCredit = round2(Number(item.opening_credit) || 0);
         if (openDebit > 0 || openCredit > 0) {
-          const today = new Date().toISOString().slice(0, 10);
-          const { data: txData } = await supabase
-            .from("account_transactions")
-            .insert([
-              {
-                contact_id: cData.id,
-                transaction_date: today,
-                document_date: today,
-                transaction_type: "opening",
-                description: "Excel / PDF Açılış Bakiyesi",
-                debit: openDebit,
-                credit: openCredit,
-                currency: item.currency || "TRY",
-                exchange_rate: 1,
-                tl_debit: openDebit,
-                tl_credit: openCredit,
-                created_by: actor,
-              },
-            ])
-            .select()
-            .single();
-          if (txData) insertedTransactions.push(txData);
+          pendingOpeningsByCode.set(code.toLowerCase(), {
+            openDebit,
+            openCredit,
+            currency: String(item.currency || "TRY"),
+          });
+        }
+
+        toInsertContacts.push({
+          code,
+          name,
+          contact_type: item.contact_type || "customer",
+          company_type: "limited",
+          tax_office: item.tax_office || null,
+          tax_number: taxNumber || null,
+          authorized_person: item.authorized_person || null,
+          phone: item.phone || null,
+          email: item.email || null,
+          country: "Türkiye",
+          city: item.city || null,
+          district: item.district || null,
+          address: item.address || null,
+          currency: item.currency || "TRY",
+          payment_term_days: Number(item.payment_term_days) || 0,
+          risk_limit: Number(item.risk_limit) || 0,
+          tags: ["Dosya Aktarımı"],
+          is_active: true,
+          created_by: actor,
+          updated_at: new Date().toISOString(),
+        });
+      }
+
+      const insertedContacts: Array<{ id: string; code: string }> = [];
+      for (let i = 0; i < toInsertContacts.length; i += 200) {
+        const chunk = toInsertContacts.slice(i, i + 200);
+        const { data: cBatch, error: cErr } = await supabase
+          .from("contacts")
+          .insert(chunk)
+          .select();
+        if (!cErr && Array.isArray(cBatch)) {
+          insertedContacts.push(...cBatch);
+        } else {
+          skipped += chunk.length;
+        }
+      }
+
+      const today = new Date().toISOString().slice(0, 10);
+      const toInsertOpenings: Array<Record<string, unknown>> = [];
+      for (const cData of insertedContacts) {
+        const opening = pendingOpeningsByCode.get(String(cData.code || "").toLowerCase());
+        if (opening) {
+          toInsertOpenings.push({
+            contact_id: cData.id,
+            transaction_date: today,
+            document_date: today,
+            transaction_type: "opening",
+            description: "Excel / PDF Açılış Bakiyesi",
+            debit: opening.openDebit,
+            credit: opening.openCredit,
+            currency: opening.currency,
+            exchange_rate: 1,
+            tl_debit: opening.openDebit,
+            tl_credit: opening.openCredit,
+            created_by: actor,
+          });
+        }
+      }
+
+      const insertedTransactions: unknown[] = [];
+      for (let i = 0; i < toInsertOpenings.length; i += 200) {
+        const chunk = toInsertOpenings.slice(i, i + 200);
+        const { data: txBatch } = await supabase
+          .from("account_transactions")
+          .insert(chunk)
+          .select();
+        if (Array.isArray(txBatch)) {
+          insertedTransactions.push(...txBatch);
         }
       }
 
@@ -641,13 +663,17 @@ export async function POST(request: Request) {
         };
       });
 
-      const { data, error } = await supabase
-        .from("account_transactions")
-        .insert(payload)
-        .select();
-
-      if (error) {
-        return NextResponse.json({ success: false, error: error.message });
+      const insertedRows: unknown[] = [];
+      for (let i = 0; i < payload.length; i += 300) {
+        const chunk = payload.slice(i, i + 300);
+        const { data, error } = await supabase
+          .from("account_transactions")
+          .insert(chunk)
+          .select();
+        if (error) {
+          return NextResponse.json({ success: false, error: error.message });
+        }
+        if (Array.isArray(data)) insertedRows.push(...data);
       }
 
       await writeAudit(
@@ -655,13 +681,13 @@ export async function POST(request: Request) {
         "BULK_IMPORT_TRANSACTIONS",
         "account_transactions",
         null,
-        `${(data || []).length} hareket satırı içe aktarıldı`
+        `${insertedRows.length} hareket satırı içe aktarıldı`
       );
 
       return NextResponse.json({
         success: true,
-        inserted: (data || []).length,
-        transactions: data || [],
+        inserted: insertedRows.length,
+        transactions: insertedRows,
       });
     }
 

@@ -50,6 +50,7 @@ export default function CurrentAccountsImportModal({
 
   const [parsedContacts, setParsedContacts] = useState<ParsedCariContactRow[]>([]);
   const [parsedTx, setParsedTx] = useState<ParsedCariTransactionRow[]>([]);
+  const [previewLimit, setPreviewLimit] = useState<number>(80);
 
   if (!isOpen) return null;
 
@@ -60,7 +61,11 @@ export default function CurrentAccountsImportModal({
     setSuccessMsg(null);
     setParsedContacts([]);
     setParsedTx([]);
+    setPreviewLimit(80);
     setIsParsing(true);
+
+    // Yield one frame so the loading spinner renders immediately before heavy parsing
+    await new Promise((r) => setTimeout(r, 16));
 
     try {
       const lower = file.name.toLowerCase();
@@ -366,7 +371,7 @@ export default function CurrentAccountsImportModal({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {parsedContacts.map((r) => (
+                    {parsedContacts.slice(0, previewLimit).map((r) => (
                       <tr key={r.tempId} className="hover:bg-slate-50">
                         <td className="p-2">
                           <input
@@ -398,6 +403,20 @@ export default function CurrentAccountsImportModal({
                   </tbody>
                 </table>
               </div>
+              {parsedContacts.length > previewLimit && (
+                <div className="px-4 py-2 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-[11px]">
+                  <span className="text-slate-500">
+                    Performans için ilk {previewLimit} / {parsedContacts.length} satır gösteriliyor.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewLimit((n) => n + 100)}
+                    className="font-bold text-indigo-600 hover:underline"
+                  >
+                    +100 Satır Daha Göster
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
@@ -430,7 +449,7 @@ export default function CurrentAccountsImportModal({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {parsedTx.map((r) => (
+                    {parsedTx.slice(0, previewLimit).map((r) => (
                       <tr key={r.tempId} className="hover:bg-slate-50">
                         <td className="p-2">
                           <input
@@ -461,6 +480,20 @@ export default function CurrentAccountsImportModal({
                   </tbody>
                 </table>
               </div>
+              {parsedTx.length > previewLimit && (
+                <div className="px-4 py-2 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-[11px]">
+                  <span className="text-slate-500">
+                    Performans için ilk {previewLimit} / {parsedTx.length} satır gösteriliyor.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewLimit((n) => n + 100)}
+                    className="font-bold text-indigo-600 hover:underline"
+                  >
+                    +100 Satır Daha Göster
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>

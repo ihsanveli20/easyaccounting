@@ -64,17 +64,20 @@ function toIsoDate(raw: unknown): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-function pickCol(row: Record<string, unknown>, aliases: string[]): unknown {
-  const entries = Object.entries(row);
-  for (const alias of aliases) {
-    const found = entries.find(([k]) => normKey(k) === alias);
-    if (found && String(found[1] ?? "").trim() !== "") return found[1];
-  }
-  for (const alias of aliases) {
-    const found = entries.find(([k]) => normKey(k).includes(alias));
-    if (found && String(found[1] ?? "").trim() !== "") return found[1];
-  }
-  return "";
+function buildKeyResolver(sampleRow: Record<string, unknown>) {
+  const keys = Object.keys(sampleRow);
+  const normalized = keys.map((k) => ({ raw: k, norm: normKey(k) }));
+  return (aliases: string[]): string | null => {
+    for (const alias of aliases) {
+      const exact = normalized.find((k) => k.norm === alias);
+      if (exact) return exact.raw;
+    }
+    for (const alias of aliases) {
+      const partial = normalized.find((k) => k.norm.includes(alias));
+      if (partial) return partial.raw;
+    }
+    return null;
+  };
 }
 
 function mapContactType(raw: string): ContactType {
@@ -120,38 +123,42 @@ export function parseCariContactsExcel(buffer: ArrayBuffer): ParsedCariContactRo
   const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets[sheetName], {
     defval: "",
   });
+  if (rows.length === 0) return [];
 
+  const resolve = buildKeyResolver(rows[0]);
+  const kName = resolve(["firmaadi", "unvan", "cariadi", "musteriadi", "tedarikciadi", "isim", "ad", "name"]);
+  const kCode = resolve(["carikodu", "carikod", "kodu", "kod", "hesapkodu", "code"]);
+  const kType = resolve(["carituru", "turu", "tur", "tip", "type"]);
+  const kTaxOffice = resolve(["vergidairesi", "vd", "taxoffice"]);
+  const kTaxNo = resolve(["vergino", "verginumarasi", "vkn", "tckn", "tckimlik", "taxnumber"]);
+  const kAuth = resolve(["yetkili", "yetkilikisi", "ilgilikisi"]);
+  const kPhone = resolve(["telefon", "tel", "gsm", "cep", "phone"]);
+  const kEmail = resolve(["eposta", "mail", "email"]);
+  const kCity = resolve(["sehir", "il", "city"]);
+  const kDistrict = resolve(["ilce", "district"]);
+  const kAddress = resolve(["adres", "acikadres", "address"]);
+  const kCurrency = resolve(["parabirimi", "doviz", "currency"]);
+  const kTerm = resolve(["odemevadesi", "vade", "vadegun"]);
+  const kRisk = resolve(["risklimiti", "risk"]);
+  const kDebit = resolve(["borc", "borcbakiyesi", "toplamborc", "acilisborc", "debit"]);
+  const kCredit = resolve(["alacak", "alacakbakiyesi", "toplamalacak", "acilisalacak", "credit"]);
+  const kBal = resolve(["bakiye", "guncelbakiye", "acilisbakiyesi", "balance"]);
+  const kDir = resolve(["yon", "borcalacak", "durum", "ba"]);
+
+  const stamp = Date.now();
   const out: ParsedCariContactRow[] = [];
-  rows.forEach((row, idx) => {
-    const name = String(
-      pickCol(row, [
-        "firmaadi",
-        "unvan",
-        "cariadi",
-        "musteriadi",
-        "tedarikciadi",
-        "isim",
-        "ad",
-        "name",
-      ])
-    ).trim();
-    if (!name) return;
+  for (let idx = 0; idx < rows.length; idx++) {
+    const row = rows[idx];
+    const name = kName ? String(row[kName] ?? "").trim() : "";
+    if (!name) continue;
 
-    const rawCode = String(
-      pickCol(row, ["carikodu", "carikod", "kodu", "kod", "hesapkodu", "code"])
-    ).trim();
+    const rawCode = kCode ? String(row[kCode] ?? "").trim() : "";
     const code = rawCode || `CR-${String(idx + 1).padStart(4, "0")}`;
 
-    const debitRaw = parseTurkishAmount(
-      pickCol(row, ["borc", "borcbakiyesi", "toplamborc", "acilisborc", "debit"])
-    );
-    const creditRaw = parseTurkishAmount(
-      pickCol(row, ["alacak", "alacakbakiyesi", "toplamalacak", "acilisalacak", "credit"])
-    );
-    const balRaw = parseTurkishAmount(
-      pickCol(row, ["bakiye", "guncelbakiye", "acilisbakiyesi", "balance"])
-    );
-    const dirRaw = normKey(String(pickCol(row, ["yon", "borcalacak", "durum", "ba"])));
+    const debitRaw = kDebit ? parseTurkishAmount(row[kDebit]) : 0;
+    const creditRaw = kCredit ? parseTurkishAmount(row[kCredit]) : 0;
+    const balRaw = kBal ? parseTurkishAmount(row[kBal]) : 0;
+    const dirRaw = kDir ? normKey(String(row[kDir] ?? "")) : "";
 
     let opening_debit = Math.max(0, debitRaw);
     let opening_credit = Math.max(0, creditRaw);
@@ -164,31 +171,26 @@ export function parseCariContactsExcel(buffer: ArrayBuffer): ParsedCariContactRo
     }
 
     out.push({
-      tempId: `imp-c-${idx}-${Date.now()}`,
+      tempId: `imp-c-${idx}-${stamp}`,
       selected: true,
       code,
       name,
-      contact_type: mapContactType(String(pickCol(row, ["carituru", "turu", "tur", "tip", "type"]))),
-      tax_office: String(pickCol(row, ["vergidairesi", "vd", "taxoffice"])).trim(),
-      tax_number: String(
-        pickCol(row, ["vergino", "verginumarasi", "vkn", "tckn", "tckimlik", "taxnumber"])
-      ).trim(),
-      authorized_person: String(pickCol(row, ["yetkili", "yetkilikisi", "ilgilikisi"])).trim(),
-      phone: String(pickCol(row, ["telefon", "tel", "gsm", "cep", "phone"])).trim(),
-      email: String(pickCol(row, ["eposta", "mail", "email"])).trim(),
-      city: String(pickCol(row, ["sehir", "il", "city"])).trim(),
-      district: String(pickCol(row, ["ilce", "district"])).trim(),
-      address: String(pickCol(row, ["adres", "acikadres", "address"])).trim(),
-      currency: mapCurrency(String(pickCol(row, ["parabirimi", "doviz", "currency"]))),
-      payment_term_days: Math.max(
-        0,
-        Math.round(parseTurkishAmount(pickCol(row, ["odemevadesi", "vade", "vadegun"])))
-      ),
-      risk_limit: Math.max(0, parseTurkishAmount(pickCol(row, ["risklimiti", "risk"]))),
+      contact_type: mapContactType(kType ? String(row[kType] ?? "") : ""),
+      tax_office: kTaxOffice ? String(row[kTaxOffice] ?? "").trim() : "",
+      tax_number: kTaxNo ? String(row[kTaxNo] ?? "").trim() : "",
+      authorized_person: kAuth ? String(row[kAuth] ?? "").trim() : "",
+      phone: kPhone ? String(row[kPhone] ?? "").trim() : "",
+      email: kEmail ? String(row[kEmail] ?? "").trim() : "",
+      city: kCity ? String(row[kCity] ?? "").trim() : "",
+      district: kDistrict ? String(row[kDistrict] ?? "").trim() : "",
+      address: kAddress ? String(row[kAddress] ?? "").trim() : "",
+      currency: mapCurrency(kCurrency ? String(row[kCurrency] ?? "") : ""),
+      payment_term_days: kTerm ? Math.max(0, Math.round(parseTurkishAmount(row[kTerm]))) : 0,
+      risk_limit: kRisk ? Math.max(0, parseTurkishAmount(row[kRisk])) : 0,
       opening_debit,
       opening_credit,
     });
-  });
+  }
 
   return out;
 }
@@ -200,22 +202,29 @@ export function parseCariTransactionsExcel(buffer: ArrayBuffer): ParsedCariTrans
   const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets[sheetName], {
     defval: "",
   });
+  if (rows.length === 0) return [];
 
+  const resolve = buildKeyResolver(rows[0]);
+  const kDate = resolve(["islemtarihi", "tarih", "belgetarihi", "date"]);
+  const kDesc = resolve(["aciklama", "izahat", "detay", "description", "islem"]);
+  const kDocNo = resolve(["belgeno", "faturano", "fisno", "evrakno", "documentno"]);
+  const kDebit = resolve(["borc", "borctutari", "debit"]);
+  const kCredit = resolve(["alacak", "alacaktutari", "credit"]);
+  const kTutar = resolve(["tutar", "miktar", "amount"]);
+  const kDue = resolve(["vadetarihi", "vade", "duedate"]);
+  const kType = resolve(["islemturu", "tur", "tip", "type"]);
+  const kCurrency = resolve(["parabirimi", "doviz", "currency"]);
+
+  const stamp = Date.now();
   const out: ParsedCariTransactionRow[] = [];
-  rows.forEach((row, idx) => {
-    const rawDate = pickCol(row, ["islemtarihi", "tarih", "belgetarihi", "date"]);
-    const desc = String(
-      pickCol(row, ["aciklama", "izahat", "detay", "description", "islem"])
-    ).trim();
-    const docNo = String(
-      pickCol(row, ["belgeno", "faturano", "fisno", "evrakno", "documentno"])
-    ).trim();
-    const debit = Math.max(0, parseTurkishAmount(pickCol(row, ["borc", "borctutari", "debit"])));
-    const credit = Math.max(
-      0,
-      parseTurkishAmount(pickCol(row, ["alacak", "alacaktutari", "credit"]))
-    );
-    const tutar = parseTurkishAmount(pickCol(row, ["tutar", "miktar", "amount"]));
+  for (let idx = 0; idx < rows.length; idx++) {
+    const row = rows[idx];
+    const rawDate = kDate ? row[kDate] : "";
+    const desc = kDesc ? String(row[kDesc] ?? "").trim() : "";
+    const docNo = kDocNo ? String(row[kDocNo] ?? "").trim() : "";
+    const debit = kDebit ? Math.max(0, parseTurkishAmount(row[kDebit])) : 0;
+    const credit = kCredit ? Math.max(0, parseTurkishAmount(row[kCredit])) : 0;
+    const tutar = kTutar ? parseTurkishAmount(row[kTutar]) : 0;
 
     let finalDebit = debit;
     let finalCredit = credit;
@@ -224,13 +233,13 @@ export function parseCariTransactionsExcel(buffer: ArrayBuffer): ParsedCariTrans
       else finalCredit = Math.abs(tutar);
     }
 
-    if (!rawDate && !desc && finalDebit === 0 && finalCredit === 0) return;
+    if (!rawDate && !desc && finalDebit === 0 && finalCredit === 0) continue;
 
-    const rawDue = pickCol(row, ["vadetarihi", "vade", "duedate"]);
-    const rawType = String(pickCol(row, ["islemturu", "tur", "tip", "type"]));
+    const rawDue = kDue ? row[kDue] : "";
+    const rawType = kType ? String(row[kType] ?? "") : "";
 
     out.push({
-      tempId: `imp-tx-${idx}-${Date.now()}`,
+      tempId: `imp-tx-${idx}-${stamp}`,
       selected: true,
       transaction_date: toIsoDate(rawDate),
       due_date: rawDue ? toIsoDate(rawDue) : "",
@@ -239,9 +248,9 @@ export function parseCariTransactionsExcel(buffer: ArrayBuffer): ParsedCariTrans
       description: desc || docNo || "Excel Aktarımı",
       debit: finalDebit,
       credit: finalCredit,
-      currency: mapCurrency(String(pickCol(row, ["parabirimi", "doviz", "currency"]))),
+      currency: mapCurrency(kCurrency ? String(row[kCurrency] ?? "") : ""),
     });
-  });
+  }
 
   return out;
 }

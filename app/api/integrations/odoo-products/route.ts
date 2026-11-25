@@ -68,19 +68,29 @@ export async function POST() {
   }
 
   try {
-    // 1. Load saved Odoo connection settings
-    const { data: conn, error: connErr } = await supabase
+    // 1. Load saved Odoo connection settings (Supabase or in-memory fallback)
+    const { data: dbConn } = await supabase
       .from("integration_connections")
       .select("*")
       .eq("provider_key", "odoo")
       .maybeSingle();
 
-    if (connErr) {
-      return NextResponse.json(
-        { success: false, error: connErr.message },
-        { status: 500 }
-      );
-    }
+    const memStore = (
+      globalThis as unknown as {
+        __integrationMemStore?: {
+          connections?: Map<
+            string,
+            {
+              public_config?: Record<string, string>;
+              encrypted_secrets?: string | null;
+              synced_record_count?: number;
+            }
+          >;
+        };
+      }
+    ).__integrationMemStore;
+
+    const conn = dbConn || memStore?.connections?.get("odoo");
 
     if (!conn) {
       return NextResponse.json(
@@ -132,7 +142,7 @@ export async function POST() {
     }
 
     // 3. Fetch active products from Odoo (product.template) in batches of 500
-    const fields = [
+    let fields = [
       "id",
       "name",
       "default_code",
@@ -149,28 +159,60 @@ export async function POST() {
     const maxPages = 20; // up to 10,000 products
 
     for (let page = 0; page < maxPages; page++) {
-      const batch = (await odooJsonRpc(
-        serverUrl,
-        {
-          service: "object",
-          method: "execute_kw",
-          args: [
-            db,
-            uid,
-            apiKey,
-            "product.template",
-            "search_read",
-            [[["active", "=", true]]],
+      let batch: OdooProductTemplate[];
+      try {
+        batch = (await odooJsonRpc(
+          serverUrl,
+          {
+            service: "object",
+            method: "execute_kw",
+            args: [
+              db,
+              uid,
+              apiKey,
+              "product.template",
+              "search_read",
+              [[["active", "=", true]]],
+              {
+                fields,
+                offset: page * batchSize,
+                limit: batchSize,
+                order: "id asc",
+              },
+            ],
+          },
+          20000
+        )) as OdooProductTemplate[];
+      } catch (fieldErr) {
+        // Fallback if stock module (qty_available) or optional fields are not installed
+        if (page === 0 && fields.includes("qty_available")) {
+          fields = ["id", "name", "default_code", "barcode", "list_price", "uom_id", "categ_id"];
+          batch = (await odooJsonRpc(
+            serverUrl,
             {
-              fields,
-              offset: page * batchSize,
-              limit: batchSize,
-              order: "id asc",
+              service: "object",
+              method: "execute_kw",
+              args: [
+                db,
+                uid,
+                apiKey,
+                "product.template",
+                "search_read",
+                [[["active", "=", true]]],
+                {
+                  fields,
+                  offset: 0,
+                  limit: batchSize,
+                  order: "id asc",
+                },
+              ],
             },
-          ],
-        },
-        20000
-      )) as OdooProductTemplate[];
+            20000
+          )) as OdooProductTemplate[];
+        } else {
+          throw fieldErr;
+        }
+      }
 
       if (!Array.isArray(batch) || batch.length === 0) break;
       allOdooProducts.push(...batch);
@@ -291,29 +333,38 @@ export async function POST() {
       }
     }
 
-    // Update integration connection status & log
+    // Update integration connection status & log (safe even if tables missing)
     const finishedAt = new Date().toISOString();
-    await supabase
-      .from("integration_connections")
-      .update({
-        status: "connected",
-        last_sync_at: finishedAt,
-        last_error_message: dbError,
-        synced_record_count:
-          (Number(conn.synced_record_count) || 0) + insertedCount + updatedCount,
-        updated_at: finishedAt,
-      })
-      .eq("provider_key", "odoo");
+    if (memStore?.connections?.get("odoo")) {
+      const memConn = memStore.connections.get("odoo")!;
+      memConn.synced_record_count =
+        (Number(memConn.synced_record_count) || 0) + insertedCount + updatedCount;
+    }
+    try {
+      await supabase
+        .from("integration_connections")
+        .update({
+          status: "connected",
+          last_sync_at: finishedAt,
+          last_error_message: dbError,
+          synced_record_count:
+            (Number(conn.synced_record_count) || 0) + insertedCount + updatedCount,
+          updated_at: finishedAt,
+        })
+        .eq("provider_key", "odoo");
 
-    await supabase.from("integration_sync_logs").insert([
-      {
-        provider_key: "odoo",
-        level: dbError ? "warning" : "info",
-        message: `Odoo'dan ${allOdooProducts.length} ürün çekildi (${insertedCount} yeni, ${updatedCount} güncellendi).${
-          dbError ? ` DB Notu: ${dbError}` : ""
-        }`,
-      },
-    ]);
+      await supabase.from("integration_sync_logs").insert([
+        {
+          provider_key: "odoo",
+          level: dbError ? "warning" : "info",
+          message: `Odoo'dan ${allOdooProducts.length} ürün çekildi (${insertedCount} yeni, ${updatedCount} güncellendi).${
+            dbError ? ` DB Notu: ${dbError}` : ""
+          }`,
+        },
+      ]);
+    } catch {
+      // Ignore if integration tables are not created yet
+    }
 
     return NextResponse.json({
       success: true,

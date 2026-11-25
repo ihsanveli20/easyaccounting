@@ -19,23 +19,30 @@ function getSupabaseServer() {
   return createClient(url, key, { auth: { persistSession: false } });
 }
 
+type OdooMany2One = [number, string] | { id?: number; display_name?: string } | false | null | undefined;
+
 interface OdooProductTemplate {
   id: number;
   name?: string;
   default_code?: string | false;
   barcode?: string | false;
   list_price?: number;
-  standard_price?: number;
   qty_available?: number;
-  uom_id?: [number, string] | false;
-  categ_id?: [number, string] | false;
-  write_date?: string;
+  uom_id?: OdooMany2One;
+  categ_id?: OdooMany2One;
+}
+
+function extractMany2OneName(val: OdooMany2One, fallback = ""): string {
+  if (!val) return fallback;
+  if (Array.isArray(val)) return String(val[1] || fallback);
+  if (typeof val === "object" && val.display_name) return String(val.display_name);
+  return fallback;
 }
 
 async function odooJsonRpc(
   serverUrl: string,
   params: Record<string, unknown>,
-  timeoutMs = 15000
+  timeoutMs = 20000
 ) {
   const res = await fetch(`${serverUrl}/jsonrpc`, {
     method: "POST",
@@ -60,7 +67,7 @@ async function odooJsonRpc(
   return data?.result;
 }
 
-export async function POST() {
+export async function POST(request: Request) {
   const supabase = getSupabaseServer();
   if (!supabase) {
     return NextResponse.json(
@@ -70,6 +77,10 @@ export async function POST() {
   }
 
   try {
+    const body = await request.json().catch(() => ({}));
+    const offset = Math.max(0, Number(body?.offset) || 0);
+    const limit = Math.min(1000, Math.max(50, Number(body?.limit) || 500));
+
     // 1. Load saved Odoo connection settings (Supabase or in-memory fallback)
     const { data: dbConn } = await supabase
       .from("integration_connections")
@@ -137,129 +148,120 @@ export async function POST() {
       return NextResponse.json(
         {
           success: false,
-          error: "Odoo kimlik doğrulaması başarısız. Kullanıcı adı, veritabanı veya API anahtarını kontrol edin.",
+          error:
+            "Odoo kimlik doğrulaması başarısız. Kullanıcı adı, veritabanı veya API anahtarını kontrol edin.",
         },
         { status: 401 }
       );
     }
 
-    // 3. Fetch active products from Odoo (product.template) in batches of 500
+    // 3. Get total count on first chunk + fetch single page from Odoo
+    let totalCount: number | null = null;
+    if (offset === 0) {
+      const cnt = await odooJsonRpc(serverUrl, {
+        service: "object",
+        method: "execute_kw",
+        args: [db, uid, apiKey, "product.template", "search_count", [[["active", "=", true]]]],
+      });
+      if (typeof cnt === "number") totalCount = cnt;
+    }
+
     let fields = [
       "id",
       "name",
       "default_code",
       "barcode",
       "list_price",
-      "standard_price",
       "qty_available",
       "uom_id",
       "categ_id",
-      "write_date",
     ];
-    const allOdooProducts: OdooProductTemplate[] = [];
-    const batchSize = 1000;
-    const maxPages = 15; // up to 15,000 products
 
-    for (let page = 0; page < maxPages; page++) {
-      let batch: OdooProductTemplate[];
-      try {
-        batch = (await odooJsonRpc(
-          serverUrl,
-          {
-            service: "object",
-            method: "execute_kw",
-            args: [
-              db,
-              uid,
-              apiKey,
-              "product.template",
-              "search_read",
-              [[["active", "=", true]]],
-              {
-                fields,
-                offset: page * batchSize,
-                limit: batchSize,
-                order: "id asc",
-              },
-            ],
-          },
-          20000
-        )) as OdooProductTemplate[];
-      } catch (fieldErr) {
-        // Fallback if stock module (qty_available) or optional fields are not installed
-        if (page === 0 && fields.includes("qty_available")) {
-          fields = ["id", "name", "default_code", "barcode", "list_price", "uom_id", "categ_id"];
-          batch = (await odooJsonRpc(
-            serverUrl,
+    let batch: OdooProductTemplate[];
+    try {
+      batch = (await odooJsonRpc(
+        serverUrl,
+        {
+          service: "object",
+          method: "execute_kw",
+          args: [
+            db,
+            uid,
+            apiKey,
+            "product.template",
+            "search_read",
+            [[["active", "=", true]]],
             {
-              service: "object",
-              method: "execute_kw",
-              args: [
-                db,
-                uid,
-                apiKey,
-                "product.template",
-                "search_read",
-                [[["active", "=", true]]],
-                {
-                  fields,
-                  offset: 0,
-                  limit: batchSize,
-                  order: "id asc",
-                },
-              ],
+              fields,
+              offset,
+              limit,
+              order: "id asc",
             },
-            20000
-          )) as OdooProductTemplate[];
-        } else {
-          throw fieldErr;
-        }
-      }
-
-      if (!Array.isArray(batch) || batch.length === 0) break;
-      allOdooProducts.push(...batch);
-      if (batch.length < batchSize) break;
+          ],
+        },
+        25000
+      )) as OdooProductTemplate[];
+    } catch {
+      fields = ["id", "name", "default_code", "barcode", "list_price", "uom_id", "categ_id"];
+      batch = (await odooJsonRpc(
+        serverUrl,
+        {
+          service: "object",
+          method: "execute_kw",
+          args: [
+            db,
+            uid,
+            apiKey,
+            "product.template",
+            "search_read",
+            [[["active", "=", true]]],
+            {
+              fields,
+              offset,
+              limit,
+              order: "id asc",
+            },
+          ],
+        },
+        25000
+      )) as OdooProductTemplate[];
     }
 
-    // 4. Load existing products from Supabase in parallel pages for fast diffing
+    const safeBatch = Array.isArray(batch) ? batch : [];
+    const batchNames = Array.from(
+      new Set(
+        safeBatch
+          .map((p) => String(p.name || "").trim())
+          .filter(Boolean)
+      )
+    );
+
+    // 4. Query Supabase ONLY for names in this slice (fast O(batch) lookup)
     const existingByName = new Map<
       string,
       { id: string; sale_price: number; unit_of_measure: string; stock_quantity: number }
     >();
-    const { count: totalExisting } = await supabase
-      .from("products")
-      .select("id", { count: "exact", head: true });
-
-    const pageCount = Math.ceil((totalExisting || 0) / 1000);
-    for (let pStart = 0; pStart < pageCount; pStart += 8) {
-      const batchPages = Array.from(
-        { length: Math.min(8, pageCount - pStart) },
-        (_, i) => pStart + i
-      );
-      const pageResults = await Promise.all(
-        batchPages.map((pg) =>
-          supabase
-            .from("products")
-            .select("id, name, sale_price, unit_of_measure, stock_quantity")
-            .range(pg * 1000, pg * 1000 + 999)
-        )
-      );
-      for (const res of pageResults) {
-        for (const r of res.data || []) {
-          if (r.name) {
-            existingByName.set(String(r.name).trim().toLowerCase(), {
-              id: String(r.id),
-              sale_price: Number(r.sale_price) || 0,
-              unit_of_measure: String(r.unit_of_measure || "Adet"),
-              stock_quantity: Number(r.stock_quantity) || 0,
-            });
-          }
+    for (let i = 0; i < batchNames.length; i += 150) {
+      const nameChunk = batchNames.slice(i, i + 150);
+      const { data: existingRows } = await supabase
+        .from("products")
+        .select("id, name, sale_price, unit_of_measure, stock_quantity")
+        .in("name", nameChunk);
+      for (const r of existingRows || []) {
+        if (r.name) {
+          existingByName.set(String(r.name).trim().toLowerCase(), {
+            id: String(r.id),
+            sale_price: Number(r.sale_price) || 0,
+            unit_of_measure: String(r.unit_of_measure || "Adet"),
+            stock_quantity: Number(r.stock_quantity) || 0,
+          });
         }
       }
     }
 
     const toInsert: Array<Record<string, unknown>> = [];
     const toUpdate: Array<Record<string, unknown>> = [];
+    const seenInBatch = new Set<string>();
     const clientProducts: Array<{
       id: string;
       code?: string;
@@ -272,12 +274,15 @@ export async function POST() {
     }> = [];
 
     const todayTr = new Date().toLocaleDateString("tr-TR");
-    for (const p of allOdooProducts) {
+    for (const p of safeBatch) {
       const name = String(p.name || "").trim();
       if (!name) continue;
-      const unit = Array.isArray(p.uom_id) && p.uom_id[1] ? String(p.uom_id[1]) : "Adet";
-      const category =
-        Array.isArray(p.categ_id) && p.categ_id[1] ? String(p.categ_id[1]) : undefined;
+      const lower = name.toLowerCase();
+      if (seenInBatch.has(lower)) continue;
+      seenInBatch.add(lower);
+
+      const unit = extractMany2OneName(p.uom_id, "Adet");
+      const category = extractMany2OneName(p.categ_id, "") || undefined;
       const unitPrice = Number(p.list_price) || 0;
       const stockQuantity = Number(p.qty_available) || 0;
       const code =
@@ -293,7 +298,7 @@ export async function POST() {
         ...(category ? { tags: [category] } : {}),
       };
 
-      const existing = existingByName.get(name.toLowerCase());
+      const existing = existingByName.get(lower);
       if (existing) {
         const changed =
           Math.abs(existing.sale_price - unitPrice) > 0.001 ||
@@ -331,71 +336,62 @@ export async function POST() {
     let updatedCount = 0;
     let dbError: string | null = null;
 
-    // Batch insert new products (chunks of 500)
-    for (let i = 0; i < toInsert.length; i += 500) {
-      const chunk = toInsert.slice(i, i + 500);
+    if (toInsert.length > 0) {
       const { data: insData, error: insErr } = await supabase
         .from("products")
-        .insert(chunk)
+        .insert(toInsert)
         .select("id");
       if (insErr) {
         dbError = insErr.message;
-        break;
+      } else {
+        insertedCount = insData?.length || toInsert.length;
       }
-      insertedCount += insData?.length || chunk.length;
     }
 
-    // Batch upsert changed existing products (chunks of 500 -> single HTTP call per 500 rows)
-    for (let i = 0; i < toUpdate.length; i += 500) {
-      const chunk = toUpdate.slice(i, i + 500);
+    if (toUpdate.length > 0) {
       const { error: upErr } = await supabase
         .from("products")
-        .upsert(chunk, { onConflict: "id" });
+        .upsert(toUpdate, { onConflict: "id" });
       if (upErr) {
         if (!dbError) dbError = upErr.message;
-        break;
+      } else {
+        updatedCount = toUpdate.length;
       }
-      updatedCount += chunk.length;
     }
 
-    // Update integration connection status & log (safe even if tables missing)
-    const finishedAt = new Date().toISOString();
-    if (memStore?.connections?.get("odoo")) {
-      const memConn = memStore.connections.get("odoo")!;
-      memConn.synced_record_count =
-        (Number(memConn.synced_record_count) || 0) + insertedCount + updatedCount;
-    }
-    try {
-      await supabase
-        .from("integration_connections")
-        .update({
-          status: "connected",
-          last_sync_at: finishedAt,
-          last_error_message: dbError,
-          synced_record_count:
-            (Number(conn.synced_record_count) || 0) + insertedCount + updatedCount,
-          updated_at: finishedAt,
-        })
-        .eq("provider_key", "odoo");
+    const hasMore = safeBatch.length === limit;
+    const nextOffset = offset + safeBatch.length;
 
-      await supabase.from("integration_sync_logs").insert([
-        {
-          provider_key: "odoo",
-          level: dbError ? "warning" : "info",
-          message: `Odoo'dan ${allOdooProducts.length} ürün çekildi (${insertedCount} yeni, ${updatedCount} güncellendi).${
-            dbError ? ` DB Notu: ${dbError}` : ""
-          }`,
-        },
-      ]);
-    } catch {
-      // Ignore if integration tables are not created yet
+    if (!hasMore) {
+      const finishedAt = new Date().toISOString();
+      if (memStore?.connections?.get("odoo")) {
+        const memConn = memStore.connections.get("odoo")!;
+        memConn.synced_record_count =
+          (Number(memConn.synced_record_count) || 0) + nextOffset;
+      }
+      try {
+        await supabase
+          .from("integration_connections")
+          .update({
+            status: "connected",
+            last_sync_at: finishedAt,
+            last_error_message: dbError,
+            updated_at: finishedAt,
+          })
+          .eq("provider_key", "odoo");
+      } catch {
+        // ignore if integration tables do not exist
+      }
     }
 
     return NextResponse.json({
       success: true,
-      fetchedCount: allOdooProducts.length,
+      totalCount,
+      fetchedCount: safeBatch.length,
       insertedCount,
       updatedCount,
+      hasMore,
+      nextOffset,
       dbWarning: dbError,
       products: clientProducts,
     });
@@ -410,4 +406,3 @@ export async function POST() {
     );
   }
 }
-

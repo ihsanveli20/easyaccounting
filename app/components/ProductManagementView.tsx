@@ -88,27 +88,60 @@ export default function ProductManagementView({
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [isPullingOdoo, setIsPullingOdoo] = useState(false);
+  const [odooProgress, setOdooProgress] = useState<string | null>(null);
 
   const handlePullFromOdoo = async () => {
     setIsPullingOdoo(true);
+    setOdooProgress("Bağlanıyor...");
+    let offset = 0;
+    const limit = 500;
+    let totalCount: number | null = null;
+    let totalFetched = 0;
+    let totalInserted = 0;
+    let totalUpdated = 0;
+    let hasDbWarning = false;
+    const collectedFallback: ProductItem[] = [];
+
     try {
-      const res = await fetch("/api/integrations/odoo-products", {
-        method: "POST",
-        signal: AbortSignal.timeout(55000),
-      });
-      const data = await res.json();
-      if (!data?.success) {
-        setToastMsg(`Odoo Hatası: ${data?.error || "Ürünler çekilemedi."}`);
-        setTimeout(() => setToastMsg(null), 6000);
-        return;
+      while (true) {
+        const res = await fetch("/api/integrations/odoo-products", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ offset, limit }),
+          signal: AbortSignal.timeout(30000),
+        });
+        const data = await res.json();
+        if (!data?.success) {
+          setToastMsg(`Odoo Hatası: ${data?.error || "Ürünler çekilemedi."}`);
+          setTimeout(() => setToastMsg(null), 6000);
+          return;
+        }
+
+        if (typeof data.totalCount === "number") totalCount = data.totalCount;
+        totalFetched += Number(data.fetchedCount) || 0;
+        totalInserted += Number(data.insertedCount) || 0;
+        totalUpdated += Number(data.updatedCount) || 0;
+        if (data.dbWarning) hasDbWarning = true;
+        if (Array.isArray(data.products)) {
+          collectedFallback.push(...(data.products as ProductItem[]));
+        }
+
+        setOdooProgress(
+          totalCount
+            ? `${totalFetched.toLocaleString("tr-TR")} / ${totalCount.toLocaleString("tr-TR")}`
+            : `${totalFetched.toLocaleString("tr-TR")} ürün`
+        );
+
+        if (!data.hasMore) break;
+        offset = Number(data.nextOffset) || offset + limit;
       }
 
-      if (onRefreshFromSupabase && !data.dbWarning) {
+      if (onRefreshFromSupabase && !hasDbWarning) {
         await onRefreshFromSupabase(true);
-      } else if (Array.isArray(data.products) && data.products.length > 0) {
+      } else if (collectedFallback.length > 0) {
         setProducts((prev) => {
           const byName = new Map(prev.map((p) => [p.name.trim().toLowerCase(), p]));
-          for (const item of data.products as ProductItem[]) {
+          for (const item of collectedFallback) {
             byName.set(item.name.trim().toLowerCase(), item);
           }
           return Array.from(byName.values());
@@ -116,14 +149,19 @@ export default function ProductManagementView({
       }
 
       setToastMsg(
-        `Odoo'dan ${data.fetchedCount} ürün çekildi (${data.insertedCount} yeni, ${data.updatedCount} güncellendi).`
+        `Odoo'dan ${totalFetched.toLocaleString("tr-TR")} ürün çekildi (${totalInserted} yeni, ${totalUpdated} güncellendi).`
       );
       setTimeout(() => setToastMsg(null), 6000);
-    } catch {
-      setToastMsg("Odoo ürün senkronizasyonu sırasında ağ hatası oluştu.");
+    } catch (err: unknown) {
+      const msg =
+        err instanceof Error && err.name === "TimeoutError"
+          ? "Odoo yanıt süresi doldu; lütfen tekrar deneyin."
+          : "Odoo ürün senkronizasyonu sırasında ağ hatası oluştu.";
+      setToastMsg(msg);
       setTimeout(() => setToastMsg(null), 6000);
     } finally {
       setIsPullingOdoo(false);
+      setOdooProgress(null);
     }
   };
 
@@ -605,7 +643,11 @@ export default function ProductManagementView({
             ) : (
               <RefreshCw className="w-4 h-4" />
             )}
-            <span>{isPullingOdoo ? "Odoo'dan Çekiliyor..." : "Odoo'dan Çek"}</span>
+            <span>
+              {isPullingOdoo
+                ? `Odoo'dan Çekiliyor (${odooProgress || "..."})`
+                : "Odoo'dan Çek"}
+            </span>
           </button>
 
           <button

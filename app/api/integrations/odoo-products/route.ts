@@ -20,7 +20,12 @@ function getSupabaseServer() {
   return createClient(url, key, { auth: { persistSession: false } });
 }
 
-type OdooMany2One = [number, string] | { id?: number; display_name?: string } | false | null | undefined;
+type OdooMany2One =
+  | [number, string]
+  | { id?: number; display_name?: string }
+  | false
+  | null
+  | undefined;
 
 interface OdooProductTemplate {
   id: number;
@@ -43,7 +48,7 @@ function extractMany2OneName(val: OdooMany2One, fallback = ""): string {
 async function odooJsonRpc(
   serverUrl: string,
   params: Record<string, unknown>,
-  timeoutMs = 20000
+  timeoutMs = 25000
 ) {
   const res = await fetch(`${serverUrl}/jsonrpc`, {
     method: "POST",
@@ -68,6 +73,56 @@ async function odooJsonRpc(
   return data?.result;
 }
 
+async function loadOdooConfig(supabase: NonNullable<ReturnType<typeof getSupabaseServer>>) {
+  const { data: dbConn } = await supabase
+    .from("integration_connections")
+    .select("*")
+    .eq("provider_key", "odoo")
+    .maybeSingle();
+
+  const memStore = (
+    globalThis as unknown as {
+      __integrationMemStore?: {
+        connections?: Map<
+          string,
+          {
+            public_config?: Record<string, string>;
+            encrypted_secrets?: string | null;
+            synced_record_count?: number;
+          }
+        >;
+      };
+    }
+  ).__integrationMemStore;
+
+  const conn = dbConn || memStore?.connections?.get("odoo");
+  if (!conn) {
+    return {
+      error:
+        "Odoo bağlantısı bulunamadı. Önce Ayarlar → Dış Sistem Entegrasyonları ekranından Odoo ayarlarını kaydedin.",
+    };
+  }
+
+  const pub = (conn.public_config || {}) as Record<string, string>;
+  const sec = conn.encrypted_secrets
+    ? decryptSecrets(String(conn.encrypted_secrets))
+    : {};
+
+  const serverUrl = (pub.serverUrl || "").trim().replace(/\/+$/, "");
+  const db = (pub.database || "").trim();
+  const username = (pub.username || "").trim();
+  const apiKey = (sec.apiKey || "").trim();
+
+  if (!serverUrl || !db || !username || !apiKey) {
+    return {
+      error:
+        "Odoo bağlantı bilgileri eksik (sunucu adresi, veritabanı, kullanıcı adı veya API anahtarı).",
+    };
+  }
+
+  return { serverUrl, db, username, apiKey, memStore };
+}
+
 export async function POST(request: Request) {
   const supabase = getSupabaseServer();
   if (!supabase) {
@@ -79,67 +134,102 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json().catch(() => ({}));
-    const offset = Math.max(0, Number(body?.offset) || 0);
-    const limit = Math.min(1000, Math.max(50, Number(body?.limit) || 500));
-    const replaceAll = body?.replaceAll !== false;
+    const action = String(body?.action || "sync_page");
 
-    // 1. Load saved Odoo connection settings (Supabase or in-memory fallback)
-    const { data: dbConn } = await supabase
-      .from("integration_connections")
-      .select("*")
-      .eq("provider_key", "odoo")
-      .maybeSingle();
+    const cfg = await loadOdooConfig(supabase);
+    if ("error" in cfg) {
+      return NextResponse.json({ success: false, error: cfg.error }, { status: 400 });
+    }
+    const { serverUrl, db, username, apiKey, memStore } = cfg;
 
-    const memStore = (
-      globalThis as unknown as {
-        __integrationMemStore?: {
-          connections?: Map<
-            string,
+    // Action 1: Fast chunked clear of existing products (after verifying Odoo auth first!)
+    if (action === "clear") {
+      const verifyRls = Boolean(body?.verifyRls);
+      if (verifyRls) {
+        const uid = await odooJsonRpc(serverUrl, {
+          service: "common",
+          method: "authenticate",
+          args: [db, username, apiKey, {}],
+        });
+        if (typeof uid !== "number" || uid <= 0) {
+          return NextResponse.json(
             {
-              public_config?: Record<string, string>;
-              encrypted_secrets?: string | null;
-              synced_record_count?: number;
-            }
-          >;
-        };
+              success: false,
+              error:
+                "Odoo kimlik doğrulaması başarısız. Eski ürünler güvenlik amacıyla silinmedi.",
+            },
+            { status: 401 }
+          );
+        }
       }
-    ).__integrationMemStore;
 
-    const conn = dbConn || memStore?.connections?.get("odoo");
+      // Fetch up to 2000 IDs and delete in 4 parallel 500-ID chunks
+      const { data: oldIds, error: selErr } = await supabase
+        .from("products")
+        .select("id")
+        .limit(2000);
 
-    if (!conn) {
-      return NextResponse.json(
-        {
-          success: false,
-          error:
-            "Odoo bağlantısı bulunamadı. Önce Ayarlar → Dış Sistem Entegrasyonları ekranından Odoo ayarlarını kaydedin.",
-        },
-        { status: 400 }
+      if (selErr) {
+        return NextResponse.json(
+          { success: false, error: `Eski ürünler okunamadı: ${selErr.message}` },
+          { status: 500 }
+        );
+      }
+
+      if (!oldIds || oldIds.length === 0) {
+        return NextResponse.json({ success: true, deletedCount: 0, hasMoreToDelete: false });
+      }
+
+      const ids = oldIds.map((r) => r.id);
+      const chunks: unknown[][] = [];
+      for (let i = 0; i < ids.length; i += 500) {
+        chunks.push(ids.slice(i, i + 500));
+      }
+
+      const delResults = await Promise.all(
+        chunks.map((c) => supabase.from("products").delete().in("id", c))
       );
+
+      for (const r of delResults) {
+        if (r.error) {
+          return NextResponse.json(
+            {
+              success: false,
+              error: `Eski ürünler silinemedi (${r.error.message}). Supabase SQL Editor'de DELETE izni verin.`,
+            },
+            { status: 403 }
+          );
+        }
+      }
+
+      if (verifyRls) {
+        const { count: checkAfter } = await supabase
+          .from("products")
+          .select("id", { count: "exact", head: true })
+          .in("id", chunks[0]);
+        if ((checkAfter || 0) >= chunks[0].length) {
+          return NextResponse.json(
+            {
+              success: false,
+              error:
+                "Supabase RLS politikası 'products' tablosunda silmeye izin vermiyor. Supabase SQL Editor'de DELETE politikası tanımlayın.",
+            },
+            { status: 403 }
+          );
+        }
+      }
+
+      return NextResponse.json({
+        success: true,
+        deletedCount: ids.length,
+        hasMoreToDelete: ids.length === 2000,
+      });
     }
 
-    const pub = (conn.public_config || {}) as Record<string, string>;
-    const sec = conn.encrypted_secrets
-      ? decryptSecrets(String(conn.encrypted_secrets))
-      : {};
+    // Action 2: Sync a single page of Odoo products (up to 1000 per call)
+    const offset = Math.max(0, Number(body?.offset) || 0);
+    const limit = Math.min(1000, Math.max(50, Number(body?.limit) || 1000));
 
-    const serverUrl = (pub.serverUrl || "").trim().replace(/\/+$/, "");
-    const db = (pub.database || "").trim();
-    const username = (pub.username || "").trim();
-    const apiKey = (sec.apiKey || "").trim();
-
-    if (!serverUrl || !db || !username || !apiKey) {
-      return NextResponse.json(
-        {
-          success: false,
-          error:
-            "Odoo bağlantı bilgileri eksik (sunucu adresi, veritabanı, kullanıcı adı veya API anahtarı).",
-        },
-        { status: 400 }
-      );
-    }
-
-    // 2. Authenticate with Odoo
     const uid = await odooJsonRpc(serverUrl, {
       service: "common",
       method: "authenticate",
@@ -157,7 +247,6 @@ export async function POST(request: Request) {
       );
     }
 
-    // 3. Get total count on first chunk + fetch single page from Odoo
     let totalCount: number | null = null;
     if (offset === 0) {
       const cnt = await odooJsonRpc(serverUrl, {
@@ -201,7 +290,7 @@ export async function POST(request: Request) {
             },
           ],
         },
-        25000
+        35000
       )) as OdooProductTemplate[];
     } catch {
       fields = ["id", "name", "default_code", "barcode", "list_price", "uom_id", "categ_id"];
@@ -225,65 +314,12 @@ export async function POST(request: Request) {
             },
           ],
         },
-        25000
+        35000
       )) as OdooProductTemplate[];
     }
 
     const safeBatch = Array.isArray(batch) ? batch : [];
-
-    let dbError: string | null = null;
-    let deletedOld = false;
-
-    // 4. On first chunk, clear existing products table in safe 500-ID batches ONLY after Odoo returned real data
-    if (replaceAll && offset === 0 && safeBatch.length > 0) {
-      for (let round = 0; round < 100; round++) {
-        const { data: oldIds, error: selErr } = await supabase
-          .from("products")
-          .select("id")
-          .limit(500);
-        if (selErr) {
-          dbError = `Eski ürünler okunamadı (${selErr.message})`;
-          break;
-        }
-        if (!oldIds || oldIds.length === 0) {
-          deletedOld = true;
-          break;
-        }
-        const ids = oldIds.map((r) => r.id);
-        const { error: delErr } = await supabase
-          .from("products")
-          .delete()
-          .in("id", ids);
-        if (delErr) {
-          dbError = `Eski ürünler silinemedi (${delErr.message}). Supabase SQL Editor'de DELETE izni veya TRUNCATE TABLE public.products çalıştırın.`;
-          break;
-        }
-        // Verify rows were actually deleted (RLS can silently ignore DELETE without error)
-        const { count: checkAfter } = await supabase
-          .from("products")
-          .select("id", { count: "exact", head: true })
-          .in("id", ids);
-        if ((checkAfter || 0) >= ids.length) {
-          dbError =
-            "Supabase RLS politikası 'products' tablosunda silmeye izin vermiyor. Supabase SQL Editor'de şu komutu çalıştırın: CREATE POLICY \"Allow delete products\" ON public.products FOR DELETE USING (true);";
-          break;
-        }
-        deletedOld = true;
-      }
-
-      if (dbError) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: dbError,
-          },
-          { status: 403 }
-        );
-      }
-    }
-
     const toInsert: Array<Record<string, unknown>> = [];
-    const seenInBatch = new Set<string>();
     const clientProducts: Array<{
       id: string;
       code?: string;
@@ -299,9 +335,6 @@ export async function POST(request: Request) {
     for (const p of safeBatch) {
       const name = String(p.name || "").trim();
       if (!name) continue;
-      const lower = name.toLowerCase();
-      if (seenInBatch.has(lower)) continue;
-      seenInBatch.add(lower);
 
       const unit = extractMany2OneName(p.uom_id, "Adet");
       const category = extractMany2OneName(p.categ_id, "") || undefined;
@@ -333,17 +366,31 @@ export async function POST(request: Request) {
     }
 
     let insertedCount = 0;
-    const updatedCount = 0;
+    let dbError: string | null = null;
 
-    if (toInsert.length > 0 && !(replaceAll && offset === 0 && dbError)) {
-      const { data: insData, error: insErr } = await supabase
-        .from("products")
-        .insert(toInsert)
-        .select("id");
-      if (insErr) {
-        dbError = dbError ? `${dbError}; ${insErr.message}` : insErr.message;
+    // Insert in 500-row chunks; if a chunk fails (e.g. single duplicate/constraint), fall back to 50-row sub-chunks
+    for (let i = 0; i < toInsert.length; i += 500) {
+      const chunk = toInsert.slice(i, i + 500);
+      const { error: insErr } = await supabase.from("products").insert(chunk);
+      if (!insErr) {
+        insertedCount += chunk.length;
       } else {
-        insertedCount = insData?.length || toInsert.length;
+        for (let j = 0; j < chunk.length; j += 50) {
+          const sub = chunk.slice(j, j + 50);
+          const { error: subErr } = await supabase.from("products").insert(sub);
+          if (!subErr) {
+            insertedCount += sub.length;
+          } else {
+            for (const row of sub) {
+              const { error: singleErr } = await supabase.from("products").insert([row]);
+              if (!singleErr) {
+                insertedCount++;
+              } else if (!dbError) {
+                dbError = singleErr.message;
+              }
+            }
+          }
+        }
       }
     }
 
@@ -368,7 +415,7 @@ export async function POST(request: Request) {
           })
           .eq("provider_key", "odoo");
       } catch {
-        // ignore if integration tables do not exist
+        // ignore
       }
     }
 
@@ -377,8 +424,7 @@ export async function POST(request: Request) {
       totalCount,
       fetchedCount: safeBatch.length,
       insertedCount,
-      updatedCount,
-      deletedOld,
+      updatedCount: 0,
       hasMore,
       nextOffset,
       dbWarning: dbError,

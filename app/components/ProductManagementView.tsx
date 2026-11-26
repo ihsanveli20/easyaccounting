@@ -101,9 +101,9 @@ export default function ProductManagementView({
     }
 
     setIsPullingOdoo(true);
-    setOdooProgress("Bağlanıyor...");
+    setOdooProgress("Eski ürünler temizleniyor...");
     let offset = 0;
-    const limit = 500;
+    const limit = 1000;
     let totalCount: number | null = null;
     let totalFetched = 0;
     let totalInserted = 0;
@@ -111,17 +111,59 @@ export default function ProductManagementView({
     const collectedFallback: ProductItem[] = [];
 
     try {
+      // Step 1: Clear old products in fast 2000-row chunks
+      let firstClear = true;
       while (true) {
-        const res = await fetch("/api/integrations/odoo-products", {
+        const clearRes = await fetch("/api/integrations/odoo-products", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ offset, limit, replaceAll: offset === 0 }),
-          signal: AbortSignal.timeout(30000),
+          body: JSON.stringify({ action: "clear", verifyRls: firstClear }),
+          signal: AbortSignal.timeout(45000),
         });
-        const data = await res.json();
+        const clearData = await clearRes.json();
+        if (!clearData?.success) {
+          setToastMsg(`Temizleme Hatası: ${clearData?.error || "Eski ürünler silinemedi."}`);
+          setTimeout(() => setToastMsg(null), 8000);
+          return;
+        }
+        firstClear = false;
+        if (!clearData.hasMoreToDelete) break;
+      }
+
+      setOdooProgress("Odoo'dan çekiliyor...");
+
+      // Step 2: Pull 1000 products per request with automatic 1x retry on transient error
+      while (true) {
+        let data: {
+          success?: boolean;
+          error?: string;
+          totalCount?: number | null;
+          fetchedCount?: number;
+          insertedCount?: number;
+          dbWarning?: string | null;
+          hasMore?: boolean;
+          nextOffset?: number;
+          products?: ProductItem[];
+        } | null = null;
+
+        for (let attempt = 0; attempt < 2; attempt++) {
+          try {
+            const res = await fetch("/api/integrations/odoo-products", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ action: "sync_page", offset, limit }),
+              signal: AbortSignal.timeout(55000),
+            });
+            data = await res.json();
+            if (data?.success) break;
+          } catch (err) {
+            if (attempt === 1) throw err;
+          }
+        }
+
         if (!data?.success) {
           setToastMsg(`Odoo Hatası: ${data?.error || "Ürünler çekilemedi."}`);
-          setTimeout(() => setToastMsg(null), 6000);
+          setTimeout(() => setToastMsg(null), 7000);
           return;
         }
 
@@ -130,7 +172,7 @@ export default function ProductManagementView({
         totalInserted += Number(data.insertedCount) || 0;
         if (data.dbWarning && !firstDbWarning) firstDbWarning = String(data.dbWarning);
         if (Array.isArray(data.products)) {
-          collectedFallback.push(...(data.products as ProductItem[]));
+          collectedFallback.push(...data.products);
         }
 
         setOdooProgress(

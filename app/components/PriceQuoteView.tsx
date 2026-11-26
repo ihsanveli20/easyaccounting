@@ -229,6 +229,84 @@ function QuantityCell({ value, onChange }: QuantityCellProps) {
   );
 }
 
+function parseQuotePriceInput(raw: string): number | "" {
+  const cleaned = String(raw || "")
+    .replace(/[₺$€TLtl\s]/g, "")
+    .trim();
+  if (!cleaned) return "";
+
+  // Turkish thousands-only format without comma (e.g. "19.250" or "1.250.000") -> 19250 / 1250000
+  if (/^-?\d{1,3}(\.\d{3})+$/.test(cleaned)) {
+    const val = parseFloat(cleaned.replace(/\./g, ""));
+    return Number.isFinite(val) ? Math.round(val * 10000) / 10000 : "";
+  }
+
+  const parsed = parseTurkishAmount(cleaned);
+  return Number.isFinite(parsed) ? Math.round(parsed * 10000) / 10000 : "";
+}
+
+function formatQuotePriceTurkish(val: number): string {
+  return new Intl.NumberFormat("tr-TR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 4,
+  }).format(val);
+}
+
+interface UnitPriceCellProps {
+  value: number | "";
+  onChange: (val: number | "") => void;
+  onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
+}
+
+function UnitPriceCell({ value, onChange, onKeyDown }: UnitPriceCellProps) {
+  const [isFocused, setIsFocused] = useState(false);
+  const [text, setText] = useState("");
+
+  const displayValue = isFocused
+    ? text
+    : typeof value === "number"
+      ? formatQuotePriceTurkish(value)
+      : "";
+
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      value={displayValue}
+      onFocus={() => {
+        setIsFocused(true);
+        setText(typeof value === "number" ? String(value).replace(".", ",") : "");
+      }}
+      onChange={(e) => {
+        setText(e.target.value);
+        onChange(parseQuotePriceInput(e.target.value));
+      }}
+      onBlur={() => {
+        setIsFocused(false);
+        if (text.trim() === "") {
+          onChange("");
+        } else {
+          const parsed = parseQuotePriceInput(text);
+          if (parsed !== "") onChange(parsed);
+        }
+      }}
+      onPaste={(e) => {
+        const pasted = e.clipboardData?.getData("text") || "";
+        if (!/\d/.test(pasted)) return;
+        e.preventDefault();
+        const parsed = parseQuotePriceInput(pasted);
+        if (parsed !== "") {
+          onChange(parsed);
+          setText(formatQuotePriceTurkish(parsed));
+        }
+      }}
+      onKeyDown={onKeyDown}
+      className="w-full bg-transparent border-none focus:outline-none focus:bg-blue-50/50 rounded px-1 py-0.5 text-right font-mono font-medium text-slate-900 print:hidden text-xs"
+      placeholder="0,00"
+    />
+  );
+}
+
 // Generate empty row
 function createEmptyRow(): QuoteItem {
   return {
@@ -2085,33 +2163,10 @@ export default function PriceQuoteView({
 
                   {/* BİRİM FİYATI (₺) */}
                   <td className="border border-black py-1 px-2 text-right">
-                    <input
-                      type="number"
-                      step="any"
+                    <UnitPriceCell
                       value={row.unitPrice}
-                      onChange={(e) =>
-                        handleUpdateRow(
-                          idx,
-                          "unitPrice",
-                          e.target.value === "" ? "" : parseFloat(e.target.value) || 0
-                        )
-                      }
-                      onPaste={(e) => {
-                        const text = e.clipboardData?.getData("text") || "";
-                        if (!/\d/.test(text)) return;
-                        e.preventDefault();
-                        const parsed = parseTurkishAmount(text);
-                        if (Number.isFinite(parsed)) {
-                          handleUpdateRow(
-                            idx,
-                            "unitPrice",
-                            Math.round(parsed * 10000) / 10000
-                          );
-                        }
-                      }}
+                      onChange={(val) => handleUpdateRow(idx, "unitPrice", val)}
                       onKeyDown={(e) => handleKeyDown(e, idx, "unitPrice")}
-                      className="w-full bg-transparent border-none focus:outline-none focus:bg-blue-50/50 rounded px-1 py-0.5 text-right font-mono font-medium text-slate-900 print:hidden text-xs"
-                      placeholder="0,00"
                     />
                     <div className="hidden print:block font-mono font-medium text-slate-950 text-xs text-right">
                       {typeof row.unitPrice === "number" && row.unitPrice > 0

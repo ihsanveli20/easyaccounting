@@ -9,6 +9,7 @@ import {
   TrendingUp,
   Copy,
   Check,
+  ClipboardPaste,
   RotateCcw,
   Download,
   Sparkles,
@@ -284,11 +285,138 @@ export default function DetailedCalculator() {
     setMemory(0);
   };
 
-  // Keyboard shortcut listener for standard calculator
+  // External paste handler (supports single numbers, multi-line Excel/PDF columns, and math expressions)
+  const applyPastedText = (raw: string) => {
+    const trimmed = raw.trim();
+    if (!trimmed) return false;
+
+    const nowTime = new Date().toLocaleTimeString("tr-TR", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+    // 1. Multi-line paste (e.g. Excel column): sum all valid numbers and log to tape
+    const lines = trimmed
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean);
+
+    if (lines.length > 1) {
+      const nums = lines
+        .map((l) => ({ raw: l, val: parseTurkishAmount(l) }))
+        .filter((x) => /[0-9]/.test(x.raw) && Number.isFinite(x.val));
+      if (nums.length > 1) {
+        const total = nums.reduce((s, x) => s + x.val, 0);
+        setDisplay(String(total));
+        setPrevValue(null);
+        setOperation(null);
+        setExpression(`${nums.length} satır toplamı`);
+        setIsNewEntry(true);
+        setTape((prev) => [
+          {
+            id: `tape-paste-${Date.now()}`,
+            time: nowTime,
+            expression: `${nums.slice(0, 3).map((x) => formatCalcNumber(x.val)).join(" + ")}${
+              nums.length > 3 ? ` + ... (${nums.length} kalem)` : ""
+            }`,
+            result: total,
+          },
+          ...prev,
+        ]);
+        setCopiedKey("calc-paste");
+        setTimeout(() => setCopiedKey(null), 1800);
+        return true;
+      }
+    }
+
+    // 2. Math expression (e.g. "1500 + 250 * 2" or "10.000 / 1,20")
+    const hasMathOp = /[+\-*/×÷]/.test(trimmed.slice(1));
+    if (hasMathOp) {
+      const normalizedExpr = trimmed
+        .replace(/×/g, "*")
+        .replace(/÷/g, "/")
+        .replace(/(\d)\.(\d{3})(?!\d)/g, "$1$2")
+        .replace(/,/g, ".")
+        .replace(/[₺$€TLtl\s]/g, "");
+      if (/^[0-9.+\-*/()]+$/.test(normalizedExpr)) {
+        try {
+          const evalVal = Function(`"use strict"; return (${normalizedExpr})`)() as unknown;
+          if (typeof evalVal === "number" && Number.isFinite(evalVal)) {
+            setDisplay(String(evalVal));
+            setPrevValue(null);
+            setOperation(null);
+            setExpression(trimmed.slice(0, 40));
+            setIsNewEntry(true);
+            setTape((prev) => [
+              {
+                id: `tape-paste-${Date.now()}`,
+                time: nowTime,
+                expression: trimmed.slice(0, 50),
+                result: evalVal,
+              },
+              ...prev,
+            ]);
+            setCopiedKey("calc-paste");
+            setTimeout(() => setCopiedKey(null), 1800);
+            return true;
+          }
+        } catch {
+          // Fall through to single-number parser
+        }
+      }
+    }
+
+    // 3. Single formatted number (Turkish/US/currency)
+    if (/[0-9]/.test(trimmed)) {
+      const parsed = parseTurkishAmount(trimmed);
+      if (Number.isFinite(parsed)) {
+        setDisplay(String(parsed));
+        setIsNewEntry(false);
+        setCopiedKey("calc-paste");
+        setTimeout(() => setCopiedKey(null), 1800);
+        return true;
+      }
+    }
+
+    return false;
+  };
+
+  const handlePasteButton = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!applyPastedText(text)) {
+        setCopiedKey("calc-paste-empty");
+        setTimeout(() => setCopiedKey(null), 1800);
+      }
+    } catch {
+      setCopiedKey("calc-paste-err");
+      setTimeout(() => setCopiedKey(null), 2200);
+    }
+  };
+
+  // Keyboard shortcut & external paste listener for standard calculator
   useEffect(() => {
     if (activeMode !== "standard") return;
 
+    const handlePasteEvent = (e: ClipboardEvent) => {
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement ||
+        e.target instanceof HTMLSelectElement
+      ) {
+        return;
+      }
+      const text = e.clipboardData?.getData("text") || "";
+      if (text && applyPastedText(text)) {
+        e.preventDefault();
+      }
+    };
+
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Allow browser Ctrl+V / Cmd+V paste event to fire
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "v") {
+        return;
+      }
       // Don't trigger if user is typing in another input element
       if (
         e.target instanceof HTMLInputElement ||
@@ -329,7 +457,11 @@ export default function DetailedCalculator() {
     };
 
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    window.addEventListener("paste", handlePasteEvent);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("paste", handlePasteEvent);
+    };
   }, [activeMode, display, prevValue, operation, isNewEntry]);
 
   // Export audit tape to txt file
@@ -630,25 +762,48 @@ export default function DetailedCalculator() {
 
             {/* LCD / LED Display Screen */}
             <div className="bg-slate-900 text-white rounded-2xl p-4 sm:p-5 flex flex-col justify-between shadow-inner border border-slate-800 relative overflow-hidden group">
-              <div className="flex items-center justify-between text-slate-400 text-xs font-mono min-h-[20px]">
-                <span>{expression || "\u00A0"}</span>
-                <button
-                  onClick={() => handleCopy(display, "calc-main")}
-                  className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 text-[11px] text-emerald-400 hover:text-emerald-300 px-2 py-0.5 rounded bg-slate-800 border border-slate-700"
-                  title="Sonucu kopyala"
-                >
-                  {copiedKey === "calc-main" ? (
-                    <>
-                      <Check className="w-3 h-3 text-emerald-400" />
-                      <span>Kopyalandı</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-3 h-3" />
-                      <span>Kopyala</span>
-                    </>
-                  )}
-                </button>
+              <div className="flex items-center justify-between text-slate-400 text-xs font-mono min-h-[20px] gap-2">
+                <span className="truncate">{expression || "\u00A0"}</span>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => void handlePasteButton()}
+                    className="flex items-center gap-1 text-[11px] text-sky-400 hover:text-sky-300 px-2 py-0.5 rounded bg-slate-800 border border-slate-700"
+                    title="Dışarıdan kopyalanan tutarı, Excel sütununu veya işlemi yapıştır (Ctrl+V)"
+                  >
+                    {copiedKey === "calc-paste" ? (
+                      <>
+                        <Check className="w-3 h-3 text-emerald-400" />
+                        <span className="text-emerald-400">Yapıştırıldı</span>
+                      </>
+                    ) : copiedKey === "calc-paste-err" ? (
+                      <span className="text-amber-400">Ctrl+V kullanın</span>
+                    ) : (
+                      <>
+                        <ClipboardPaste className="w-3 h-3" />
+                        <span>Yapıştır</span>
+                      </>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleCopy(display, "calc-main")}
+                    className="opacity-70 group-hover:opacity-100 transition-opacity flex items-center gap-1 text-[11px] text-emerald-400 hover:text-emerald-300 px-2 py-0.5 rounded bg-slate-800 border border-slate-700"
+                    title="Sonucu kopyala"
+                  >
+                    {copiedKey === "calc-main" ? (
+                      <>
+                        <Check className="w-3 h-3 text-emerald-400" />
+                        <span>Kopyalandı</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3 h-3" />
+                        <span>Kopyala</span>
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
 
               <div className="text-right text-3xl sm:text-4xl font-mono font-bold tracking-tight text-emerald-400 tabular-nums overflow-x-auto mt-2">

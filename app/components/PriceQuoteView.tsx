@@ -37,7 +37,7 @@ import {
   EyeOff,
 } from "lucide-react";
 import { ProductItem, Customer, SavedProposal } from "../types/accounting";
-import { normalizeForSearch } from "../utils/excel";
+import { normalizeForSearch, parseTurkishAmount } from "../utils/excel";
 import { DEFAULT_SAMPLE_PRODUCTS } from "./ProductManagementView";
 import WhatsAppShareModal from "./WhatsAppShareModal";
 import { WhatsAppProposalData, sharePdfViaWhatsApp } from "../utils/whatsapp";
@@ -2096,6 +2096,19 @@ export default function PriceQuoteView({
                           e.target.value === "" ? "" : parseFloat(e.target.value) || 0
                         )
                       }
+                      onPaste={(e) => {
+                        const text = e.clipboardData?.getData("text") || "";
+                        if (!/\d/.test(text)) return;
+                        e.preventDefault();
+                        const parsed = parseTurkishAmount(text);
+                        if (Number.isFinite(parsed)) {
+                          handleUpdateRow(
+                            idx,
+                            "unitPrice",
+                            Math.round(parsed * 10000) / 10000
+                          );
+                        }
+                      }}
                       onKeyDown={(e) => handleKeyDown(e, idx, "unitPrice")}
                       className="w-full bg-transparent border-none focus:outline-none focus:bg-blue-50/50 rounded px-1 py-0.5 text-right font-mono font-medium text-slate-900 print:hidden text-xs"
                       placeholder="0,00"

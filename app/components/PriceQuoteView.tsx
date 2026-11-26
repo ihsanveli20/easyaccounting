@@ -558,6 +558,36 @@ export default function PriceQuoteView({
           loadedRows.push(createEmptyRow());
         }
         setRows(loadedRows);
+      } else if (
+        Array.isArray(editingProposal.metadata?.customItems) &&
+        editingProposal.metadata.customItems.length > 0
+      ) {
+        const loadedFromMeta: QuoteItem[] = editingProposal.metadata.customItems.map(
+          (cm: {
+            productId?: string | number;
+            materialName?: string;
+            unit?: string;
+            quantity?: number;
+            unitPrice?: number;
+            total?: number;
+          }, idx: number) => {
+            const qty = Number(cm.quantity) || 1;
+            const price = Number(cm.unitPrice) || 0;
+            return {
+              id: `meta-${idx + 1}`,
+              productId: cm.productId,
+              materialName: String(cm.materialName || "").toLocaleUpperCase("tr-TR"),
+              quantity: qty,
+              unit: cm.unit || "Adet",
+              unitPrice: price,
+              total: Number(cm.total) || qty * price,
+            };
+          }
+        );
+        while (loadedFromMeta.length < 5) {
+          loadedFromMeta.push(createEmptyRow());
+        }
+        setRows(loadedFromMeta);
       }
     }
   }, [editingProposal]);
@@ -1011,10 +1041,20 @@ export default function PriceQuoteView({
         };
       });
 
-      const customItemsMeta = activeRows.map((r) => ({
-        materialName: r.materialName,
-        unit: r.unit,
-      }));
+      const customItemsMeta = activeRows.map((r) => {
+        const qty =
+          typeof r.quantity === "number" ? r.quantity : parseFloat(String(r.quantity)) || 1;
+        const price =
+          typeof r.unitPrice === "number" ? r.unitPrice : parseFloat(String(r.unitPrice)) || 0;
+        return {
+          productId: r.productId,
+          materialName: r.materialName,
+          unit: r.unit,
+          quantity: qty,
+          unitPrice: price,
+          total: r.total || qty * price,
+        };
+      });
 
       const metadata = {
         notes,

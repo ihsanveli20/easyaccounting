@@ -8,6 +8,7 @@ function getSupabaseServerClient() {
     "https://qcndlfastbrezugknkho.supabase.co";
 
   const key =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
     process.env.SUPABASE_PUBLISHABLE_KEY ||
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
     process.env.SUPABASE_ANON_KEY ||
@@ -94,6 +95,44 @@ export async function GET(request: Request) {
 
     const proposals = (data || []).map((p) => {
       const { displayNumber, metadata } = unpackProposalNumber(p.proposal_number);
+      const dbItems = Array.isArray(p.items) ? p.items : [];
+      const fallbackMetaItems =
+        dbItems.length === 0 && Array.isArray(metadata?.customItems)
+          ? metadata.customItems.map((cm: any, idx: number) => {
+              const qty = Number(cm?.quantity) || 1;
+              const price = Number(cm?.unitPrice) || 0;
+              return {
+                id: `meta-${p.id}-${idx}`,
+                proposal_id: p.id,
+                product_id: cm?.productId ? Number(cm.productId) || null : null,
+                quantity: qty,
+                unit_price: price,
+                total_price: Number(cm?.total) || qty * price,
+                product: cm?.materialName
+                  ? {
+                      id: cm?.productId || null,
+                      name: cm.materialName,
+                      unit_of_measure: cm.unit || "Adet",
+                      sale_price: price,
+                    }
+                  : null,
+              };
+            })
+          : [];
+
+      const finalItems =
+        dbItems.length > 0
+          ? dbItems.map((item: any) => ({
+              id: item.id,
+              proposal_id: item.proposal_id,
+              product_id: item.product_id,
+              quantity: Number(item.quantity) || 0,
+              unit_price: Number(item.unit_price) || 0,
+              total_price: Number(item.total_price) || 0,
+              product: item.product || null,
+            }))
+          : fallbackMetaItems;
+
       return {
         id: p.id,
         customer_id: p.customer_id,
@@ -103,15 +142,7 @@ export async function GET(request: Request) {
         total_amount: Number(p.total_amount) || 0,
         created_at: p.created_at,
         customer: p.customer || null,
-        items: (p.items || []).map((item: any) => ({
-          id: item.id,
-          proposal_id: item.proposal_id,
-          product_id: item.product_id,
-          quantity: Number(item.quantity) || 0,
-          unit_price: Number(item.unit_price) || 0,
-          total_price: Number(item.total_price) || 0,
-          product: item.product || null,
-        })),
+        items: finalItems,
         metadata: metadata || null,
       };
     });
@@ -185,26 +216,55 @@ export async function POST(request: Request) {
 
     const proposalId = propData.id;
 
-    // 2. Insert items if any (note: total_price is a generated column in DB, do not include!)
+    // 2. Insert items if any (validate product_id against products table to avoid FK 23503 errors)
+    let itemsWarning: string | null = null;
     if (Array.isArray(items) && items.length > 0) {
-      const itemsToInsert = items.map((item: any) => ({
-        proposal_id: proposalId,
-        product_id: item.product_id ? Number(item.product_id) : null,
-        quantity: typeof item.quantity === "number" ? item.quantity : parseFloat(String(item.quantity)) || 1,
-        unit_price: typeof item.unit_price === "number" ? item.unit_price : parseFloat(String(item.unit_price)) || 0,
-      }));
+      const candidateIds = Array.from(
+        new Set(
+          items
+            .map((it: any) => Number(it.product_id))
+            .filter((n: number) => Number.isInteger(n) && n > 0)
+        )
+      );
+      const validProductIds = new Set<number>();
+      if (candidateIds.length > 0) {
+        const { data: existingProds } = await supabase
+          .from("products")
+          .select("id")
+          .in("id", candidateIds);
+        for (const row of existingProds || []) {
+          validProductIds.add(Number(row.id));
+        }
+      }
+
+      const itemsToInsert = items.map((item: any) => {
+        const numId = Number(item.product_id);
+        return {
+          proposal_id: proposalId,
+          product_id: Number.isInteger(numId) && validProductIds.has(numId) ? numId : null,
+          quantity: typeof item.quantity === "number" ? item.quantity : parseFloat(String(item.quantity)) || 1,
+          unit_price: typeof item.unit_price === "number" ? item.unit_price : parseFloat(String(item.unit_price)) || 0,
+        };
+      });
 
       const { error: itemsErr } = await supabase
         .from("proposal_items")
         .insert(itemsToInsert);
 
       if (itemsErr) {
+        itemsWarning = itemsErr.message;
         console.warn("Error inserting proposal items:", itemsErr);
+        // Fallback: if NOT NULL constraint on product_id failed, insert at least items with valid product_id
+        const onlyValid = itemsToInsert.filter((it) => it.product_id !== null);
+        if (onlyValid.length > 0 && onlyValid.length < itemsToInsert.length) {
+          await supabase.from("proposal_items").insert(onlyValid);
+        }
       }
     }
 
     return NextResponse.json({
       success: true,
+      itemsWarning,
       proposal: {
         id: propData.id,
         proposal_number: finalProposalNumber,
@@ -287,12 +347,33 @@ export async function PUT(request: Request) {
       await supabase.from("proposal_items").delete().eq("proposal_id", id);
 
       if (items.length > 0) {
-        const itemsToInsert = items.map((item: any) => ({
-          proposal_id: id,
-          product_id: item.product_id ? Number(item.product_id) : null,
-          quantity: typeof item.quantity === "number" ? item.quantity : parseFloat(String(item.quantity)) || 1,
-          unit_price: typeof item.unit_price === "number" ? item.unit_price : parseFloat(String(item.unit_price)) || 0,
-        }));
+        const candidateIds = Array.from(
+          new Set(
+            items
+              .map((it: any) => Number(it.product_id))
+              .filter((n: number) => Number.isInteger(n) && n > 0)
+          )
+        );
+        const validProductIds = new Set<number>();
+        if (candidateIds.length > 0) {
+          const { data: existingProds } = await supabase
+            .from("products")
+            .select("id")
+            .in("id", candidateIds);
+          for (const row of existingProds || []) {
+            validProductIds.add(Number(row.id));
+          }
+        }
+
+        const itemsToInsert = items.map((item: any) => {
+          const numId = Number(item.product_id);
+          return {
+            proposal_id: id,
+            product_id: Number.isInteger(numId) && validProductIds.has(numId) ? numId : null,
+            quantity: typeof item.quantity === "number" ? item.quantity : parseFloat(String(item.quantity)) || 1,
+            unit_price: typeof item.unit_price === "number" ? item.unit_price : parseFloat(String(item.unit_price)) || 0,
+          };
+        });
 
         const { error: itemsErr } = await supabase
           .from("proposal_items")
@@ -300,6 +381,10 @@ export async function PUT(request: Request) {
 
         if (itemsErr) {
           console.warn("Error inserting updated proposal items:", itemsErr);
+          const onlyValid = itemsToInsert.filter((it) => it.product_id !== null);
+          if (onlyValid.length > 0 && onlyValid.length < itemsToInsert.length) {
+            await supabase.from("proposal_items").insert(onlyValid);
+          }
         }
       }
     }

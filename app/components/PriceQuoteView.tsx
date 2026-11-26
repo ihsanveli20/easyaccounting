@@ -727,8 +727,9 @@ export default function PriceQuoteView({
     return matches;
   }, [catalogProducts, catalogSearch, selectedCatalogCategory]);
 
-  // Load saved quote and company info from localStorage
+  // Load saved quote and company info from localStorage (only when NOT editing a saved proposal from DB)
   useEffect(() => {
+    if (editingProposal) return;
     try {
       const saved = localStorage.getItem("fiyat_teklifi_data_v2");
       if (saved) {

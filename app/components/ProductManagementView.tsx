@@ -61,7 +61,12 @@ const COMMON_UNITS = [
   "Gün",
   "Hizmet",
   "Sefer",
-  "Palet"
+  "Palet",
+  "Levha",
+  "Top",
+  "Torba",
+  "Rulo",
+  "Kova",
 ];
 
 interface ProductManagementViewProps {

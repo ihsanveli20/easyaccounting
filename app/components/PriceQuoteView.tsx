@@ -50,6 +50,7 @@ export interface QuoteItem {
   id: string;
   productId?: string | number; // MALZEME / ÜRÜN ID (Supabase products.id)
   materialName: string; // MALZEME CİNSİ
+  description?: string; // AÇIKLAMA
   quantity: number | ""; // MİKTAR
   unit: string; // BİRİM (Adet, Kg, Mt, Paket, vb.)
   unitPrice: number | ""; // BİRİM FİYATI (₺)
@@ -78,7 +79,12 @@ const COMMON_UNITS = [
   "Gün",
   "Hizmet",
   "Sefer",
-  "Palet"
+  "Palet",
+  "Levha",
+  "Top",
+  "Torba",
+  "Rulo",
+  "Kova",
 ];
 
 // Helper to format currency (Turkish locale)
@@ -548,6 +554,7 @@ export default function PriceQuoteView({
             id: String(it.id || idx + 1),
             productId: it.product_id || undefined,
             materialName: rawMaterialName.toLocaleUpperCase("tr-TR"),
+            description: custom?.description || "",
             quantity: it.quantity,
             unit: it.product?.unit_of_measure || custom?.unit || "Adet",
             unitPrice: it.unit_price,
@@ -566,6 +573,7 @@ export default function PriceQuoteView({
           (cm: {
             productId?: string | number;
             materialName?: string;
+            description?: string;
             unit?: string;
             quantity?: number;
             unitPrice?: number;
@@ -577,6 +585,7 @@ export default function PriceQuoteView({
               id: `meta-${idx + 1}`,
               productId: cm.productId,
               materialName: String(cm.materialName || "").toLocaleUpperCase("tr-TR"),
+              description: cm.description || "",
               quantity: qty,
               unit: cm.unit || "Adet",
               unitPrice: price,
@@ -1050,6 +1059,7 @@ export default function PriceQuoteView({
         return {
           productId: r.productId,
           materialName: r.materialName,
+          description: r.description || "",
           unit: r.unit,
           quantity: qty,
           unitPrice: price,
@@ -1374,13 +1384,14 @@ export default function PriceQuoteView({
         [formTitle, "", "", "", "", ""],
         ["MÜŞTERİ FİRMA ADI", customerName || "-", "", "TEKLİF TARİHİ", quoteDate, ""],
         ...(showVat ? [[vatNote, "", "", "", "", ""]] : []),
-        ["SIRA", "MALZEME CİNSİ", "MİKTAR", "BİRİM", "BİRİM FİYATI (₺)", "TUTAR (₺)"],
+        ["SIRA", "MALZEME CİNSİ", "AÇIKLAMA", "MİKTAR", "BİRİM", "BİRİM FİYATI (₺)", "TUTAR (₺)"],
       ];
 
       rowsToExport.forEach((r, idx) => {
         wsData.push([
           idx + 1,
           r.materialName || "",
+          r.description || "",
           r.quantity !== "" ? r.quantity : "",
           r.unit || "",
           r.unitPrice !== "" ? r.unitPrice : "",
@@ -1389,26 +1400,27 @@ export default function PriceQuoteView({
       });
 
       // Totals
-      wsData.push(["", "", "", "", "Ara Toplam", subtotal]);
+      wsData.push(["", "", "", "", "", "Ara Toplam", subtotal]);
       if (showVat) {
-        wsData.push(["", "", "", "", `KDV (%${vatRate})`, vatAmount]);
+        wsData.push(["", "", "", "", "", `KDV (%${vatRate})`, vatAmount]);
       }
-      wsData.push(["", "", "", "", "TOPLAM", grandTotal]);
+      wsData.push(["", "", "", "", "", "TOPLAM", grandTotal]);
 
       const ws = XLSX.utils.aoa_to_sheet(wsData);
 
       // Merges
       ws["!merges"] = [
-        { s: { r: 3, c: 0 }, e: { r: 3, c: 5 } }, // Title
-        { s: { r: 4, c: 1 }, e: { r: 4, c: 2 } }, // Customer Name
-        { s: { r: 4, c: 4 }, e: { r: 4, c: 5 } }, // Date
-        ...(showVat ? [{ s: { r: 5, c: 0 }, e: { r: 5, c: 5 } }] : []), // Vat note
+        { s: { r: 3, c: 0 }, e: { r: 3, c: 6 } }, // Title
+        { s: { r: 4, c: 1 }, e: { r: 4, c: 3 } }, // Customer Name
+        { s: { r: 4, c: 5 }, e: { r: 4, c: 6 } }, // Date
+        ...(showVat ? [{ s: { r: 5, c: 0 }, e: { r: 5, c: 6 } }] : []), // Vat note
       ];
 
       // Col widths
       ws["!cols"] = [
         { wch: 8 },  // SIRA
-        { wch: 42 }, // MALZEME CİNSİ
+        { wch: 36 }, // MALZEME CİNSİ
+        { wch: 28 }, // AÇIKLAMA
         { wch: 12 }, // MİKTAR
         { wch: 12 }, // BİRİM
         { wch: 18 }, // BİRİM FİYATI
@@ -2041,11 +2053,12 @@ export default function PriceQuoteView({
           <table className="w-full border-collapse border-2 border-black text-xs text-slate-900 table-fixed min-w-[580px] print:min-w-0">
             <colgroup>
               <col style={{ width: "5%" }} />
-              <col style={{ width: "41%" }} />
-              <col style={{ width: "10%" }} />
+              <col style={{ width: "28%" }} />
+              <col style={{ width: "18%" }} />
+              <col style={{ width: "9%" }} />
               <col style={{ width: "8%" }} />
-              <col style={{ width: "16%" }} />
-              <col style={{ width: "20%" }} />
+              <col style={{ width: "15%" }} />
+              <col style={{ width: "17%" }} />
               <col className="no-print" style={{ width: "48px" }} />
             </colgroup>
             <thead>
@@ -2059,6 +2072,7 @@ export default function PriceQuoteView({
               >
                 <th className="border border-black py-1.5 px-1 text-center">SIRA</th>
                 <th className="border border-black py-1.5 px-3 text-left">MALZEME CİNSİ</th>
+                <th className="border border-black py-1.5 px-2 text-left">AÇIKLAMA</th>
                 <th className="border border-black py-1.5 px-2 text-right">MİKTAR</th>
                 <th className="border border-black py-1.5 px-1 text-center">BİRİM</th>
                 <th className="border border-black py-1.5 px-2 text-right">BİRİM FİYATI (₺)</th>
@@ -2174,6 +2188,20 @@ export default function PriceQuoteView({
                     )}
                   </td>
 
+                  {/* AÇIKLAMA */}
+                  <td className="border border-black py-1 px-2">
+                    <input
+                      type="text"
+                      value={row.description || ""}
+                      onChange={(e) => handleUpdateRow(idx, "description", e.target.value)}
+                      placeholder={idx === 0 ? "Açıklama / Marka / Not..." : ""}
+                      className="w-full bg-transparent border-none focus:outline-none focus:bg-blue-50/50 rounded px-1 py-0.5 text-slate-800 placeholder:text-slate-300 print:hidden text-xs"
+                    />
+                    <div className="hidden print:block text-slate-800 text-[11px] wrap-break-word">
+                      {row.description || "\u00A0"}
+                    </div>
+                  </td>
+
                   {/* MİKTAR */}
                   <td className="border border-black py-1 px-2 text-right">
                     <QuantityCell
@@ -2254,7 +2282,7 @@ export default function PriceQuoteView({
               {/* 6. SUMMARY FOOTER (Ara Toplam, KDV opsiyonel, TOPLAM) */}
               <tr>
                 <td
-                  colSpan={4}
+                  colSpan={5}
                   rowSpan={showVat ? 3 : 2}
                   className="border border-black p-2.5 align-top bg-slate-50/20 print:bg-transparent"
                 >

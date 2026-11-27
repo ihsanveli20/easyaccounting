@@ -108,8 +108,13 @@ export interface SavedProposal {
     quoteDate?: string;
     customerName?: string;
     customItems?: Array<{
+      productId?: string | number;
       materialName: string;
+      description?: string;
       unit: string;
+      quantity?: number;
+      unitPrice?: number;
+      total?: number;
     }>;
   } | null;
 }

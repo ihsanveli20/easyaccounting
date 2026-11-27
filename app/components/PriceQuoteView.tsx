@@ -496,6 +496,14 @@ export default function PriceQuoteView({
   const [editingProposalId, setEditingProposalId] = useState<number | null>(null);
   const [isSavingToSupabase, setIsSavingToSupabase] = useState<boolean>(false);
   const [whatsappModalOpen, setWhatsappModalOpen] = useState<boolean>(false);
+  const [showDescriptionCol, setShowDescriptionCol] = useState<boolean>(true);
+  const [outputDescriptionOverride, setOutputDescriptionOverride] = useState<boolean | null>(null);
+  const [outputDialog, setOutputDialog] = useState<{
+    mode: "pdf" | "print";
+    includeDescription: boolean;
+  } | null>(null);
+  const effectiveShowDescription =
+    outputDescriptionOverride !== null ? outputDescriptionOverride : showDescriptionCol;
 
   // Fetch customers from Supabase customers table on mount
   useEffect(() => {
@@ -1281,13 +1289,21 @@ export default function PriceQuoteView({
     }
   };
 
-  // Print
-  const handlePrint = () => {
+  // Print with temporary output-only description column visibility
+  const executePrint = async (includeDesc: boolean) => {
+    setOutputDescriptionOverride(includeDesc);
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    const cleanup = () => {
+      setOutputDescriptionOverride(null);
+      window.removeEventListener("afterprint", cleanup);
+    };
+    window.addEventListener("afterprint", cleanup);
     window.print();
+    setTimeout(cleanup, 500);
   };
 
-  // Direct PDF Download (High-resolution native print replica without lab() color parsing issues)
-  const handleDownloadPdf = async () => {
+  // Direct PDF Download using row-aware multi-page renderer with temporary output-only description visibility
+  const executeDownloadPdf = async (includeDesc: boolean) => {
     const quoteElement = document.getElementById("printable-quote");
     if (!quoteElement) {
       alert("Teklif formu bulunamadı.");
@@ -1295,60 +1311,13 @@ export default function PriceQuoteView({
     }
 
     try {
+      setOutputDescriptionOverride(includeDesc);
       setIsGeneratingPdf(true);
 
-      // Give React one tick to apply .pdf-export-mode (hiding inputs, showing print-only blocks)
+      // Give React one tick to apply .pdf-export-mode and column visibility
       await new Promise((resolve) => setTimeout(resolve, 150));
 
-      // Native browser rasterizer - 100% compatible with Tailwind v4, lab(), oklab(), and custom fonts
-      const dataUrl = await htmlToImage.toPng(quoteElement, {
-        width: 820,
-        pixelRatio: 2,
-        backgroundColor: "#ffffff",
-        cacheBust: false,
-      });
-
-      // Load image to determine exact dimensions
-      const img = new Image();
-      img.src = dataUrl;
-      await new Promise<void>((resolve, reject) => {
-        img.onload = () => resolve();
-        img.onerror = () => reject(new Error("PDF görseli oluşturulamadı"));
-      });
-
-      const pdf = new jsPDF({
-        orientation: "portrait",
-        unit: "mm",
-        format: "a4",
-      });
-
-      const pdfWidth = 210;
-      const pdfHeight = 297;
-      const imgWidth = pdfWidth;
-      const imgHeight = (img.height * imgWidth) / img.width;
-
-      if (imgHeight <= pdfHeight) {
-        pdf.addImage(dataUrl, "PNG", 0, 0, imgWidth, imgHeight);
-      } else if (imgHeight <= pdfHeight * 1.25) {
-        // Fits nicely on 1 single page with slight scale
-        const scaleFactor = pdfHeight / imgHeight;
-        const scaledWidth = imgWidth * scaleFactor;
-        const xOffset = (pdfWidth - scaledWidth) / 2;
-        pdf.addImage(dataUrl, "PNG", xOffset, 0, scaledWidth, pdfHeight);
-      } else {
-        // Multi-page document
-        let heightLeft = imgHeight;
-        let position = 0;
-        pdf.addImage(dataUrl, "PNG", 0, position, imgWidth, imgHeight);
-        heightLeft -= pdfHeight;
-
-        while (heightLeft > 0) {
-          position = heightLeft - imgHeight;
-          pdf.addPage();
-          pdf.addImage(dataUrl, "PNG", 0, position, imgWidth, imgHeight);
-          heightLeft -= pdfHeight;
-        }
-      }
+      const { pdf } = await renderElementToPdf(quoteElement);
 
       const safeCustomer = (customerName.trim() || "Musteri_Teklif")
         .replace(/[^a-zA-Z0-9_\u00C0-\u017F-]/g, "_")
@@ -1362,6 +1331,7 @@ export default function PriceQuoteView({
       const msg = err instanceof Error ? err.message : "Bilinmeyen hata";
       alert("PDF oluşturulurken bir hata meydana geldi: " + msg);
     } finally {
+      setOutputDescriptionOverride(null);
       setIsGeneratingPdf(false);
     }
   };
@@ -1578,6 +1548,25 @@ export default function PriceQuoteView({
             <span>Excel</span>
           </button>
 
+          {/* Description Column Toggle (Main Page) */}
+          <button
+            type="button"
+            onClick={() => setShowDescriptionCol((v) => !v)}
+            className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl text-xs font-semibold border transition-colors shadow-2xs ${
+              showDescriptionCol
+                ? "bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-300"
+                : "bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-200"
+            }`}
+            title="Ana sayfada Açıklama sütununu göster/gizle (veriler silinmez)"
+          >
+            {showDescriptionCol ? (
+              <Eye className="w-3.5 h-3.5 text-slate-600" />
+            ) : (
+              <EyeOff className="w-3.5 h-3.5 text-amber-600" />
+            )}
+            <span>{showDescriptionCol ? "Açıklama Açık" : "Açıklama Gizli"}</span>
+          </button>
+
           {/* History Button */}
           {onGoToHistory && (
             <button
@@ -1640,7 +1629,9 @@ export default function PriceQuoteView({
 
           {/* Download PDF Button */}
           <button
-            onClick={handleDownloadPdf}
+            onClick={() =>
+              setOutputDialog({ mode: "pdf", includeDescription: showDescriptionCol })
+            }
             disabled={isGeneratingPdf}
             className="flex items-center gap-1.5 px-3 sm:px-4 py-1.5 sm:py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-600/20 transition-all disabled:opacity-75 disabled:cursor-wait"
             title="Teklifi PDF olarak indir (.pdf)"
@@ -1655,7 +1646,9 @@ export default function PriceQuoteView({
 
           {/* Print Button */}
           <button
-            onClick={handlePrint}
+            onClick={() =>
+              setOutputDialog({ mode: "print", includeDescription: showDescriptionCol })
+            }
             className="flex items-center gap-1.5 px-3 sm:px-4 py-1.5 sm:py-2 bg-slate-900 hover:bg-black text-white rounded-xl text-xs font-bold shadow-md shadow-slate-900/20 transition-all"
             title="Teklifi A4 formatında yazdır veya tarayıcıdan kaydet"
           >
@@ -2053,12 +2046,12 @@ export default function PriceQuoteView({
           <table className="w-full border-collapse border-2 border-black text-xs text-slate-900 table-fixed min-w-[580px] print:min-w-0">
             <colgroup>
               <col style={{ width: "5%" }} />
-              <col style={{ width: "28%" }} />
-              <col style={{ width: "18%" }} />
-              <col style={{ width: "9%" }} />
+              <col style={{ width: effectiveShowDescription ? "28%" : "41%" }} />
+              {effectiveShowDescription && <col style={{ width: "18%" }} />}
+              <col style={{ width: effectiveShowDescription ? "9%" : "10%" }} />
               <col style={{ width: "8%" }} />
-              <col style={{ width: "15%" }} />
-              <col style={{ width: "17%" }} />
+              <col style={{ width: effectiveShowDescription ? "15%" : "16%" }} />
+              <col style={{ width: effectiveShowDescription ? "17%" : "20%" }} />
               <col className="no-print" style={{ width: "48px" }} />
             </colgroup>
             <thead>
@@ -2072,7 +2065,9 @@ export default function PriceQuoteView({
               >
                 <th className="border border-black py-1.5 px-1 text-center">SIRA</th>
                 <th className="border border-black py-1.5 px-3 text-left">MALZEME CİNSİ</th>
-                <th className="border border-black py-1.5 px-2 text-left">AÇIKLAMA</th>
+                {effectiveShowDescription && (
+                  <th className="border border-black py-1.5 px-2 text-left">AÇIKLAMA</th>
+                )}
                 <th className="border border-black py-1.5 px-2 text-right">MİKTAR</th>
                 <th className="border border-black py-1.5 px-1 text-center">BİRİM</th>
                 <th className="border border-black py-1.5 px-2 text-right">BİRİM FİYATI (₺)</th>
@@ -2189,18 +2184,20 @@ export default function PriceQuoteView({
                   </td>
 
                   {/* AÇIKLAMA */}
-                  <td className="border border-black py-1 px-2">
-                    <input
-                      type="text"
-                      value={row.description || ""}
-                      onChange={(e) => handleUpdateRow(idx, "description", e.target.value)}
-                      placeholder={idx === 0 ? "Açıklama / Marka / Not..." : ""}
-                      className="w-full bg-transparent border-none focus:outline-none focus:bg-blue-50/50 rounded px-1 py-0.5 text-slate-800 placeholder:text-slate-300 print:hidden text-xs"
-                    />
-                    <div className="hidden print:block text-slate-800 text-[11px] wrap-break-word">
-                      {row.description || "\u00A0"}
-                    </div>
-                  </td>
+                  {effectiveShowDescription && (
+                    <td className="border border-black py-1 px-2 align-top">
+                      <input
+                        type="text"
+                        value={row.description || ""}
+                        onChange={(e) => handleUpdateRow(idx, "description", e.target.value)}
+                        placeholder={idx === 0 ? "Açıklama / Marka / Not..." : ""}
+                        className="w-full bg-transparent border-none focus:outline-none focus:bg-blue-50/50 rounded px-1 py-0.5 text-slate-800 placeholder:text-slate-300 print:hidden text-xs"
+                      />
+                      <div className="hidden print:block text-slate-800 text-[11px] leading-snug whitespace-pre-wrap break-words">
+                        {row.description || "\u00A0"}
+                      </div>
+                    </td>
+                  )}
 
                   {/* MİKTAR */}
                   <td className="border border-black py-1 px-2 text-right">
@@ -2283,7 +2280,7 @@ export default function PriceQuoteView({
               {/* 6. SUMMARY FOOTER (Ara Toplam, KDV opsiyonel, TOPLAM) */}
               <tr>
                 <td
-                  colSpan={5}
+                  colSpan={effectiveShowDescription ? 5 : 4}
                   rowSpan={showVat ? 3 : 2}
                   className="border border-black p-2.5 align-top bg-slate-50/20 print:bg-transparent"
                 >
@@ -2737,8 +2734,86 @@ export default function PriceQuoteView({
         proposalData={currentWhatsAppProposalData}
         defaultMode="pdf"
         onSharePdf={handleSharePdfViaWhatsApp}
-        onDownloadPdfOnly={handleDownloadPdf}
+        onDownloadPdfOnly={() => void executeDownloadPdf(showDescriptionCol)}
       />
+
+      {/* Output Options Modal (PDF / Print Description Column Choice) */}
+      {outputDialog && (
+        <div className="no-print fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-sm overflow-hidden">
+            <div className="px-5 py-3.5 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+              <h3 className="text-sm font-black text-slate-900">
+                {outputDialog.mode === "pdf" ? "PDF İndirme Seçenekleri" : "Yazdırma Seçenekleri"}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setOutputDialog(null)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/60"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-5 space-y-4 text-xs">
+              <label className="flex items-start gap-3 p-3 rounded-xl border border-slate-200 bg-slate-50/70 cursor-pointer hover:bg-slate-100/70">
+                <input
+                  type="checkbox"
+                  checked={outputDialog.includeDescription}
+                  onChange={(e) =>
+                    setOutputDialog({
+                      ...outputDialog,
+                      includeDescription: e.target.checked,
+                    })
+                  }
+                  className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                />
+                <div>
+                  <div className="font-bold text-slate-900">
+                    Açıklama Sütununu Çıktıya Dahil Et
+                  </div>
+                  <div className="text-[11px] text-slate-500 mt-0.5">
+                    Bu seçim yalnızca bu {outputDialog.mode === "pdf" ? "PDF" : "yazdırma"} çıktısını etkiler; ana sayfa görünümünü ve kayıtlı verileri değiştirmez.
+                  </div>
+                </div>
+              </label>
+            </div>
+            <div className="px-5 py-3 border-t border-slate-200 bg-slate-50 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setOutputDialog(null)}
+                className="px-3.5 py-1.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-xs font-bold text-slate-700"
+              >
+                İptal
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const mode = outputDialog.mode;
+                  const inc = outputDialog.includeDescription;
+                  setOutputDialog(null);
+                  if (mode === "pdf") {
+                    void executeDownloadPdf(inc);
+                  } else {
+                    void executePrint(inc);
+                  }
+                }}
+                className="px-4 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold inline-flex items-center gap-1.5"
+              >
+                {outputDialog.mode === "pdf" ? (
+                  <>
+                    <FileDown className="w-3.5 h-3.5" />
+                    <span>PDF İndir</span>
+                  </>
+                ) : (
+                  <>
+                    <Printer className="w-3.5 h-3.5" />
+                    <span>Yazdır</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

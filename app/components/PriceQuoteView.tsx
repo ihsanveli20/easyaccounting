@@ -1771,7 +1771,10 @@ export default function PriceQuoteView({
         {/* 1. TOP HEADER: LOGO ON LEFT (app/logo.jpg) & CONTACT INFO ON RIGHT */}
         <div className="pdf-header-row w-full flex flex-col sm:flex-row print:flex-row justify-between items-start gap-4 pb-3 border-b-2 border-black print:pb-2">
           {/* Left: Logo & Company Name (always stacked vertically: logo on top, name below) */}
-          <div className="pdf-header-left flex flex-col items-start gap-1.5 w-full sm:w-[54%] print:w-[54%] min-w-0">
+          <div
+            className="pdf-header-left flex flex-col items-start gap-1.5 w-full sm:w-[54%] print:w-[54%] min-w-0"
+            style={{ display: "flex", flexDirection: "column", alignItems: "flex-start" }}
+          >
             <div className="w-full flex items-center justify-start">
               <img
                 src={companyInfo.logoUrl}

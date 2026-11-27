@@ -1143,21 +1143,24 @@ export default function ProposalHistoryView({
             className="w-full bg-white p-6 sm:p-8 font-sans text-slate-900 border border-slate-300 print:border-none print:p-0 print:m-0"
           >
             {/* 1. TOP HEADER: LOGO AND CONTACT INFO */}
-            <div className="w-full flex justify-between items-start gap-4 pb-3 border-b-2 border-black">
-              {/* Logo & Company Name */}
-              <div className="flex items-center gap-3">
+            <div className="pdf-header-row w-full flex justify-between items-start gap-4 pb-3 border-b-2 border-black">
+              {/* Logo & Company Name (always stacked vertically: logo on top, name below) */}
+              <div
+                className="pdf-header-left flex flex-col items-start gap-1.5 w-[54%] min-w-0"
+                style={{ display: "flex", flexDirection: "column", alignItems: "flex-start" }}
+              >
                 <img
                   src={companyInfo.logoUrl || teklifLogo.src}
                   alt="Logo"
-                  className="h-14 w-auto max-w-[220px] object-contain shrink-0"
+                  className="h-14 w-auto max-w-[240px] object-contain block"
                 />
-                <div className="font-extrabold text-xs sm:text-sm uppercase text-slate-900 tracking-tight leading-snug max-w-sm">
+                <div className="w-full font-extrabold text-[11px] sm:text-xs uppercase text-slate-900 tracking-tight leading-snug break-words">
                   {companyInfo.name}
                 </div>
               </div>
 
               {/* Address & Phone */}
-              <div className="text-xs text-slate-900 font-sans max-w-md shrink-0 flex flex-col justify-start">
+              <div className="pdf-header-right text-xs text-slate-900 font-sans w-[43%] min-w-0 flex flex-col justify-start">
                 <div className="flex items-start gap-1.5 leading-tight">
                   <span className="font-bold tracking-wider w-16 text-left select-none shrink-0 pt-0.5">ADRES</span>
                   <span className="font-bold shrink-0 pt-0.5">:</span>

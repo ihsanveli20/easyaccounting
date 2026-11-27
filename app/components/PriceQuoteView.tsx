@@ -2212,19 +2212,20 @@ export default function PriceQuoteView({
 
                   {/* BİRİM */}
                   <td className="border border-black py-1 px-1 text-center">
-                    <input
-                      type="text"
-                      list={`units-list-${idx}`}
-                      value={row.unit}
+                    <select
+                      value={row.unit || "Adet"}
                       onChange={(e) => handleUpdateRow(idx, "unit", e.target.value)}
-                      className="w-full bg-transparent border-none focus:outline-none focus:bg-blue-50/50 rounded px-1 py-0.5 text-center text-slate-800 print:hidden text-xs"
-                      placeholder="Adet"
-                    />
-                    <datalist id={`units-list-${idx}`}>
+                      className="w-full bg-transparent border-none focus:outline-none focus:bg-blue-50/50 rounded px-0.5 py-0.5 text-center text-slate-800 print:hidden text-xs cursor-pointer"
+                    >
+                      {row.unit && !COMMON_UNITS.includes(row.unit) && (
+                        <option value={row.unit}>{row.unit}</option>
+                      )}
                       {COMMON_UNITS.map((u) => (
-                        <option key={u} value={u} />
+                        <option key={u} value={u}>
+                          {u}
+                        </option>
                       ))}
-                    </datalist>
+                    </select>
                     <div className="hidden print:block text-slate-800 text-xs text-center">
                       {row.materialName ? row.unit : "\u00A0"}
                     </div>
